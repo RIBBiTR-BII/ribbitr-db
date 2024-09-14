@@ -1,0 +1,581 @@
+---
+title: "penn_append"
+format: html
+editor: source
+---
+
+## Load Packages
+
+```{r}
+if (!require(librarian)){
+  install.packages("librarian")
+  library(librarian)
+}
+
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms)
+```
+
+## Point to data directory
+
+Keeping data in a central directory. Naming convention uses download date to distinguish batches. Will parse for redundancy below.
+
+```{r}
+ddir = Sys.getenv("data_dir")  # data directory
+wddir = here(ddir, "fulcrum", 'penn', '2024-09-13') # working data directory
+
+```
+
+
+## Load most recent CSV Exports
+
+* read in csv files
+* drop unnecessary fulcrum columns
+* clean column names
+
+```{r}
+
+# can we move away from using column indices to trim? Using column names will throw an erro if the fulcrum metatada conventions ever change.
+
+survey_info <- read_csv(here(wddir, "1_penn_surveyinformation",
+                             "1_penn_surveyinformation.csv")) %>% 
+  select(!c(2:14)) %>% 
+  clean_names()
+
+survey_acoustic <- read_csv(here(wddir, "2_penn_acousticsurvey",
+                                 "2_penn_acousticsurvey.csv")) %>% 
+  select(!c(2:14)) %>% 
+  clean_names() %>% 
+  mutate(detection_type = "aural")
+
+acoustic_obs <- read_csv(here(wddir, "2_penn_acousticsurvey",
+                              "2_penn_acousticsurvey_acoustic_survey.csv")) %>% 
+  select(!c(4:11)) %>% 
+  clean_names()%>% 
+  mutate(detection_type = "aural")
+
+
+survey_edna <- read_csv(here(wddir, "3_penn_ednasurvey",
+                             "3_penn_ednasurvey.csv")) %>% 
+  select(!c(2:14)) %>% 
+  clean_names()
+
+
+edna_obs_col <- read_csv(here(wddir, "3_penn_ednasurvey",
+                              "3_penn_ednasurvey_edna_collection.csv")) %>% 
+  select(!c(4:11)) %>% 
+  clean_names()
+
+
+edna_obs_filt <- read_csv(here(wddir, "3_penn_ednasurvey",
+                               "3_penn_ednasurvey_edna_collection_edna_filtering.csv")) %>% 
+  select(!c(4:11)) %>% 
+  clean_names()
+
+survey_ves <- read_csv(here(wddir, "4_penn_visualencountersurvey",
+                            "4_penn_visualencountersurvey.csv")) %>% 
+  select(!c(2:14)) %>% 
+  clean_names()%>% 
+  mutate(detection_type = "visual")
+
+ves_obs <- read_csv(here(wddir, "4_penn_visualencountersurvey", 
+                         "4_penn_visualencountersurvey_visual_encounter_information.csv")) %>% 
+  select(!c(4:11)) %>% 
+  clean_names()%>% 
+  mutate(detection_type = "visual")
+
+survey_capture <- read_csv(here(wddir, "5_penn_capturesurvey",
+                                "5_penn_capturesurvey.csv")) %>% 
+  select(!c(2:14)) %>% 
+  clean_names()%>% 
+  mutate(detection_type = "capture")
+
+capture_obs <- read_csv(here(wddir, "5_penn_capturesurvey", 
+                             "5_penn_capturesurvey_captured_amphibian_information.csv")) %>% 
+  select(!c(4:12)) %>% 
+  clean_names()%>% 
+  mutate(detection_type = "capture")
+
+samp_proces <- read_csv(here(wddir, "6_penn_sampleprocessing",
+                             "6_penn_sampleprocessing.csv")) %>% 
+  select(!c(2:14)) %>% 
+  clean_names()
+
+samp_procces_obs <- read_csv(here(wddir, "6_penn_sampleprocessing",
+                                  "6_penn_sampleprocessing_amphibian_capture_survey_collections.csv"))%>% 
+  select(!c(4:11)) %>% 
+  clean_names()
+
+cmr <- read_csv(here(wddir, "supp_penn_cmrids",
+                     "supp_penn_cmrids.csv")) %>% 
+  select(!c(2:14)) %>% 
+  clean_names()
+
+```
+
+## DB Connection
+
+```{r}
+tryCatch({
+    drv <- dbDriver("Postgres")
+    print("Connecting to Database…")
+    connection <- dbConnect(drv,
+                 dbname = Sys.getenv("aws_dbname"),
+                 host = Sys.getenv("aws_host"),
+                 port = Sys.getenv("aws_port"),
+                 user = Sys.getenv("aws_user"),
+                 password = Sys.getenv("aws_password"),
+                 timezone=NULL)
+    print("Database Connected!")
+    },
+    error=function(cond) {
+            print("Unable to connect to Database.")
+    })
+
+dbExecute(connection, "set search_path to survey_data")
+```
+
+## Merge unique visits include site
+
+### Merge all site visits
+
+```{r}
+
+comms <- survey_info %>% 
+  select(site, sampling_event_comments, date)
+
+unique_visits2 <- bind_rows(survey_info, survey_acoustic, survey_capture, survey_edna, survey_ves) %>% 
+  select(date, site, survey_time) %>% 
+  group_by(date, site) %>% 
+  mutate(temp_id = cur_group_id()) %>% 
+  filter(!duplicated(temp_id)) %>% 
+  left_join(comms, by = c("site", "date")) %>% 
+  select(!temp_id) %>% 
+  rename(visit_comments = sampling_event_comments) %>% 
+  mutate(site = str_to_lower(site),
+         site = str_replace_all(site, "-", "_"),
+         site = str_replace_all(site, " ", "_"),
+         survey_time = str_to_lower(survey_time)) %>% 
+  ungroup()
+
+```
+
+### Pull site f.key
+
+```{r}
+
+s.fkey_q <- "select site, site_id
+            from site;"
+
+s.key <- dbGetQuery(connection, s.fkey_q)
+
+```
+
+### populate site k.key on visit table
+
+```{r}
+
+unique_visits_fkey <- unique_visits %>% 
+  inner_join(s.key, by = c("site")) %>% 
+  group_by(date, site) %>% 
+  mutate(visit_id = UUIDgenerate()) %>% 
+  ungroup()
+
+
+```
+
+### final site tabe
+
+```{r}
+
+fin_visit <- unique_visits_fkey %>% 
+  ungroup() %>% 
+  select(!c(site))
+
+
+
+dbAppendTable(connection, "visit", fin_visit)
+  
+
+```
+
+## Survey data include date and survey_time
+
+### Merge all survey data
+
+```{r}
+
+mid_surv_cap <- survey_info %>% 
+  left_join(survey_capture, by = c("site", "date")) %>%
+  select(!c(fulcrum_id.x, fulcrum_id.y, observer, observer_other, site_other.x, site_other.y,
+            start_time.x, end_time.x, survey_time.y, air_temperature_measurement_time,
+            water_temperature_measurement_time)) %>% 
+  mutate(detection_type = "capture") %>% 
+  unite(observer, c("observers", "other_observers"), sep=",", na.rm = T) %>% 
+  rename(start_time = start_time.y,
+         end_time = end_time.y,
+         survey_time = survey_time.x)
+
+mid_surv_ves <- survey_info %>% 
+  left_join(survey_ves, by = c("site", "date")) %>% 
+  select(!c(fulcrum_id.x, fulcrum_id.y, observer, observer_other, site_other,
+            start_time.x, end_time.x, survey_time.y, air_temperature_measurement_time,
+            water_temperature_measurement_time)) %>% 
+  mutate(detection_type = "visual") %>% 
+  unite(observer, c("observers", "other_observers"), sep=",", na.rm = T) %>% 
+  rename(start_time = start_time.y,
+         end_time = end_time.y,
+         survey_time = survey_time.x)
+
+mid_surv_aural <- survey_info%>% 
+  select(!c(fulcrum_id, site_other, start_time, end_time, survey_time)) %>% 
+  mutate(detection_type = "aural")
+
+surv_info <- plyr::rbind.fill(mid_surv_cap, mid_surv_ves, mid_surv_aural)
+
+
+mid_unique_survey <- plyr::rbind.fill(survey_acoustic, survey_capture, survey_ves) %>% 
+  select(!c(fulcrum_id, observer, observer_other, acoustic_survey_comments)) %>% 
+  full_join(surv_info, by = c("site", "date", "detection_type")) %>% 
+  select(!c(site_other, air_temperature_measurement_time, water_temperature_measurement_time, end_time.y,
+            start_time.y, observers, other_observers, survey_time.x, survey_time.y)) %>% 
+  rename(start_time = start_time.x,
+         end_time = end_time.x) %>% 
+  mutate(survey_time = "Night") %>% 
+  unite(survey_comments, c("survey_comments.x", "survey_description.x", "survey_comments.y", "survey_description.y"),
+        sep = ",", na.rm=T)
+
+unique_survey <- surv_info %>% 
+  group_by(site, date, detection_type) %>% 
+  mutate(start_time = as_hms(mean(start_time)),
+         end_time = as_hms(mean(end_time))) %>% 
+  select(!c("water_temperature_measurement_time", "air_temperature_measurement_time", "other_observers", "observers")) %>% 
+  unite(survey_comments, c("survey_comments", "sampling_event_comments", "survey_description"), na.rm = T, sep = ",") %>% 
+  rename(wind = wind_conditions,
+         sky = sky_conditions,
+         relative_humidity_percent = humidity,
+         pressure_psi = pressure, # need to confirm units
+         wind_speed_m_s = wind_speed_ms,
+         air_temp_c = air_temperature_c,
+         dissolved_o2_percent = dissolved_oxygen,
+         tds_ppm = total_dissolved_solids, # need to confirm units
+         water_temp_c = water_temperature_c,
+         p_h = ph) %>% 
+  mutate(survey_time = str_to_lower(survey_time),
+         site = str_to_lower(str_replace_all(site, "-", "_")),
+         site = str_replace_all(site, " ", "_")) %>% 
+  mutate(temp_id = cur_group_id(),
+         survey_time = if_else(is.na(survey_time), "night", survey_time),
+         date = as.character(date)) %>% 
+  filter(!duplicated(temp_id)) %>% 
+  select(!temp_id) %>% 
+  ungroup() %>% 
+  add_row(date = "2023-06-23", site = "tuttle_pond", survey_time = "night", detection_type = "capture") %>% 
+  add_row(date = "2023-06-23", site = "tuttle_pond", survey_time = "night", detection_type = "visual") %>% 
+  add_row(date = "2023-06-23", site = "tuttle_pond", survey_time = "night", detection_type = "aural") %>% 
+  mutate(date = as_date(date))
+
+
+
+```
+
+### Pull visit pkey from unique table above
+
+```{r}
+
+surv_fkey <- unique_visits_fkey %>% 
+  select(date, visit_id, site)
+
+
+```
+
+### Join visit pkey into surv fkey
+
+```{r}
+
+unique_survey_fkey <- unique_survey %>% 
+  full_join(surv_fkey, by = c("date", "site")) %>% 
+  mutate(p_h = if_else(p_h == 0.00, NA, p_h)) %>% 
+  group_by(site, date, detection_type) %>% 
+  mutate(survey_id = UUIDgenerate(output = c("uuid"))) %>% 
+  filter(!duplicated(survey_id)) %>% 
+  mutate(duration_min = if_else(end_time < start_time,
+                            as_hms(86400) - start_time + end_time,
+                            end_time - start_time),
+         duration_min = duration_min/60,
+         duration_min = str_remove(duration_min, " secs"),
+         duration_min  = round(as.numeric(duration_min), 2)) %>% 
+  group_by(date, site) %>% 
+  mutate(survey_time = if_else(is.na(survey_time), "night", survey_time)) %>% 
+  select(!c(conductivity_us))
+
+```
+
+### final survey table
+
+```{r}
+
+fin_survey <- unique_survey_fkey %>% 
+  ungroup() %>% 
+  select(!c(date, survey_time, site)) %>% 
+  rename(
+         duration_minutes = duration_min) %>% 
+  mutate(duration_minutes = as.integer(duration_minutes))
+
+dbAppendTable(connection, "survey", fin_survey)
+
+```
+
+## Capture table
+
+### merge and clean capture tables
+
+```{r}
+#cap_col <- read_csv(here("clean_tables", "capture.csv"))
+
+
+mid_cap <- survey_info %>% 
+  left_join(survey_capture, by = c("site" , "date")) %>% 
+  select(fulcrum_id.y, detection_type, date, site, survey_time.x) %>% 
+  rename(fulcrum_id = fulcrum_id.y,
+         survey_time = survey_time.x) %>% 
+  left_join(capture_obs, by = c("fulcrum_id" = "fulcrum_parent_id")) %>% 
+  select(detection_type.x, date, site, survey_time, detection_type.x, body_temperature, bag_id, species_capture, 
+         time_of_capture, microhabitat_type, microhabitat_wet, microhabitat_temperature, amphibian_comments)
+
+mid_samp_proc <- samp_proces %>% 
+  left_join(samp_procces_obs, by= c("fulcrum_id" = "fulcrum_parent_id")) %>% 
+  select(!c(fulcrum_id, fulcrum_id.y, fulcrum_record_id, c(norep_bathvolume_50ml_acid_05ml:ul_of_norep_01688mgml),
+            c(photo:photo_url), c(amp_ig_ne_injected:amp_ig_comments)))
+
+neg_controls <- mid_samp_proc %>% 
+  filter(species_capture == "Negative Control") %>% 
+  select(!c(processor_other, sex_other, survey_comments, life_stage_other)) %>% 
+  select(!c(species_capture_other:body_mass)) %>% 
+  rename(site = location) %>% 
+  mutate(species_capture = str_to_lower(str_replace_all(species_capture, " ", "_")),
+         survey_time = str_to_lower(survey_time),
+         site = str_to_lower(str_replace_all(site, " ", "_")))
+
+mid_samp_proc <- mid_samp_proc %>% 
+  filter(!species_capture == "Negative Control") %>% 
+  select(!species_capture_other)
+
+unique_cap <- mid_samp_proc %>% 
+  left_join(mid_cap, by = c("location"= "site", "date", "bag_id")) %>% 
+  select(!c(survey_time.y, species_capture.y, life_stage_other, sex_other,
+            survey_comments)) %>% 
+  rename(detection_type = detection_type.x,
+         survey_time = survey_time.x,
+         species_capture = species_capture.x,
+         site = location) %>% 
+  unite(processor, c("processor", "processor_other"), na.rm = T, sep = "") %>% 
+  mutate(site = str_to_lower(str_replace_all(site, "-", "_")),
+         site = str_replace_all(site, " ", "_"),
+         species_capture = str_to_lower(str_replace_all(species_capture, " ", "_")),
+         survey_time = str_to_lower(survey_time)) %>% 
+  unite(capture_comments, c("amphibian_comments", "capture_comments"), na.rm = T,
+        sep = ", ") %>% 
+  rename(body_temp_c = body_temperature,
+         svl_mm = snout_vent_length,
+         body_and_bag_mass_g = body_and_bag_mass,
+         bag_mass_g = bag_mass,
+         body_mass_g = body_mass) %>% 
+  ungroup() %>% 
+  mutate(amp_id = if_else(capture_mark_recapture %in% ("cf358e11-d6da-4637-af56-c384d683e6fb"), "Pe_AMP00000", amp_id))
+
+
+
+```
+
+### populate survey fkey
+
+```{r}
+
+cap_fkey <- unique_survey_fkey %>% 
+  select(site, date, detection_type, survey_time, survey_id)
+
+
+unique_cap_fkey <- unique_cap %>% 
+  mutate(detection_type = "capture",
+         capture_id = UUIDgenerate(n = n())) %>% 
+  left_join(cap_fkey, by = c("site", "date", "detection_type", "survey_time"))
+  
+
+```
+
+### final capture table
+
+#### empty column search
+
+## create empty columns in DB which are new to this data set
+
+```{r}
+
+final_cap <- unique_cap_fkey %>% 
+  select(!c(survey_time, detection_type, site, date)) %>% 
+  rename(microbiome_swab_id = microbiome_id,
+         sierra_bd_swab_id = bd_swab_id_sv) %>% 
+  mutate(sex = str_to_lower(sex),
+         capture_type = str_to_lower(capture_type),
+         life_stage = str_to_lower(life_stage)) %>% 
+  mutate(across(c(bd_swab_id:genetic_id), ~ifelse(str_detect(., "00000"), NA, .))) %>% 
+  select(!c(sierra_bd_swab_id, bacterial_swab_id_foundations, location_other))
+
+
+q_col <- "SELECT *
+          FROM capture
+          LIMIT 1;"
+
+col_names <- dbGetQuery(connection, q_col) %>%
+  colnames()
+
+db_cols <- final_cap %>%
+  colnames()
+
+missing_cols <- setdiff(db_cols, col_names) %>%
+  print() %>%
+  as.character()
+
+
+add_col_q <- paste0("alter table capture
+                  add ", missing_cols[1]," varchar;")
+
+dbExecute(connection, add_col_q)
+
+add_col_q <- paste0("alter table capture
+                  add ", missing_cols[2]," varchar;")
+
+dbExecute(connection, add_col_q)
+
+
+
+dbAppendTable(connection, "capture", final_cap)
+
+```
+
+## VES
+
+### clean and merged ves data
+
+```{r}
+
+ves_c <- read_csv(here("clean_tables", "ves.csv"))
+
+mid_ves <- survey_ves %>% 
+  left_join(ves_obs, by = c("fulcrum_id" = "fulcrum_parent_id")) %>% 
+  select(!c(fulcrum_id, detection_type.x, fulcrum_id.y, fulcrum_record_id, start_time, end_time,
+            survey_description)) %>% 
+  rename(detection_type = detection_type.y)
+
+
+unique_ves <- mid_ves %>% 
+  unite(observer, c("observer", "observer_other"), na.rm = T, sep = "") %>% 
+  unite(species_ves, c("species_ves", "species_ves_other"), na.rm = T, sep = "") %>% 
+  mutate(site = str_to_lower(str_replace_all(site, " ", "_")),
+         site = str_replace_all(site, "-", "_"),
+         survey_time = str_to_lower(survey_time),
+         species_ves = str_to_lower(str_replace_all(species_ves, " ", "_"))) %>% 
+  rename(ves_comments = comments_ves,
+         count = count_ves)
+
+
+```
+
+### populate VES fkey
+
+```{r}
+
+ves_fkey <- unique_survey_fkey %>% 
+  select(site, date, detection_type, survey_time, survey_id)
+
+unique_ves_fkey <- unique_ves %>% 
+  left_join(ves_fkey, by = c("site", "date", "detection_type", "survey_time")) %>% 
+  mutate(ves_id = UUIDgenerate(n = n()),
+         species_ves = if_else(species_ves == "", NA, species_ves)) %>% 
+  drop_na(species_ves)
+
+
+
+```
+
+### final ves table
+
+```{r}
+
+final_ves <- unique_ves_fkey %>% 
+  select(!c(site, date, survey_time, detection_type))
+
+dbAppendTable(connection, "ves", final_ves)
+
+```
+
+## aural
+
+### clean and merge arual
+
+```{r}
+
+aural_cols <- read_csv(here("clean_tables", "aural.csv"))
+
+
+mid_aural <- survey_acoustic %>% 
+  left_join(acoustic_obs, by = c("fulcrum_id" = "fulcrum_parent_id"))%>% 
+  select(!c(fulcrum_id, detection_type.x, fulcrum_id.y, fulcrum_record_id, start_time, end_time,
+            observer_other, species_acoustic_other, acoustic_survey_comments))
+
+unique_aural <- mid_aural %>% 
+  rename(detection_type = detection_type.y) %>% 
+  mutate(site = str_to_lower(str_replace_all(site, " ", "_")),
+         site = str_replace_all(site, "-", "_"),
+         species_acoustic = str_to_lower(str_replace_all(species_acoustic, " ", "_")),
+         survey_time = str_to_lower(survey_time)) %>% 
+  rename(species_aural = species_acoustic,
+         aural_comments = acoustic_species_comments)
+  
+
+
+```
+
+### populate aural fkey
+
+```{r}
+
+aural_fkey <- unique_survey_fkey %>% 
+  select(site, date, detection_type, survey_time, survey_id)
+
+
+unique_aural_fkey <- unique_aural %>% 
+  mutate(detection_type = "aural",
+         aural_id = UUIDgenerate(n = n())) %>% 
+  left_join(aural_fkey, by = c("site", "date", "detection_type", "survey_time"))
+  
+
+```
+
+### final aural table
+
+```{r}
+
+final_aural <- unique_aural_fkey %>% 
+  select(!c(site, date, detection_type, survey_time))
+
+dbAppendTable(connection, "aural", final_aural)
+
+```
+
+## CMR table
+
+```{r}
+
+cmr_cols <- read_csv(here("clean_tables", "penn_cmr.csv"))
+
+final_cmr <- cmr %>% 
+  select(!c(species_other, location, species)) %>% 
+  unite(cmr, c("cmr_id", "cmr_id_other"), na.rm = T, sep = "") %>% 
+  rename(capture_mark_recapture = fulcrum_id,
+         cmr_id = cmr)
+
+dbAppendTable(connection, "cmr", final_cmr)
+
+```
