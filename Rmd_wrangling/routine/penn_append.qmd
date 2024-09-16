@@ -18,7 +18,7 @@ librarian::shelf(tidyverse, here, janitor, lubridate, RPostgres, stringr, DBI, p
 
 ## Point to data directory
 
-Keeping data in a central directory. Naming convention uses download date to distinguish batches. Will parse for redundancy below.
+Keeping data in a central directory. Naming convention uses download date to distinguish batches.
 
 ```{r}
 ddir = Sys.getenv("data_dir")  # data directory
@@ -32,83 +32,97 @@ wddir = here(ddir, "fulcrum", 'penn', '2024-09-13') # working data directory
 * read in csv files
 * drop unnecessary fulcrum columns
 * clean column names
+* drop/mutate specific columns
 
 ```{r}
 
-# can we move away from using column indices to trim? Using column names will throw an erro if the fulcrum metatada conventions ever change.
+# Fulcrum columns to drop. Best practice to drop by name
+ to_drop = c(
+   "created_at",
+   "updated_at",
+   "created_by",
+   "updated_by",
+   "system_created_at",
+   "system_updated_at",
+   "version",
+   "status",
+   "project",
+   "assigned_to",
+   "latitude" ,
+   "longitude",
+   "geometry"
+ )
 
 survey_info <- read_csv(here(wddir, "1_penn_surveyinformation",
-                             "1_penn_surveyinformation.csv")) %>% 
-  select(!c(2:14)) %>% 
+                             "1_penn_surveyinformation.csv")) %>%
+  select(!any_of(to_drop)) %>%
   clean_names()
 
 survey_acoustic <- read_csv(here(wddir, "2_penn_acousticsurvey",
-                                 "2_penn_acousticsurvey.csv")) %>% 
-  select(!c(2:14)) %>% 
-  clean_names() %>% 
+                                 "2_penn_acousticsurvey.csv")) %>%
+  select(!any_of(to_drop)) %>%
+  clean_names() %>%
   mutate(detection_type = "aural")
 
 acoustic_obs <- read_csv(here(wddir, "2_penn_acousticsurvey",
-                              "2_penn_acousticsurvey_acoustic_survey.csv")) %>% 
-  select(!c(4:11)) %>% 
-  clean_names()%>% 
+                              "2_penn_acousticsurvey_acoustic_survey.csv")) %>%
+  select(!any_of(to_drop)) %>%
+  clean_names()%>%
   mutate(detection_type = "aural")
 
-
 survey_edna <- read_csv(here(wddir, "3_penn_ednasurvey",
-                             "3_penn_ednasurvey.csv")) %>% 
-  select(!c(2:14)) %>% 
+                             "3_penn_ednasurvey.csv")) %>%
+  select(!any_of(to_drop)) %>%
   clean_names()
-
 
 edna_obs_col <- read_csv(here(wddir, "3_penn_ednasurvey",
-                              "3_penn_ednasurvey_edna_collection.csv")) %>% 
-  select(!c(4:11)) %>% 
+                              "3_penn_ednasurvey_edna_collection.csv")) %>%
+  select(!any_of(to_drop)) %>%
   clean_names()
 
-
 edna_obs_filt <- read_csv(here(wddir, "3_penn_ednasurvey",
-                               "3_penn_ednasurvey_edna_collection_edna_filtering.csv")) %>% 
-  select(!c(4:11)) %>% 
+                               "3_penn_ednasurvey_edna_collection_edna_filtering.csv")) %>%
+  select(!any_of(to_drop)) %>%
   clean_names()
 
 survey_ves <- read_csv(here(wddir, "4_penn_visualencountersurvey",
-                            "4_penn_visualencountersurvey.csv")) %>% 
-  select(!c(2:14)) %>% 
-  clean_names()%>% 
+                            "4_penn_visualencountersurvey.csv")) %>%
+  select(!any_of(to_drop)) %>%
+  clean_names()%>%
   mutate(detection_type = "visual")
 
 ves_obs <- read_csv(here(wddir, "4_penn_visualencountersurvey", 
-                         "4_penn_visualencountersurvey_visual_encounter_information.csv")) %>% 
-  select(!c(4:11)) %>% 
-  clean_names()%>% 
+                         "4_penn_visualencountersurvey_visual_encounter_information.csv")) %>%
+  select(!any_of(to_drop)) %>%
+  clean_names()%>%
   mutate(detection_type = "visual")
 
 survey_capture <- read_csv(here(wddir, "5_penn_capturesurvey",
-                                "5_penn_capturesurvey.csv")) %>% 
-  select(!c(2:14)) %>% 
-  clean_names()%>% 
+                                "5_penn_capturesurvey.csv")) %>%
+  select(!any_of(to_drop)) %>%
+  clean_names()%>%
   mutate(detection_type = "capture")
 
 capture_obs <- read_csv(here(wddir, "5_penn_capturesurvey", 
-                             "5_penn_capturesurvey_captured_amphibian_information.csv")) %>% 
-  select(!c(4:12)) %>% 
-  clean_names()%>% 
+                             "5_penn_capturesurvey_captured_amphibian_information.csv")) %>%
+  select(!any_of(to_drop)) %>%
+  select(!"capture_status") %>%
+  clean_names()%>%
   mutate(detection_type = "capture")
 
 samp_proces <- read_csv(here(wddir, "6_penn_sampleprocessing",
-                             "6_penn_sampleprocessing.csv")) %>% 
-  select(!c(2:14)) %>% 
+                             "6_penn_sampleprocessing.csv")) %>%
+  select(!any_of(to_drop)) %>%
   clean_names()
 
 samp_procces_obs <- read_csv(here(wddir, "6_penn_sampleprocessing",
-                                  "6_penn_sampleprocessing_amphibian_capture_survey_collections.csv"))%>% 
-  select(!c(4:11)) %>% 
+                                  "6_penn_sampleprocessing_amphibian_capture_survey_collections.csv")) %>%
+  select(!any_of(to_drop)) %>%
   clean_names()
 
 cmr <- read_csv(here(wddir, "supp_penn_cmrids",
-                     "supp_penn_cmrids.csv")) %>% 
-  select(!c(2:14)) %>% 
+                     "supp_penn_cmrids.csv")) %>%
+  select(!any_of(to_drop)) %>%
   clean_names()
 
 ```
@@ -141,15 +155,16 @@ dbExecute(connection, "set search_path to survey_data")
 
 ```{r}
 
+# site info comments
 comms <- survey_info %>% 
   select(site, sampling_event_comments, date)
 
-unique_visits2 <- bind_rows(survey_info, survey_acoustic, survey_capture, survey_edna, survey_ves) %>% 
-  select(date, site, survey_time) %>% 
-  group_by(date, site) %>% 
+unique_visits <- bind_rows(survey_info, survey_acoustic, survey_capture, survey_edna, survey_ves) %>% 
+  select(date, site, survey_time) %>%
+  group_by(date, site) %>%
   mutate(temp_id = cur_group_id()) %>% 
-  filter(!duplicated(temp_id)) %>% 
-  left_join(comms, by = c("site", "date")) %>% 
+  filter(!duplicated(temp_id)) %>%
+  left_join(comms, by = c("site", "date")) %>% # merge comments across all times
   select(!temp_id) %>% 
   rename(visit_comments = sampling_event_comments) %>% 
   mutate(site = str_to_lower(site),
@@ -164,8 +179,7 @@ unique_visits2 <- bind_rows(survey_info, survey_acoustic, survey_capture, survey
 
 ```{r}
 
-s.fkey_q <- "select site, site_id
-            from site;"
+s.fkey_q <- "select site, site_id from site;"
 
 s.key <- dbGetQuery(connection, s.fkey_q)
 
@@ -176,7 +190,7 @@ s.key <- dbGetQuery(connection, s.fkey_q)
 ```{r}
 
 unique_visits_fkey <- unique_visits %>% 
-  inner_join(s.key, by = c("site")) %>% 
+  inner_join(s.key, by = c("site")) %>% # assumes no new sites
   group_by(date, site) %>% 
   mutate(visit_id = UUIDgenerate()) %>% 
   ungroup()
@@ -184,7 +198,7 @@ unique_visits_fkey <- unique_visits %>%
 
 ```
 
-### final site tabe
+### final site table
 
 ```{r}
 
