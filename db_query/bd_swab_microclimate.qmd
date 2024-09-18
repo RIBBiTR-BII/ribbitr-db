@@ -1,0 +1,157 @@
+---
+title: "ribbitr_db: Bd swab & microclimate query"
+author: "Cob Staines"
+format: html
+editor: visual
+---
+
+# RIBBiTR_DB: Pulling Bd swab & microclimate data
+
+## Dependencies
+
+```{r}
+if (!require(librarian)){
+  install.packages("librarian")
+  library(librarian)
+}
+
+# librarian downloads if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, DBI, RPostgres, here)
+```
+
+## Connect to DB
+
+```{r}
+tryCatch({
+    print("Connecting to Database…")
+    connection <- dbConnect(drv = dbDriver("Postgres"),
+                 dbname = Sys.getenv("aws_dbname"),
+                 host = Sys.getenv("aws_host"),
+                 port = Sys.getenv("aws_port"),
+                 user = Sys.getenv("aws_user"),
+                 password = Sys.getenv("aws_password"),
+                 timezone=NULL)
+    print("Database Connected!")
+    },
+    error=function(cond) {
+            print("Unable to connect to Database.")
+    })
+
+# dbDisconnect(connection)
+```
+
+## Query Bd swabs for site/species combos with samples >= 150
+
+```{r}
+
+# return list of species and sites with swab counts >= threshold
+# adjust threshold as desired
+swab_site_spp_q = "select count(*), c.species_capture, s2.site, s2.site_id, r.region
+	from ribbitr.survey_data.qpcr_bd_results qbr
+	join ribbitr.survey_data.capture c
+		on qbr.bd_swab_id = c.bd_swab_id
+	join ribbitr.survey_data.survey s
+		on c.survey_id =s.survey_id
+	join ribbitr.survey_data.visit v
+		on s.visit_id = v.visit_id 
+	join ribbitr.survey_data.site s2 
+		on v.site_id = s2.site_id 
+	join ribbitr.survey_data.region r
+		on s2.region_id = r.region_id
+	group by c.species_capture, s2.site, s2.site_id, r.region
+		having count(*) >= 150
+	order by c.species_capture, s2.site"
+
+swab_site_spp = dbGetQuery(connection,swab_site_spp_q)
+
+# unique list of species
+(swab_spp = unique(swab_site_spp$species_capture))
+# convert to swab_spp to string for use in query
+swab_spp_str = paste(paste0("'", swab_spp, "'"), collapse = ", ")
+
+# unique list of sites
+swab_sites = swab_site_spp %>%
+  select(-species_capture, -count) %>%
+  distinct()
+
+swab_sites
+```
+
+## Query hobos for sites
+```{r}
+hobo_sites_q = "select hs.site, hs.hobo_site_id, hr.region
+	from ribbitr.hobo.hobo_site hs
+	join ribbitr.hobo.hobo_region hr 
+		on hs.hobo_region_id = hr.hobo_region_id"
+
+(hobo_sites = dbGetQuery(connection, hobo_sites_q))
+```
+
+## Join to find common hobo and swab sites
+
+```{r}
+common_sites = swab_sites %>%
+  inner_join(hobo_sites, by = c("site", "region"))
+
+# convert to site_id strings for use in query
+site_id_str = paste(paste0("'", common_sites$site_id, "'"), collapse = ", ")
+hobo_site_id_str = paste(paste0("'", common_sites$hobo_site_id, "'"), collapse = ", ")
+```
+
+## Query bd swab data
+
+Returning only swab_spp (thresholded) species found at common (swab & hobo) sites
+
+```{r}
+bd_q = paste0("select *
+	from ribbitr.survey_data.qpcr_bd_results qbr
+	join ribbitr.survey_data.capture c
+		on qbr.bd_swab_id = c.bd_swab_id
+	join ribbitr.survey_data.survey s
+		on c.survey_id =s.survey_id
+	join ribbitr.survey_data.visit v
+		on s.visit_id = v.visit_id 
+	join ribbitr.survey_data.site s2 
+		on v.site_id = s2.site_id 
+	join ribbitr.survey_data.region r
+		on s2.region_id = r.region_id
+	join ribbitr.survey_data.location l
+		on r.location_id = l.location_id
+	where c.species_capture in (", swab_spp_str,")
+	  and s2.site_id in (", site_id_str,")")
+
+(bd_swab = dbGetQuery(connection,bd_q))
+
+# write to file
+write_csv(bd_swab, here("staging", paste0("ecophys_bdswab_", today(), ".gz")))
+
+```
+
+
+
+## Query all hobo data
+
+```{r}
+hobo_q = paste0("select *
+	from ribbitr.hobo.hobo h
+	join ribbitr.hobo.hobo_site hs
+		on h.hobo_site_id = hs.hobo_site_id 
+	join ribbitr.hobo.hobo_region hr 
+		on hs.hobo_region_id = hr.hobo_region_id
+	join ribbitr.hobo.hobo_location hl 
+		on hr.hobo_location_id = hl.hobo_location_id
+	where hs.hobo_site_id in (", hobo_site_id_str,")")
+
+(hobo = dbGetQuery(connection,hobo_q))
+
+#drop all na columns
+na_count = hobo %>%
+  select(-hobo_site_id, -hobo_region_id, -hobo_location_id) %>%
+  summarize(across(everything(), ~ sum(is.na(.))))
+hobo_trim = hobo[,na_count != nrow(hobo)]
+
+
+
+# write to file
+write_csv(hobo_trim, here("staging", paste0("ecophys_hobo_", today(), ".gz")))
+```
