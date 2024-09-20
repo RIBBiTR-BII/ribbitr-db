@@ -1,0 +1,270 @@
+---
+title: "Data Dictionaries: Build & Maintain"
+author: Cob Staines
+format: html
+editor: visual
+---
+
+```{r setup, include=FALSE}
+if (!require(librarian)){
+  install.packages("librarian")
+  library(librarian)
+}
+
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, DBI, RPostgres, here)
+```
+
+
+## Connect to DB
+
+```{r}
+# establish connection
+tryCatch({
+  print("Connecting to Database…")
+  con <- dbConnect(dbDriver("Postgres"),
+                          dbname = Sys.getenv("aws_dbname"),
+                          host = Sys.getenv("aws_host"),
+                          port = Sys.getenv("aws_port"),
+                          user = Sys.getenv("aws_user"),
+                          password = Sys.getenv("aws_password"),
+                          timezone=NULL)
+  print("Database Connected!")
+},
+error=function(cond) {
+  print("Unable to connect to Database.")
+})
+
+```
+
+
+## Pull Schemas
+
+```{r}
+schemas <- dbGetQuery(con, "SELECT schema_name FROM information_schema.schemata")$schema_name
+schemas <- schemas[!schemas %in% c("information_schema", "pg_catalog")]
+```
+
+## Define functions to pull table and column metadata
+
+```{r}
+build_column_dictionary <- function(schema) {
+  query <- paste0("
+    SELECT 
+      c.table_schema,
+      c.table_name,
+      c.column_name,
+      c.data_type,
+      c.character_maximum_length,
+      c.numeric_precision,
+      c.datetime_precision,
+      c.is_nullable,
+      c.column_default,
+      c.ordinal_position,
+      pg_catalog.col_description(format('%s.%s',c.table_schema,c.table_name)::regclass::oid, c.ordinal_position) as pg_description,
+      CASE 
+        WHEN tc.constraint_type = 'PRIMARY KEY' THEN 'PK'
+        WHEN tc.constraint_type = 'FOREIGN KEY' THEN 'FK'
+        WHEN tc.constraint_type = 'UNIQUE' THEN 'UQ'
+        ELSE NULL
+      END as key_type
+    FROM 
+      information_schema.columns c
+    LEFT JOIN 
+      information_schema.key_column_usage kcu
+      ON c.table_schema = kcu.table_schema
+      AND c.table_name = kcu.table_name
+      AND c.column_name = kcu.column_name
+    LEFT JOIN 
+      information_schema.table_constraints tc
+      ON kcu.table_schema = tc.table_schema
+      AND kcu.table_name = tc.table_name
+      AND kcu.constraint_name = tc.constraint_name
+    WHERE 
+      c.table_schema = '", schema, "'
+    ORDER BY 
+      c.table_name, c.ordinal_position
+  ")
+  
+  columns <- dbGetQuery(con, query)
+  
+  return(columns)
+}
+
+build_table_dictionary <- function(schema) {
+  query <- paste0("
+    SELECT 
+      t.table_schema, t.table_name,
+      (SELECT count(*) FROM information_schema.columns c WHERE c.table_name = t.table_name) as column_count,
+      pg_catalog.obj_description(format('%s.%s',t.table_schema,t.table_name)::regclass::oid, 'pg_class') as table_description
+    FROM 
+      information_schema.tables t
+    WHERE 
+      t.table_schema = '", schema, "'
+  ")
+  
+  tables <- dbGetQuery(con, query)
+  
+  return(tables)
+}
+
+column_dict_supplementray = c(
+  "column_descritpion",
+  "units",
+  "format",
+  "natural_key",
+  "reviewed"
+)
+
+
+dict_supplementary_mutate <- function(dict, supplementary) {
+  for (new_cols in supplementary) {
+    dict[,new_cols] <- NA
+  }
+  
+  dict$reviewed = FALSE
+  
+  return(dict)
+}
+
+```
+
+# Build and store data dictionaries locally (temp)
+
+```{r}
+for (schema in schemas) {
+  column_dict_build <- build_column_dictionary(schema)
+  column_dict_build <- dict_supplementary_mutate(column_dict_build, column_dict_supplementray)
+  
+  
+  table_dict_build <- build_table_dictionary(schema)
+  
+  dir.create(file.path(here("staging", "metadata", schema)), showWarnings = FALSE)
+  
+  write.csv(column_dict_build, here("staging", "metadata", schema, "column_dict.csv"), row.names = FALSE)
+  write.csv(table_dict_build, here("staging", "metadata", schema, "table_dict.csv"), row.names = FALSE)
+}
+
+write.csv(schemas, here("staging", "metadata","schemas.csv"), row.names = FALSE)
+```
+
+# Write data dictionaries from csv to db
+```{r}
+
+write_dictionaries <- function() {
+
+schemas = read.csv(here("staging", "metadata","schemas.csv"))$x
+  
+  for (schema in schemas) {
+    # Load dictionaries from file
+    column_dict_write = read.csv(here("staging", "metadata", schema, "column_dict.csv"))
+    bable_dict_write = read.csv(here("staging", "metadata", schema, "table_dict.csv"))
+    
+    # Write column dictionary
+    dbWriteTable(con, 
+                 name = Id(schema, paste0(schema, "_column_dictionary")),
+                 value = column_dict_write, 
+                 overwrite = TRUE)
+    
+    # Write table dictionary
+    dbWriteTable(con, 
+                 name = Id(schema, paste0(schema, "_table_dictionary")),
+                 value = table_dict_write, 
+                 overwrite = TRUE)
+    
+    cat("Dictionaries created for schema:", schema, "\n")
+  }
+}
+
+write_dictionaries()
+
+```
+
+## Define function to maintain & update dictionaries
+
+```{r}
+pull_dictionaries <- function(schemas) {
+  for (schema in schemas) {
+    column_dict_pull <- dbReadTable(con, Id(schema, paste0(schema, "_column_dictionary")))
+    table_dict_pull <- dbReadTable(con, Id(schema, paste0(schema, "_table_dictionary")))
+    
+    dir.create(file.path(here("staging", "metadata", schema)), showWarnings = FALSE)
+  
+    write.csv(column_dict_pull, here("staging", "metadata", schema, "column_dict.csv"), row.names = FALSE)
+    write.csv(table_dict_pull, here("staging", "metadata", schema, "table_dict.csv"), row.names = FALSE)
+  }
+  
+  
+}
+
+compare_dictionaries <- function(schema) {
+  # Get current column dictionary
+  column_dict_read <- dbReadTable(con, Id(schema, paste0(schema, "_column_dictionary"))) %>%
+    select(-column_dict_supplementray)  #Troubleshoot this!
+  
+  # Get current table dictionary
+  table_dict_read <- dbReadTable(con, Id(schema, paste0(schema, "_table_dictionary")))
+  
+  # Build new dictionaries
+  new_column_dict <- build_column_dictionary(schema)
+  new_table_dict <- build_table_dictionary(schema)
+  
+  # Check for changes in columns
+  column_changes <- anti_join(new_column_dict, current_column_dict, 
+                              by = c("table_schema", "table_name", "column_name"))
+  
+  # Check for changes in tables
+  table_changes <- anti_join(new_table_dict, current_table_dict, 
+                             by = c("table_schema","table_name"))
+  
+  if (nrow(column_changes) > 0 || nrow(table_changes) > 0) {
+    cat("Changes detected in schema:", schema, "\n")
+    
+    if (nrow(column_changes) > 0) {
+      cat("Column changes:\n")
+      print(column_changes)
+    }
+    
+    if (nrow(table_changes) > 0) {
+      cat("Table changes:\n")
+      print(table_changes)
+    }
+    
+    update <- readline(prompt = "Do you want to update the dictionaries? (y/n): ")
+    
+    if (tolower(update) == "y") {
+      # Update column dictionary
+      dbWriteTable(con, 
+                   name = c(schema, paste0(schema, "_column_dictionary")),
+                   value = new_column_dict, 
+                   overwrite = TRUE)
+      
+      # Update table dictionary
+      dbWriteTable(con, 
+                   name = c(schema, paste0(schema, "_table_dictionary")),
+                   value = new_table_dict, 
+                 overwrite = TRUE)
+      
+      cat("Dictionaries updated for schema:", schema, "\n")
+    } else {
+      cat("Update cancelled for schema:", schema, "\n")
+    }
+  } else {
+    cat("No changes detected in schema:", schema, "\n")
+  }
+}
+```
+
+## Update dictionaries
+
+```{r}
+for (schema in schemas) {
+  update_dictionaries(schema)
+}
+```
+
+## Close connection
+
+```{r}
+dbDisconnect(con)
+```
