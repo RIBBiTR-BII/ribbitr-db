@@ -127,13 +127,45 @@ cmr <- read_csv(here(wddir, "supp_penn_cmrids",
 
 ```
 
+
+## Merge unique visits include site
+
+### Merge all site visits
+
+* pull unique visits from survey_info, survey_acoustic, survey_capture, survey_edna, and survey_ves
+* spread site_info comments across all corresponding visits
+
+```{r}
+
+# site info comments
+comms <- survey_info %>% 
+  select(site, sampling_event_comments, date)
+
+unique_visits <- bind_rows(survey_info, survey_acoustic, survey_capture, survey_edna, survey_ves) %>% 
+  select(date, site, survey_time) %>%
+  filter(!is.na(site)) %>%  # drop observations with NA site
+  group_by(date, site) %>%
+  mutate(temp_id = cur_group_id()) %>% 
+  filter(!duplicated(temp_id)) %>%
+  left_join(comms, by = c("site", "date")) %>% # merge comments across all visits
+  select(!temp_id) %>% 
+  rename(visit_comments = sampling_event_comments) %>% 
+  mutate(site = str_to_lower(site),
+         site = str_replace_all(site, "-", "_"),
+         site = str_replace_all(site, " ", "_"),
+         survey_time = str_to_lower(survey_time)) %>% 
+  ungroup()
+
+```
+
 ## DB Connection
 
 ```{r}
+# can we run this in a withr statement, instead of leaving the connection hanging?
+
 tryCatch({
-    drv <- dbDriver("Postgres")
     print("Connecting to Database…")
-    connection <- dbConnect(drv,
+    connection <- dbConnect(drv = dbDriver("Postgres"),
                  dbname = Sys.getenv("aws_dbname"),
                  host = Sys.getenv("aws_host"),
                  port = Sys.getenv("aws_port"),
@@ -149,33 +181,8 @@ tryCatch({
 dbExecute(connection, "set search_path to survey_data")
 ```
 
-## Merge unique visits include site
 
-### Merge all site visits
-
-```{r}
-
-# site info comments
-comms <- survey_info %>% 
-  select(site, sampling_event_comments, date)
-
-unique_visits <- bind_rows(survey_info, survey_acoustic, survey_capture, survey_edna, survey_ves) %>% 
-  select(date, site, survey_time) %>%
-  group_by(date, site) %>%
-  mutate(temp_id = cur_group_id()) %>% 
-  filter(!duplicated(temp_id)) %>%
-  left_join(comms, by = c("site", "date")) %>% # merge comments across all times
-  select(!temp_id) %>% 
-  rename(visit_comments = sampling_event_comments) %>% 
-  mutate(site = str_to_lower(site),
-         site = str_replace_all(site, "-", "_"),
-         site = str_replace_all(site, " ", "_"),
-         survey_time = str_to_lower(survey_time)) %>% 
-  ungroup()
-
-```
-
-### Pull site f.key
+### Pull site_id f.key (uuid) from site table of DB
 
 ```{r}
 
@@ -185,20 +192,31 @@ s.key <- dbGetQuery(connection, s.fkey_q)
 
 ```
 
-### populate site k.key on visit table
+### create visit_id (uuid) on visit table
 
 ```{r}
 
 unique_visits_fkey <- unique_visits %>% 
-  inner_join(s.key, by = c("site")) %>% # assumes no new sites
-  group_by(date, site) %>% 
+  left_join(s.key, by = c("site")) %>%
+  group_by(date, site) %>% ## issue here, generates duplicates. visit_id should be unique on table, meaning no group/ungroup
   mutate(visit_id = UUIDgenerate()) %>% 
   ungroup()
 
+# assumes no old visits remain. To ensure no duplicates need to:
+#   establish unique constraints in db across table natural keys
+#   anti-join with existing data before generating new visit_id
+
+# handle possible new sites
+if (any(is.na(unique_visits_fkey$site_id))) {
+  warningCondition("New or unknown sites found in incoming data. Troubleshoot.")
+  # do we want this new site in the database?
+  #   yes: generate new uuid and update db site table.
+  #   no: drop and incorporate relevant filter to prevent recurrence
+}
 
 ```
 
-### final site table
+### Append to visit table
 
 ```{r}
 
@@ -208,18 +226,19 @@ fin_visit <- unique_visits_fkey %>%
 
 
 
-dbAppendTable(connection, "visit", fin_visit)
+warningCondition("Visit append commented out. Rewrite as single transaction.")
+# dbAppendTable(connection, "visit", fin_visit)  # append at end in transaction
   
 
 ```
 
-## Survey data include date and survey_time
+## Merge all survey data into common survey table
 
-### Merge all survey data
+### Massage Survey data date and survey_time
 
 ```{r}
 
-mid_surv_cap <- survey_info %>% 
+mid_surv_capture <- survey_info %>%
   left_join(survey_capture, by = c("site", "date")) %>%
   select(!c(fulcrum_id.x, fulcrum_id.y, observer, observer_other, site_other.x, site_other.y,
             start_time.x, end_time.x, survey_time.y, air_temperature_measurement_time,
@@ -245,23 +264,24 @@ mid_surv_aural <- survey_info%>%
   select(!c(fulcrum_id, site_other, start_time, end_time, survey_time)) %>% 
   mutate(detection_type = "aural")
 
-surv_info <- plyr::rbind.fill(mid_surv_cap, mid_surv_ves, mid_surv_aural)
+# all surveys across survey types
+surv_info <- bind_rows(mid_surv_capture, mid_surv_ves, mid_surv_aural)
 
-
-mid_unique_survey <- plyr::rbind.fill(survey_acoustic, survey_capture, survey_ves) %>% 
-  select(!c(fulcrum_id, observer, observer_other, acoustic_survey_comments)) %>% 
-  full_join(surv_info, by = c("site", "date", "detection_type")) %>% 
-  select(!c(site_other, air_temperature_measurement_time, water_temperature_measurement_time, end_time.y,
-            start_time.y, observers, other_observers, survey_time.x, survey_time.y)) %>% 
-  rename(start_time = start_time.x,
-         end_time = end_time.x) %>% 
-  mutate(survey_time = "Night") %>% 
-  unite(survey_comments, c("survey_comments.x", "survey_description.x", "survey_comments.y", "survey_description.y"),
-        sep = ",", na.rm=T)
+# unique surveys only... looks like this is not used?
+# mid_unique_survey <- bind_rows(survey_acoustic, survey_capture, survey_ves) %>% 
+#   select(!c(fulcrum_id, observer, observer_other, acoustic_survey_comments)) %>% 
+#   full_join(surv_info, by = c("site", "date", "detection_type")) %>% 
+#   select(!c(site_other, air_temperature_measurement_time, water_temperature_measurement_time, end_time.y,
+#             start_time.y, observers, other_observers, survey_time.x, survey_time.y)) %>% 
+#   rename(start_time = start_time.x,
+#          end_time = end_time.x) %>% 
+#   mutate(survey_time = "Night") %>% # confirm all surveys are night surveys...
+#   unite(survey_comments, c("survey_comments.x", "survey_description.x", "survey_comments.y", "survey_description.y"),
+#         sep = ",", na.rm=T)
 
 unique_survey <- surv_info %>% 
   group_by(site, date, detection_type) %>% 
-  mutate(start_time = as_hms(mean(start_time)),
+  mutate(start_time = as_hms(mean(start_time)), # clean times
          end_time = as_hms(mean(end_time))) %>% 
   select(!c("water_temperature_measurement_time", "air_temperature_measurement_time", "other_observers", "observers")) %>% 
   unite(survey_comments, c("survey_comments", "sampling_event_comments", "survey_description"), na.rm = T, sep = ",") %>% 
@@ -274,20 +294,15 @@ unique_survey <- surv_info %>%
          dissolved_o2_percent = dissolved_oxygen,
          tds_ppm = total_dissolved_solids, # need to confirm units
          water_temp_c = water_temperature_c,
-         p_h = ph) %>% 
+         p_h = ph) %>% # clean column names
   mutate(survey_time = str_to_lower(survey_time),
          site = str_to_lower(str_replace_all(site, "-", "_")),
-         site = str_replace_all(site, " ", "_")) %>% 
-  mutate(temp_id = cur_group_id(),
+         site = str_replace_all(site, " ", "_"),
          survey_time = if_else(is.na(survey_time), "night", survey_time),
-         date = as.character(date)) %>% 
+         temp_id = cur_group_id()) %>% 
   filter(!duplicated(temp_id)) %>% 
   select(!temp_id) %>% 
-  ungroup() %>% 
-  add_row(date = "2023-06-23", site = "tuttle_pond", survey_time = "night", detection_type = "capture") %>% 
-  add_row(date = "2023-06-23", site = "tuttle_pond", survey_time = "night", detection_type = "visual") %>% 
-  add_row(date = "2023-06-23", site = "tuttle_pond", survey_time = "night", detection_type = "aural") %>% 
-  mutate(date = as_date(date))
+  ungroup()
 
 
 
@@ -300,6 +315,7 @@ unique_survey <- surv_info %>%
 surv_fkey <- unique_visits_fkey %>% 
   select(date, visit_id, site)
 
+# duplicates passed from visit_id generation
 
 ```
 
@@ -307,36 +323,29 @@ surv_fkey <- unique_visits_fkey %>%
 
 ```{r}
 
-unique_survey_fkey <- unique_survey %>% 
+fin_survey <- unique_survey %>% 
   full_join(surv_fkey, by = c("date", "site")) %>% 
   mutate(p_h = if_else(p_h == 0.00, NA, p_h)) %>% 
   group_by(site, date, detection_type) %>% 
-  mutate(survey_id = UUIDgenerate(output = c("uuid"))) %>% 
-  filter(!duplicated(survey_id)) %>% 
+  mutate(survey_id = UUIDgenerate(output = c("uuid"))) %>% # move to end, after antijoin wtih survey table
+  filter(!duplicated(survey_id)) %>% # this should not be needed once above corrections made
   mutate(duration_min = if_else(end_time < start_time,
                             as_hms(86400) - start_time + end_time,
                             end_time - start_time),
          duration_min = duration_min/60,
          duration_min = str_remove(duration_min, " secs"),
-         duration_min  = round(as.numeric(duration_min), 2)) %>% 
-  group_by(date, site) %>% 
-  mutate(survey_time = if_else(is.na(survey_time), "night", survey_time)) %>% 
-  select(!c(conductivity_us))
-
-```
-
-### final survey table
-
-```{r}
-
-fin_survey <- unique_survey_fkey %>% 
-  ungroup() %>% 
+         duration_min  = round(as.numeric(duration_min), 2)) %>% # why rounding duration to 2? Put in data dictionary description
+  group_by(date, site) %>% # not needed methink
+  mutate(survey_time = if_else(is.na(survey_time), "night", survey_time)) %>% # again assumes all night. Instead implement time check
+  select(!c(conductivity_us)) %>%
+  ungroup() %>% # why this here, not above?
   select(!c(date, survey_time, site)) %>% 
-  rename(
-         duration_minutes = duration_min) %>% 
-  mutate(duration_minutes = as.integer(duration_minutes))
+  rename(duration_minutes = duration_min) %>% # define properly above and delete
+  mutate(duration_minutes = as.integer(duration_minutes))  # define properly above and delete
 
-dbAppendTable(connection, "survey", fin_survey)
+
+warningCondition("Survey append commented out. Rewrite as single transaction.")  
+# dbAppendTable(connection, "survey", fin_survey)
 
 ```
 
