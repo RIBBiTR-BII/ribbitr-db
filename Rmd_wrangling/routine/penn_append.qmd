@@ -323,7 +323,7 @@ surv_fkey <- unique_visits_fkey %>%
 
 ```{r}
 
-fin_survey <- unique_survey %>% 
+unique_survey_fkey <- unique_survey %>% 
   full_join(surv_fkey, by = c("date", "site")) %>% 
   mutate(p_h = if_else(p_h == 0.00, NA, p_h)) %>% 
   group_by(site, date, detection_type) %>% 
@@ -334,18 +334,25 @@ fin_survey <- unique_survey %>%
                             end_time - start_time),
          duration_min = duration_min/60,
          duration_min = str_remove(duration_min, " secs"),
-         duration_min  = round(as.numeric(duration_min), 2)) %>% # why rounding duration to 2? Put in data dictionary description
-  group_by(date, site) %>% # not needed methink
-  mutate(survey_time = if_else(is.na(survey_time), "night", survey_time)) %>% # again assumes all night. Instead implement time check
-  select(!c(conductivity_us)) %>%
-  ungroup() %>% # why this here, not above?
+         duration_min  = round(as.numeric(duration_min), 2)) %>%  # why rounding duration to 2? Put in data dictionary description
+  group_by(date, site) %>% 
+  mutate(survey_time = if_else(is.na(survey_time), "night", survey_time)) %>% 
+  select(!c(conductivity_us))
+
+```
+
+### final survey table
+
+```{r}
+
+fin_survey <- unique_survey_fkey %>% 
+  ungroup() %>% 
   select(!c(date, survey_time, site)) %>% 
   rename(duration_minutes = duration_min) %>% # define properly above and delete
-  mutate(duration_minutes = as.integer(duration_minutes))  # define properly above and delete
-
+  mutate(duration_minutes = as.integer(duration_minutes))# define properly above and delete
 
 warningCondition("Survey append commented out. Rewrite as single transaction.")  
-# dbAppendTable(connection, "survey", fin_survey)
+# dbAppendTable(connection, "survey", fin_survey) # don't drop fulcrum_id until here.
 
 ```
 
@@ -358,34 +365,43 @@ warningCondition("Survey append commented out. Rewrite as single transaction.")
 
 
 mid_cap <- survey_info %>% 
-  left_join(survey_capture, by = c("site" , "date")) %>% 
+  left_join(survey_capture, by = c("site" , "date")) %>% # could we do this on fin_survey or similar, to carry forward all names and ids? Need fulcrum_id though.
   select(fulcrum_id.y, detection_type, date, site, survey_time.x) %>% 
   rename(fulcrum_id = fulcrum_id.y,
          survey_time = survey_time.x) %>% 
-  left_join(capture_obs, by = c("fulcrum_id" = "fulcrum_parent_id")) %>% 
+  left_join(capture_obs, by = c("fulcrum_id" = "fulcrum_parent_id")) %>% # revisit later after cleaning above. Should not need left join, full join should return same and catch any errors if not
   select(detection_type.x, date, site, survey_time, detection_type.x, body_temperature, bag_id, species_capture, 
          time_of_capture, microhabitat_type, microhabitat_wet, microhabitat_temperature, amphibian_comments)
 
 mid_samp_proc <- samp_proces %>% 
-  left_join(samp_procces_obs, by= c("fulcrum_id" = "fulcrum_parent_id")) %>% 
-  select(!c(fulcrum_id, fulcrum_id.y, fulcrum_record_id, c(norep_bathvolume_50ml_acid_05ml:ul_of_norep_01688mgml),
-            c(photo:photo_url), c(amp_ig_ne_injected:amp_ig_comments)))
+  left_join(samp_procces_obs, by= c("fulcrum_id" = "fulcrum_parent_id")) %>% # full join? to catch errors
+  select(!c(fulcrum_id,
+            fulcrum_id.y,
+            fulcrum_record_id,
+            c(norep_bathvolume_50ml_acid_05ml:ul_of_norep_01688mgml), # explicitly drop (or explicitly select), not robust to change in column order
+            c(photo:photo_url),
+            c(amp_ig_ne_injected:amp_ig_comments))) 
 
+# separate sample negative controls
 neg_controls <- mid_samp_proc %>% 
   filter(species_capture == "Negative Control") %>% 
-  select(!c(processor_other, sex_other, survey_comments, life_stage_other)) %>% 
-  select(!c(species_capture_other:body_mass)) %>% 
+  select(!c(processor_other,
+            sex_other,
+            survey_comments,
+            life_stage_other,
+            c(species_capture_other:body_mass))) %>%  # explicitly drop (or explicitly select), not robust to change in column order
   rename(site = location) %>% 
   mutate(species_capture = str_to_lower(str_replace_all(species_capture, " ", "_")),
          survey_time = str_to_lower(survey_time),
          site = str_to_lower(str_replace_all(site, " ", "_")))
 
+# drop sample negative controls
 mid_samp_proc <- mid_samp_proc %>% 
   filter(!species_capture == "Negative Control") %>% 
   select(!species_capture_other)
 
 unique_cap <- mid_samp_proc %>% 
-  left_join(mid_cap, by = c("location"= "site", "date", "bag_id")) %>% 
+  left_join(mid_cap, by = c("location"= "site", "date", "bag_id")) %>% # any chance of a mid_cap with no samps, but relevant data? If so, full join? Or bind_rows.
   select(!c(survey_time.y, species_capture.y, life_stage_other, sex_other,
             survey_comments)) %>% 
   rename(detection_type = detection_type.x,
@@ -403,19 +419,18 @@ unique_cap <- mid_samp_proc %>%
          svl_mm = snout_vent_length,
          body_and_bag_mass_g = body_and_bag_mass,
          bag_mass_g = bag_mass,
-         body_mass_g = body_mass) %>% 
-  ungroup() %>% 
-  mutate(amp_id = if_else(capture_mark_recapture %in% ("cf358e11-d6da-4637-af56-c384d683e6fb"), "Pe_AMP00000", amp_id))
+         body_mass_g = body_mass) %>%
+  mutate(amp_id = if_else(capture_mark_recapture %in% ("cf358e11-d6da-4637-af56-c384d683e6fb"), "Pe_AMP00000", amp_id)) # to what does this cmr id correspond?
 
 
 
 ```
 
-### populate survey fkey
+### generate capture_id
 
 ```{r}
 
-cap_fkey <- unique_survey_fkey %>% 
+cap_fkey <- unique_survey_fkey %>%
   select(site, date, detection_type, survey_time, survey_id)
 
 
