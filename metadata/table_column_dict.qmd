@@ -109,8 +109,10 @@ build_table_dictionary <- function(schema) {
 }
 
 column_dict_supplementray = c(
-  "column_descritpion",
+  "definition",
   "units",
+  "accuracy",
+  "scale",
   "format",
   "natural_key",
   "reviewed"
@@ -132,6 +134,8 @@ dict_supplementary_mutate <- function(dict, supplementary) {
 # Build and store data dictionaries locally (temp)
 
 ```{r}
+dir.create(file.path(here("staging", "metadata")), showWarnings = FALSE)
+
 for (schema in schemas) {
   column_dict_build <- build_column_dictionary(schema)
   column_dict_build <- dict_supplementary_mutate(column_dict_build, column_dict_supplementray)
@@ -153,12 +157,12 @@ write.csv(schemas, here("staging", "metadata","schemas.csv"), row.names = FALSE)
 
 write_dictionaries <- function() {
 
-schemas = read.csv(here("staging", "metadata","schemas.csv"))$x
+schemas = read.csv(here("staging", "metadata_revision","schemas.csv"))$x
   
   for (schema in schemas) {
     # Load dictionaries from file
-    column_dict_write = read.csv(here("staging", "metadata", schema, "column_dict.csv"))
-    bable_dict_write = read.csv(here("staging", "metadata", schema, "table_dict.csv"))
+    column_dict_write = read.csv(here("staging", "metadata_revision", schema, "column_dict.csv"))
+    table_dict_write = read.csv(here("staging", "metadata_revision", schema, "table_dict.csv"))
     
     # Write column dictionary
     dbWriteTable(con, 
