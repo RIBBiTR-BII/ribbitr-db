@@ -78,6 +78,7 @@ swab_sites
 ```
 
 ## Query hobos for sites
+
 ```{r}
 hobo_sites_q = "select hs.site, hs.hobo_site_id, hr.region
 	from ribbitr.hobo.hobo_site hs
@@ -126,8 +127,6 @@ bd_q = paste0("select *
 write_csv(bd_swab, here("staging", paste0("ecophys_bdswab_", today(), ".gz")))
 
 ```
-
-
 
 ## Query all hobo data
 
