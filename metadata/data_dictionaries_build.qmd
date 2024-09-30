@@ -1,0 +1,207 @@
+---
+title: "Build Data Dictionaries"
+author: Cob Staines
+format: html
+editor: visual
+---
+
+```{r setup, include=FALSE}
+if (!require(librarian)){
+  install.packages("librarian")
+  library(librarian)
+}
+
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, DBI, RPostgres, here)
+```
+
+## Connect to DB
+
+```{r}
+# establish connection
+tryCatch({
+  print("Connecting to Database…")
+  con <- dbConnect(dbDriver("Postgres"),
+                          dbname = Sys.getenv("aws_dbname"),
+                          host = Sys.getenv("aws_host"),
+                          port = Sys.getenv("aws_port"),
+                          user = Sys.getenv("aws_user"),
+                          password = Sys.getenv("aws_password"),
+                          timezone=NULL)
+  print("Database Connected!")
+},
+error=function(cond) {
+  print("Unable to connect to Database.")
+})
+
+```
+
+## Pull Schemas
+
+```{r}
+schemas <- dbGetQuery(con, "SELECT schema_name FROM information_schema.schemata")$schema_name
+schemas <- schemas[!schemas %in% c("information_schema", "pg_catalog")]
+```
+
+## Define functions to pull table and column metadata
+
+```{r}
+
+build_table_dictionary <- function(schema) {
+  table_query <- paste0("
+    SELECT 
+      t.table_schema, t.table_name,
+      (SELECT count(*) FROM information_schema.columns c WHERE c.table_name = t.table_name AND c.table_schema = t.table_schema) as column_count,
+      pg_catalog.obj_description(format('%s.%s',t.table_schema,t.table_name)::regclass::oid, 'pg_class') as table_description
+    FROM 
+      information_schema.tables t
+    WHERE 
+      t.table_schema = '", schema, "'
+  ")
+  
+  tables <- tbl(con, sql(table_query))
+  
+  return(tables)
+}
+
+build_column_dictionary <- function(schema) {
+  column_query <- paste0("
+    SELECT 
+      c.table_schema,
+      c.table_name,
+      c.column_name,
+      c.data_type,
+      c.character_maximum_length,
+      c.numeric_precision,
+      c.datetime_precision,
+      c.is_nullable,
+      c.column_default,
+      c.ordinal_position,
+      pg_catalog.col_description(format('%s.%s',c.table_schema,c.table_name)::regclass::oid, c.ordinal_position) as pg_description,
+      CASE 
+        WHEN tc.constraint_type = 'PRIMARY KEY' THEN 'PK'
+        WHEN tc.constraint_type = 'FOREIGN KEY' THEN 'FK'
+        WHEN tc.constraint_type = 'UNIQUE' THEN 'UQ'
+        ELSE NULL
+      END as key_type
+    FROM 
+      information_schema.columns c
+    LEFT JOIN 
+      information_schema.key_column_usage kcu
+      ON c.table_schema = kcu.table_schema
+      AND c.table_name = kcu.table_name
+      AND c.column_name = kcu.column_name
+    LEFT JOIN 
+      information_schema.table_constraints tc
+      ON kcu.table_schema = tc.table_schema
+      AND kcu.table_name = tc.table_name
+      AND kcu.constraint_name = tc.constraint_name
+    WHERE 
+      c.table_schema = '", schema, "'
+    ORDER BY 
+      c.table_name, c.ordinal_position
+  ")
+  
+  columns <- tbl(con, sql(column_query))
+  
+  return(columns)
+}
+
+column_dict_supplementary= c(
+  "definition",
+  "units",
+  "accuracy",
+  "scale",
+  "format",
+  "natural_key",
+  "reviewed"
+)
+
+column_dict_mutate_supplementary <- function(dict) {
+  
+  dict_out = dict %>%
+    mutate(
+          definition = "",
+          units = "",
+          accuracy = "",
+          scale = "",
+          format = "",
+          natural_key = FALSE,
+          reviewed = FALSE
+    )
+
+  return(dict_out)
+}
+
+```
+
+# Build data dictionaries locally (temp)
+
+```{r}
+dir.create(file.path(here("staging", "metadata")), showWarnings = FALSE)
+
+table_dict_build = list()
+column_dict_build = list()
+
+for (schema in schemas) {
+  table_dict_build[[schema]] <- build_table_dictionary(schema) %>%
+    collect()
+  
+  column_dict_build[[schema]] <- column_dict_mutate_supplementary(build_column_dictionary(schema)) %>%
+    collect()
+  
+  cat("Dictionaries assembled for schema:", schema, "\n")
+}
+
+```
+
+# Write data dictionaries to db as single transaction
+
+```{r}
+# 
+# dbBegin(con)
+# 
+# tryCatch(
+#   {
+    for (schema in schemas) {
+      
+        # Write table dictionary
+      dbWriteTable(con,
+                   name = Id(schema, "metadata_tables"),
+                   value = table_dict_build[[schema]],
+                   overwrite = TRUE)
+      table_pkey_str = paste0("
+                        ALTER TABLE ribbitr.", schema, ".metadata_tables
+                        ADD PRIMARY KEY (table_schema, table_name)
+                        ")
+      dbExecute(con, table_pkey_str)
+      
+      # Write column dictionary
+      dbWriteTable(con,
+                   name = Id(schema, "metadata_columns"),
+                   value = column_dict_build[[schema]],
+                   overwrite = TRUE)
+      column_pkey_str = paste0("
+                        ALTER TABLE ribbitr.", schema, ".metadata_columns
+                        ADD PRIMARY KEY (table_schema, table_name, column_name)
+                        ")
+      dbExecute(con, column_pkey_str)
+      
+      cat("Dictionaries created for schema:", schema, "\n")
+    }
+    # 
+#     # Commit the transaction if successful
+#     dbCommit(con)
+#     cat("Transaction successful!")
+#   
+# }, error = function(e) {
+#   # Rollback in case of error
+#   dbRollback(con)
+#   message("Transaction failed: ", e$message)
+# })
+
+```
+
+```{r}
+dbDisconnect(con)
+```
