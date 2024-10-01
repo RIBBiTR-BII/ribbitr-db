@@ -31,8 +31,9 @@ tryCatch({
   print("Database Connected!")
 },
 error=function(cond) {
-  print("Unable to connect to Database.")
+  message("Unable to connect to Database: ", cond$message)
 })
+
 
 ```
 
@@ -158,11 +159,11 @@ for (schema in schemas) {
 # Write data dictionaries to db as single transaction
 
 ```{r}
-# 
-# dbBegin(con)
-# 
-# tryCatch(
-#   {
+
+dbBegin(con)
+
+tryCatch(
+  {
     for (schema in schemas) {
       
         # Write table dictionary
@@ -189,16 +190,16 @@ for (schema in schemas) {
       
       cat("Dictionaries created for schema:", schema, "\n")
     }
-    # 
-#     # Commit the transaction if successful
-#     dbCommit(con)
-#     cat("Transaction successful!")
-#   
-# }, error = function(e) {
-#   # Rollback in case of error
-#   dbRollback(con)
-#   message("Transaction failed: ", e$message)
-# })
+
+    # Commit the transaction if successful
+    dbCommit(con)
+    cat("Transaction successful!")
+
+}, error = function(e) {
+  # Rollback in case of error
+  dbRollback(con)
+  message("Transaction failed: ", e$message)
+})
 
 ```
 
