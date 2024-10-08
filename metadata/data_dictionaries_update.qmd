@@ -125,54 +125,103 @@ dict_supplementary_mutate <- function(dict, supplementary) {
 tables_pkey = c("table_schema", "table_name")
 columns_pkey = c("table_schema", "table_name", "column_name")
 
-append_orphan_update_duplicate = function (dataframe_a, dataframe_b, key_columns){
-  data_bind = bind_rows(dataframe_a %>%
-                          mutate(d_source = "a"),
-                        dataframe_b %>%
-                          mutate(d_source = "b")
-                        )
+compare_for_staging = function(dataframe_a, dataframe_b, key_columns, insert=TRUE, update=TRUE, orphan=FALSE, duplicate=FALSE, return_all=FALSE){
   
-  data_pkey_counts = data_bind %>%
+  output = list()
+  
+  # case 1: identical row appears in both dataframes
+  # logic: find duplicate rows
+  data_bind = bind_rows(dataframe_a, dataframe_b)
+  data_duplicate = data_bind[duplicated(data_bind),]
+  if (duplicate || return_all){
+    output[["duplicate"]] = data_duplicate
+  }
+  
+  # bind rows ignoring duplicates, tracking source
+  data_bind_uni = data_bind %>%
+    anti_join(data_duplicate, by = key_columns)
+  
+  # count grouped by key_columns (1 or 2)
+  data_pkey_counts = data_bind_uni %>%
     group_by_at(key_columns) %>%
     count() %>%
     ungroup()
   
-  # case 1: unique to data_frame_a -> append
-  # logic: pkey combo found 1x in data-_bind, from dataframe_a
-  data_append = data_pkey_counts %>%
-    filter(n == 1) %>%
-    select(-n) %>%
-    left_join(data_bind, by=key_columns) %>%
-    filter(d_source == "a") %>%
-    select(-d_source)
+  # case 2: unique to data_frame_a -> orphan
+  # logic: pkey compo found 1x in data_bind, from dataframe_a
+  if (orphan || return_all){
+    data_orphan = data_pkey_counts %>%
+      filter(n == 1) %>%
+      select(-n) %>%
+      inner_join(dataframe_a, by=key_columns)
+      
+    output[["orphan"]] = data_orphan
+  }
+
   
-  # case 2: unique to data_frame_b -> orphan
-  # logic: pkey compo found 1x in data_bind, from dataframe_b
-  data_orphan = data_pkey_counts %>%
-    filter(n == 1) %>%
-    select(-n) %>%
-    left_join(data_bind, by=key_columns) %>%
-    filter(d_source == "b") %>%
-    select(-d_source)
+  # case 3: unique to data_frame_b -> insert
+  # logic: pkey combo found 1x in data_bind, from dataframe_b
+  if (insert || return_all){
+    data_insert = data_pkey_counts %>%
+      filter(n == 1) %>%
+      select(-n) %>%
+      inner_join(dataframe_b, by=key_columns)
+    
+    output[["insert"]] = data_insert
+  }
+
   
-  # case 3: non-identical rows sharing pkeys -> update (from data_frame_a)
+  # case 4: non-identical rows sharing pkeys -> update (from data_frame_b)
   # logic: pkey combo found 2x in data_bind, is distinct among non-pkey columns
-  data_update = data_pkey_counts %>%
-    filter(n == 2) %>%
-    select(-n) %>%
-    left_join(data_bind, by=key_columns) %>%
-    arrange(desc(d_source)) %>%
-    distinct_at(vars(-d_source), .keep_all=TRUE) %>%
-    filter(d_source == "a") %>%
-    select(-d_source)
+  if (update || return_all){
+    data_update = data_pkey_counts %>%
+      filter(n == 2) %>%
+      select(-n) %>%
+      inner_join(dataframe_b, by=key_columns)
+    
+    output[["update"]] = data_update
+  }
+
   
-  # case 4: duplicate rows
-  # logic: pkey combo found 2x in data_bind, 
-  data_duplicate = dataframe_a %>%
-      anti_join(data_update, by=key_columns) %>%
-      anti_join(data_append, by=key_columns)
+  return(output)
+}
+
+
+stage_to_temp <- function(con, reference_table, novel_data) {
+  # check that all novel_data columns exist in reference table
+  ref_cols = colnames(reference_table)
+  nov_cols = colnames(novel_data)
+  if (length(setdiff(nov_cols, ref_cols)) > 0) {
+    stop("Columns in preference_table and novel_data do not align.")
+  }
   
-  return(list(data_append, data_orphan, data_update, data_duplicate))
+  # build meaningful temp table name: [schema].[reference_table]_temp
+  table_path = as.character(reference_table$lazy_query$x)
+  path_parts = strsplit(gsub("\"", "", table_path), "\\.")
+  schema_name = path_parts[[1]][1]
+  table_name = path_parts[[1]][2]
+  temp_table_name = paste0(schema_name, "_", table_name, "_temp")
+  
+  # begin transaction
+
+  # drop table if exists
+  suppressMessages(
+    dbExecute(con, paste0("DROP TABLE IF EXISTS ", temp_table_name, ";"))
+  )
+  # copy reference table to temporary table
+  dbExecute(con, paste0("CREATE TEMP TABLE ", temp_table_name, " AS SELECT * FROM ", schema_name, ".", table_name, ";"))
+  # drop all existing rows
+  dbExecute(con, paste0("TRUNCATE TABLE ", temp_table_name))
+  # drop all columns in reference_table not in novel_data
+  drop_cols = setdiff(ref_cols, nov_cols)
+  if (length(drop_cols) > 0){
+    dbExecute(con, paste0("ALTER TABLE ", temp_table_name, " DROP COLUMN ", paste(drop_cols, collapse = ", DROP COLUMN ")))
+  }
+  # write all novel data to temp table
+  dbWriteTable(con, name = temp_table_name, value = novel_data, append = TRUE)
+
+  
+  return(temp_table_name)
 }
 
 ```
@@ -242,52 +291,56 @@ for (schema in schemas){
 
 ```
 
-## Process discrepancies as: append, orphan, update, or duplicate
+## Compare for staging
 
 ```{r}
 
-meta_table_append = list()
+meta_table_insert = list()
 meta_table_orphan = list()
 meta_table_update = list()
 meta_table_duplicate = list()
 
-meta_column_append = list()
+meta_column_insert = list()
 meta_column_orphan = list()
 meta_column_update = list()
 meta_column_duplicate = list()
 
 for (schema in schemas) {
-  table_results = append_orphan_update_duplicate(pg_table_data[[schema]] %>%
-                                                   collect(),
-                                                 meta_table_data[[schema]] %>%
-                                                   collect(),
-                                                 tables_pkey)
-  meta_table_append[[schema]] = table_results[1][[1]]
-  meta_table_orphan[[schema]] = table_results[2][[1]]
-  meta_table_update[[schema]] = table_results[3][[1]]
-  meta_table_duplicate[[schema]] = table_results[4][[1]]
+  comp_results = compare_for_staging(pg_table_data[[schema]] %>%
+                                       collect(),
+                                     meta_table_data[[schema]] %>%
+                                       collect(),
+                                     tables_pkey,
+                                     return_all= TRUE)
+  meta_table_insert[[schema]] = comp_results[["insert"]]
+  meta_table_orphan[[schema]] = comp_results[["orphan"]]
+  meta_table_update[[schema]] = comp_results[["update"]]
+  meta_table_duplicate[[schema]] = comp_results[["duplicate"]]
   
-  column_results = append_orphan_update_duplicate(pg_column_data[[schema]] %>%
-                                                    collect(),
-                                                  meta_column_data_pg[[schema]] %>%
-                                                    collect(),
-                                                  columns_pkey)
-  meta_column_append[[schema]] = column_results[1][[1]]
-  meta_column_orphan[[schema]] = column_results[2][[1]]
-  meta_column_update[[schema]] = column_results[3][[1]]
-  meta_column_duplicate[[schema]] = column_results[4][[1]]
+  column_results = compare_for_staging(pg_column_data[[schema]] %>%
+                                         collect(),
+                                       meta_column_data_pg[[schema]] %>%
+                                         collect(),
+                                       columns_pkey,
+                                       return_all=TRUE)
+  meta_column_insert[[schema]] = comp_results[["insert"]]
+  meta_column_orphan[[schema]] = comp_results[["orphan"]]
+  meta_column_update[[schema]] = comp_results[["update"]]
+  meta_column_duplicate[[schema]] = comp_results[["duplicate"]]
 
   cat("Discrepancies processed for schema: ", schema, "\n")
 }
 
 
 ```
-
 ## warnings for orphan data, flag for update or append
 
 ```{r}
 update = FALSE
-append = FALSE
+insert = FALSE
+
+meta_table_upsert = list()
+meta_column_upsert = list()
 
 for (schema in schemas) {
   # warnings for orphan data
@@ -296,6 +349,16 @@ for (schema in schemas) {
   }
   if (nrow(meta_column_orphan[[schema]]) > 0) {
     warning(paste0("Column orphan data found in schema:", schema))
+  }
+  
+  # flag if append needed
+  if (nrow(meta_table_insert[[schema]]) > 0) {
+    append = TRUE
+    cat("Table appends found for schema: ", schema, "\n")
+  }
+  if (nrow(meta_column_insert[[schema]]) > 0) {
+    append = TRUE
+    cat("Column appends found for schema: ", schema, "\n")
   }
   
   # flag if updates needed
@@ -308,286 +371,58 @@ for (schema in schemas) {
     cat("Column updates found for schema: ", schema, "\n")
   }
   
-  # flag if append needed
-  if (nrow(meta_table_append[[schema]]) > 0) {
-    append = TRUE
-    cat("Table appends found for schema: ", schema, "\n")
-  }
-  if (nrow(meta_column_append[[schema]]) > 0) {
-    append = TRUE
-    cat("Column appends found for schema: ", schema, "\n")
-  }
+  meta_table_upsert[[schema]] = rbind(meta_table_update[[schema]],
+                                      meta_table_insert[[schema]])
+  meta_column_upsert[[schema]] = rbind(meta_column_update[[schema]],
+                                      meta_column_insert[[schema]])
+  
 }
 ```
 
-## append and update database using single transaction
-
+## create temporary DB tables with upsert data, and upsert
 ```{r}
-
-generate_update_sql <- function(table_name, key_columns, updates) {
-  # Validate inputs
-  if (length(key_columns) == 0) {
-    stop("Key columns must not be empty")
-  }
-  if (nrow(updates) == 0) {
-    stop("updates must have at least one row.")
-  }
-  
-  # Initialize an empty list to store SQL statements
-  sql_statements <- vector("list", nrow(updates))
-  
-  # Loop through each row of the updates data frame
-  for (ii in seq_len(nrow(updates))) {
-    row <- updates[ii, ]
-    
-    # Construct the SET clause
-    set_clause <- paste(
-      sapply(names(row), function(col) {
-        if (!(col %in% key_columns)) { # Exclude key columns from SET clause
-          paste0(col, " = '", row[[col]], "'")
-        }
-      }), collapse = ", "
-    )
-    
-    # Construct the WHERE clause
-    where_clause <- paste(
-      sapply(key_columns, function(col) {
-        paste0(col, " = '", row[[col]], "'")
-      }), collapse = " AND "
-    )
-    
-    # Generate the final SQL statement
-    sql <- paste0("UPDATE ", table_name, " SET ", set_clause, " WHERE ", where_clause, ";")
-    
-    # Store the SQL statement
-    sql_statements[[ii]] <- sql
-  }
-  
-  return(sql_statements)
-}
-
-# Example usage
-table_name <- "metadata_columns"
-key_columns <- columns_pkey
-updates <- data.frame(
-  id = c(1, 2),
-  name = c("John Doe", "Jane Smith"),
-  salary = c(75000, 80000)
-)
-
-# Generate SQL statements
-sql_statements <- generate_update_sql("metadata_columns", columns_pkey, meta_column_update[[schema]])
-
-# Print SQL statements
-cat(paste(sql_statements, collapse = "\n"))
-
-if (append | update){
-  
+if (update || insert) {
+  # begin transaction
   dbBegin(con)
   
   tryCatch(
     {
-      # appends
       for (schema in schemas) {
-         if (append){
-          # append table
-          if (nrow(meta_table_append[[schema]]) > 0) {
-            dbWriteTable(con,
-                         Id(schema, "metadata_tables"),
-                         meta_table_append[[schema]],
-                         append = TRUE,
-                         row.names = FALSE)
-            
-            cat("Appended ", schema,".metadata_tables\n")
-          }
+        # some local test to avoid below if not needed
+        if (nrow(meta_table_upsert[[schema]]) > 0) {
+          # upsert table_data
+          reference_table = meta_table_data[[schema]]
+          novel_data = pg_table_data[[schema]] %>% collect()
+          temp_table_name = stage_to_temp(con, reference_table, novel_data)
+          pointer = tbl(con, temp_table_name)
+          rows_upsert(meta_table_data[[schema]], pointer, by=tables_pkey, in_place=TRUE)
           
-          # append column
-          if (nrow(meta_column_append[[schema]]) > 0) {
-            dbWriteTable(con,
-                         Id(schema, "metadata_columns"),
-                         meta_column_append[[schema]],
-                         append = TRUE,
-                         row.names = FALSE)
-            
-            cat("Appended ", schema,".metadata_columns\n")
-          }
+          cat("Tables upserted for schema: ", schema, "\n")
         }
         
-        # updates
-        if (update) {
-          # update table
-          if (nrow(meta_table_update[[schema]]) > 0) {
-            meta_table_data_update = meta_table_data[[schema]] %>%
-              filter(FALSE) %>%
-              collect() %>%
-              bind_rows(meta_table_update[[schema]])
-            
-            rows_update(meta_table_data[[schema]],
-                        meta_table_data_update,
-                        by=tables_pkey)
-            
-            cat("Updated ", schema,".metadata_tables\n")
-            }
-          
-          # book mark! Errors everywhere using rows_update()
-          
-          # update column
-          if (nrow(meta_column_update[[schema]]) > 0) {
-            # meta_column_data_update = meta_column_data[[schema]] %>%
-            #   filter(FALSE) %>%
-            #   collect() %>%
-            #   bind_rows(meta_column_update[[schema]])
-            meta_column_data_update = meta_column_data[[schema]] %>%
-              select(all_of(columns_pkey)) %>%
-              right_join(meta_column_update[[schema]])
-            
-            update_query = meta_column_data[[schema]] %>%
-              rows_update(
-                meta_column_update[[schema]],
-                by=columns_pkey,
-                copy = TRUE,
-                unmatched = "ignore")
-            
-            query_sql = dbplyr::sql_render(update_query)
-            
-            dbExecute(con, query_sql)
-            
-            meta_column_data[[schema]] %>%
-              filter(table_name == "metadata_columns") %>%
-              select(-any_of(column_dict_supplementary)) %>%
-              arrange(column_name)
-            meta_column_update[[schema]] %>%
-              arrange(column_name)
-            
-            cat("Updated ", schema,".metadata_columns\n")
-          }
+        if (nrow(meta_column_upsert[[schema]]) > 0) {
+          # upsert column data
+          reference_table = meta_column_data[[schema]]
+          novel_data = pg_column_data[[schema]] %>% collect()
+          temp_table_name = stage_to_temp(con, reference_table, novel_data)
+          pointer = tbl(con, temp_table_name)
+          rows_upsert(meta_column_data[[schema]], pointer, by=columns_pkey, in_place=TRUE)
+        
+          cat("Columns upserted for schema: ", schema, "\n")
         }
       }
-    
-    # Commit the transaction if successful
-    dbCommit(con)
-    cat("Transaction successful! Metadata is up to date!\n")
-    
-  }, error = function(e) {
-    # Rollback in case of error
-    dbRollback(con)
-    message("Transaction failed: ", e$message)
-  })
-} else {
-  cat("No updates or appends found. Metadata is up to date!\n")
-}
-```
-
-# Write metadata tables to csv locally
-
-```{r}
-
-for (schema in schemas) {
-  dir.create(file.path(here("staging", "metadata", schema)), showWarnings = FALSE)
-
-  write.csv(meta_table_data[[schema]], here("staging", "metadata", schema, "table_dict.csv"), row.names = FALSE)
-  write.csv(meta_column_data[[schema]], here("staging", "metadata", schema, "column_dict.csv"), row.names = FALSE)
-  
-  cat(".csv tables written for schema: ", schema, "\n")
-}
-
-write.csv(schemas, here("staging", "metadata","schemas.csv"), row.names = FALSE)
-
-```
-
-# Read files in from csv locally
-
-```{r}
-
-meta_table_csv = list()
-meta_column_csv = list()
-
-char_cols = column_dict_supplementary[! column_dict_supplementary %in% c("natural_key", "reviewed")]
-
-for (schema in schemas) {
-  # Load dictionaries from file
-  meta_table_csv[[schema]] = read.csv(here("staging", "metadata_revision", schema, "table_dict.csv"))
-  meta_column_csv[[schema]] = read.csv(here("staging", "metadata_revision", schema, "column_dict.csv")) %>%
-    mutate_at(char_cols, as.character) %>%
-    mutate(natural_key = as.logical(natural_key),
-           reviewed = as.logical(reviewed))
-  meta_column_csv[[schema]]$natural_key[is.na(meta_column_csv[[schema]]$natural_key)] = FALSE  #remove after first pass
-  
-}
-
-```
-
-## look for discrepancies in supplementary (manual) columns only
-
-```{r}
-meta_column_csv_manual = list()
-
-meta_column_manual_append = list()
-meta_column_manual_orphan = list()
-meta_column_manual_update = list()
-meta_column_manual_duplicate = list()
-
-for (schema in schemas) {
-  meta_column_csv_manual[[schema]] = meta_column_csv[[schema]] %>%
-    select(any_of(columns_pkey),
-           any_of(column_dict_supplementary))
-  
-  results = append_orphan_update_duplicate(meta_column_csv_manual[[schema]],
-                                 meta_column_data_manual[[schema]] %>% collect(),
-                                 columns_pkey)
-  
-  meta_column_manual_append[[schema]] = results[1][[1]]
-  meta_column_manual_orphan[[schema]] = results[2][[1]]
-  # meta_column_manual_update[[schema]] = results[3][[1]]
-  meta_column_manual_update[[schema]] = meta_column_data_manual[[schema]] %>%
-    select(columns_pkey) %>%
-    right_join(results[3][[1]], by=columns_pkey, copy=TRUE) # super slow, find workaround
-  meta_column_manual_duplicate[[schema]] = results[4][[1]]
-  
-  cat("Discrepancies processed for schema: ", schema, "\n")
-}
-
-```
-## append and update database using single transaction
-
-```{r}
-
-dbBegin(con)
-
-tryCatch(
-  {
-    # appends
-    for (schema in schemas) {
-        
-      if (any(is.na(meta_column_data_manual[[schema]] %>% select(columns_pkey)))) {
-          stop("NA values found in the primary key of meta_column_data_manual.")
-      }
-      if (any(is.na(meta_column_data_manual[[schema]] %>% select(columns_pkey)))) {
-          stop("NA values found in the primary key of meta_column_manual_update.")
-      }
       
-      cat("Data to be updated:\n")
-      print(meta_column_manual_update[[schema]] %>% collect())
-      cat("Existing data:\n")
-      print(meta_column_data_manual[[schema]] %>% collect())
-      
-      if (nrow(meta_column_manual_update[[schema]]) > 0) {
-        query <- rows_update(meta_column_data_manual[[schema]],  # many issues with this function, so far not successful. Workaround: Generate explicit SQL to drop rows to update, then append updates. 
-                    meta_column_manual_update[[schema]],
-                    by=columns_pkey)
-        print(show_query(query))
-        cat("Updated ", schema,".metadata_columns\n")
-      }
-    }
-  
-  
-  # Commit the transaction if successful
-  dbCommit(con)
-  cat("Transaction successful!")
-  
-}, error = function(e) {
-  # Rollback in case of error
-  dbRollback(con)
-  message("Transaction failed: ", e$message)
-})
+      # Commit the transaction if successful
+      dbCommit(con)
+      print("Transaction successful! All tables are up to date.")
+
+    }, error = function(e) {
+      # Rollback in case of error
+      dbRollback(con)
+      message("Transaction failed: ", e$message)
+    })
+}else{
+  print("No new data. All tables are up to date.")
+}
+
 ```
