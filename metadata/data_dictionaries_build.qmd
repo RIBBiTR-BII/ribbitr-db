@@ -2,7 +2,7 @@
 title: "Build Data Dictionaries"
 author: Cob Staines
 format: html
-editor: visual
+editor: source
 ---
 
 ```{r setup, include=FALSE}
@@ -40,8 +40,11 @@ error=function(cond) {
 ## Pull Schemas
 
 ```{r}
-schemas <- dbGetQuery(con, "SELECT schema_name FROM information_schema.schemata")$schema_name
-schemas <- schemas[!schemas %in% c("information_schema", "pg_catalog")]
+schemas <- dbGetQuery(con, "SELECT schema_name FROM information_schema.schemata
+                      WHERE schema_name NOT LIKE 'pg_temp_%'
+                      AND schema_name NOT LIKE 'pg_toast_temp_%'
+                      AND schema_name != 'pg_catalog'
+                      AND schema_name != 'information_schema';")$schema_name
 ```
 
 ## Define functions to pull table and column metadata
@@ -139,7 +142,7 @@ column_dict_mutate_supplementary <- function(dict) {
 # Build data dictionaries locally (temp)
 
 ```{r}
-dir.create(file.path(here("staging", "metadata")), showWarnings = FALSE)
+# dir.create(file.path(here("staging", "metadata")), showWarnings = FALSE) # not needed
 
 table_dict_build = list()
 column_dict_build = list()
@@ -149,6 +152,7 @@ for (schema in schemas) {
     collect()
   
   column_dict_build[[schema]] <- column_dict_mutate_supplementary(build_column_dictionary(schema)) %>%
+    select(table_schema, table_name, column_name, all_of(column_dict_supplementary), everything()) %>%
     collect()
   
   cat("Dictionaries assembled for schema:", schema, "\n")
@@ -184,9 +188,16 @@ tryCatch(
                    overwrite = TRUE)
       column_pkey_str = paste0("
                         ALTER TABLE ribbitr.", schema, ".metadata_columns
-                        ADD PRIMARY KEY (table_schema, table_name, column_name)
+                        ADD PRIMARY KEY (table_schema, table_name, column_name);
                         ")
       dbExecute(con, column_pkey_str)
+      default_val_str = paste0("
+                        ALTER TABLE ribbitr.", schema, ".metadata_columns
+                        ALTER COLUMN reviewed SET DEFAULT FALSE;
+                        ")
+      dbExecute(con, default_val_str)
+      
+      
       
       cat("Dictionaries created for schema:", schema, "\n")
     }

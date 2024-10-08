@@ -2,7 +2,7 @@
 title: "Update Data Dictionaries"
 author: "Cob Staines"
 format: html
-editor: visual
+editor: source
 ---
 
 ```{r setup, include=FALSE}
@@ -134,7 +134,8 @@ append_orphan_update_duplicate = function (dataframe_a, dataframe_b, key_columns
   
   data_pkey_counts = data_bind %>%
     group_by_at(key_columns) %>%
-    count()
+    count() %>%
+    ungroup()
   
   # case 1: unique to data_frame_a -> append
   # logic: pkey combo found 1x in data-_bind, from dataframe_a
@@ -161,8 +162,7 @@ append_orphan_update_duplicate = function (dataframe_a, dataframe_b, key_columns
     select(-n) %>%
     left_join(data_bind, by=key_columns) %>%
     arrange(desc(d_source)) %>%
-    # distinct(pick(-d_source), .keep_all=TRUE) %>%  # error, not dropping duplicates!
-    distinct_at(vars(-d_source), .keep_all=TRUE) %>% # same as above
+    distinct_at(vars(-d_source), .keep_all=TRUE) %>%
     filter(d_source == "a") %>%
     select(-d_source)
   
@@ -180,8 +180,11 @@ append_orphan_update_duplicate = function (dataframe_a, dataframe_b, key_columns
 ## Pull Schemas
 
 ```{r}
-schemas <- dbGetQuery(con, "SELECT schema_name FROM information_schema.schemata")$schema_name
-schemas <- schemas[!schemas %in% c("information_schema", "pg_catalog")]
+schemas <- dbGetQuery(con, "SELECT schema_name FROM information_schema.schemata
+                      WHERE schema_name NOT LIKE 'pg_temp_%'
+                      AND schema_name NOT LIKE 'pg_toast_temp_%'
+                      AND schema_name != 'pg_catalog'
+                      AND schema_name != 'information_schema';")$schema_name
 ```
 
 ## Pull pg data and metadata tables
@@ -194,25 +197,23 @@ pg_column_data = list()
 meta_table_data = list()
 meta_column_data = list()
 
-# columns derived from postegres information_schema
+# columns derived from postgres information_schema
 meta_column_data_pg = list()
-# columns derived from manual human input
-meta_column_data_manual = list()
+# supplementary columns derived from manual human input
+meta_column_data_sup = list()
 
 for (schema in schemas){
   # pull pg data from information_schema
   pg_table_data[[schema]] = pull_pg_table_data(schema)
   pg_column_data[[schema]] = pull_pg_column_data(schema)
   
-  # pull metadata tables from each schema
-  # meta_table_data[[schema]] = dbReadTable(con, Id(schema, "metadata_tables"))
-  # meta_column_data[[schema]] = dbReadTable(con, Id(schema, "metadata_columns"))
+  # pull metadata tables from each schema, dropping supplementary columns
   meta_table_data[[schema]] = tbl(con, Id(schema, "metadata_tables"))
   meta_column_data[[schema]] = tbl(con, Id(schema, "metadata_columns"))
   
   meta_column_data_pg[[schema]] = meta_column_data[[schema]] %>%
     select(-any_of(column_dict_supplementary))
-  meta_column_data_manual[[schema]] = meta_column_data[[schema]] %>%
+  meta_column_data_sup[[schema]] = meta_column_data[[schema]] %>%
     select(any_of(columns_pkey),
            any_of(column_dict_supplementary))
   
@@ -221,7 +222,7 @@ for (schema in schemas){
 
 ```
 
-## Compare pg and metadata for diferences
+## QA: Compare pg and metadata for diferences
 
 -   check to make sure columns align between pg and metadata tables
 
@@ -261,10 +262,10 @@ for (schema in schemas) {
                                                  meta_table_data[[schema]] %>%
                                                    collect(),
                                                  tables_pkey)
-  meta_table_append[[schema]] = table_results[1]
-  meta_table_orphan[[schema]] = table_results[2]
-  meta_table_update[[schema]] = table_results[3]
-  meta_table_duplicate[[schema]] = table_results[4]
+  meta_table_append[[schema]] = table_results[1][[1]]
+  meta_table_orphan[[schema]] = table_results[2][[1]]
+  meta_table_update[[schema]] = table_results[3][[1]]
+  meta_table_duplicate[[schema]] = table_results[4][[1]]
   
   column_results = append_orphan_update_duplicate(pg_column_data[[schema]] %>%
                                                     collect(),
@@ -282,16 +283,39 @@ for (schema in schemas) {
 
 ```
 
-## warnings for orphan data
+## warnings for orphan data, flag for update or append
 
 ```{r}
+update = FALSE
+append = FALSE
+
 for (schema in schemas) {
+  # warnings for orphan data
   if (nrow(meta_table_orphan[[schema]]) > 0) {
-    warning(paste0("Orphan table data found in schema:", schema))
+    warning(paste0("Table orphan data found in schema:", schema))
+  }
+  if (nrow(meta_column_orphan[[schema]]) > 0) {
+    warning(paste0("Column orphan data found in schema:", schema))
   }
   
-  if (nrow(meta_table_orphan[[schema]]) > 0) {
-    warning(paste0("Orphan column data found in schema:", schema))
+  # flag if updates needed
+  if (nrow(meta_table_update[[schema]]) > 0) {
+    update = TRUE
+    cat("Table updates found for schema: ", schema, "\n")
+  }
+  if (nrow(meta_column_update[[schema]]) > 0) {
+    update = TRUE
+    cat("Column updates found for schema: ", schema, "\n")
+  }
+  
+  # flag if append needed
+  if (nrow(meta_table_append[[schema]]) > 0) {
+    append = TRUE
+    cat("Table appends found for schema: ", schema, "\n")
+  }
+  if (nrow(meta_column_append[[schema]]) > 0) {
+    append = TRUE
+    cat("Column appends found for schema: ", schema, "\n")
   }
 }
 ```
@@ -300,60 +324,158 @@ for (schema in schemas) {
 
 ```{r}
 
-dbBegin(con)
+generate_update_sql <- function(table_name, key_columns, updates) {
+  # Validate inputs
+  if (length(key_columns) == 0) {
+    stop("Key columns must not be empty")
+  }
+  if (nrow(updates) == 0) {
+    stop("updates must have at least one row.")
+  }
+  
+  # Initialize an empty list to store SQL statements
+  sql_statements <- vector("list", nrow(updates))
+  
+  # Loop through each row of the updates data frame
+  for (ii in seq_len(nrow(updates))) {
+    row <- updates[ii, ]
+    
+    # Construct the SET clause
+    set_clause <- paste(
+      sapply(names(row), function(col) {
+        if (!(col %in% key_columns)) { # Exclude key columns from SET clause
+          paste0(col, " = '", row[[col]], "'")
+        }
+      }), collapse = ", "
+    )
+    
+    # Construct the WHERE clause
+    where_clause <- paste(
+      sapply(key_columns, function(col) {
+        paste0(col, " = '", row[[col]], "'")
+      }), collapse = " AND "
+    )
+    
+    # Generate the final SQL statement
+    sql <- paste0("UPDATE ", table_name, " SET ", set_clause, " WHERE ", where_clause, ";")
+    
+    # Store the SQL statement
+    sql_statements[[ii]] <- sql
+  }
+  
+  return(sql_statements)
+}
 
-tryCatch(
-  {
-    # appends
-    for (schema in schemas) {
-      if (nrow(meta_table_append[[schema]]) > 0) {
-        dbWriteTable(con,
-                     Id(schema, "metadata_tables"),
-                     meta_table_append[[schema]],
-                     append = TRUE,
-                     row.names = FALSE)
-        
-        cat("Appended ", schema,".metadata_tables\n")
-      }
-      
-      if (nrow(meta_column_append[[schema]]) > 0) {
-        dbWriteTable(con,
-                     Id(schema, "metadata_columns"),
-                     meta_column_append[[schema]],
-                     append = TRUE,
-                     row.names = FALSE)
-        
-        cat("Appended ", schema,".metadata_columns\n")
-      }
-      
-      # updates
-      if (nrow(meta_table_update[[schema]]) > 0) {
-        rows_update(meta_table_data[[schema]],
-                    meta_table_update[[schema]],
-                    by=tables_pkey)
-        
-        cat("Updated ", schema,".metadata_tables\n")
+# Example usage
+table_name <- "metadata_columns"
+key_columns <- columns_pkey
+updates <- data.frame(
+  id = c(1, 2),
+  name = c("John Doe", "Jane Smith"),
+  salary = c(75000, 80000)
+)
+
+# Generate SQL statements
+sql_statements <- generate_update_sql("metadata_columns", columns_pkey, meta_column_update[[schema]])
+
+# Print SQL statements
+cat(paste(sql_statements, collapse = "\n"))
+
+if (append | update){
+  
+  dbBegin(con)
+  
+  tryCatch(
+    {
+      # appends
+      for (schema in schemas) {
+         if (append){
+          # append table
+          if (nrow(meta_table_append[[schema]]) > 0) {
+            dbWriteTable(con,
+                         Id(schema, "metadata_tables"),
+                         meta_table_append[[schema]],
+                         append = TRUE,
+                         row.names = FALSE)
+            
+            cat("Appended ", schema,".metadata_tables\n")
+          }
+          
+          # append column
+          if (nrow(meta_column_append[[schema]]) > 0) {
+            dbWriteTable(con,
+                         Id(schema, "metadata_columns"),
+                         meta_column_append[[schema]],
+                         append = TRUE,
+                         row.names = FALSE)
+            
+            cat("Appended ", schema,".metadata_columns\n")
+          }
         }
         
-      if (nrow(meta_column_update[[schema]]) > 0) {
-        rows_update(meta_column_data[[schema]],
-                    meta_column_update[[schema]],
-                    by=columns_pkey)
-        
-        cat("Updated ", schema,".metadata_columns\n")
+        # updates
+        if (update) {
+          # update table
+          if (nrow(meta_table_update[[schema]]) > 0) {
+            meta_table_data_update = meta_table_data[[schema]] %>%
+              filter(FALSE) %>%
+              collect() %>%
+              bind_rows(meta_table_update[[schema]])
+            
+            rows_update(meta_table_data[[schema]],
+                        meta_table_data_update,
+                        by=tables_pkey)
+            
+            cat("Updated ", schema,".metadata_tables\n")
+            }
+          
+          # book mark! Errors everywhere using rows_update()
+          
+          # update column
+          if (nrow(meta_column_update[[schema]]) > 0) {
+            # meta_column_data_update = meta_column_data[[schema]] %>%
+            #   filter(FALSE) %>%
+            #   collect() %>%
+            #   bind_rows(meta_column_update[[schema]])
+            meta_column_data_update = meta_column_data[[schema]] %>%
+              select(all_of(columns_pkey)) %>%
+              right_join(meta_column_update[[schema]])
+            
+            update_query = meta_column_data[[schema]] %>%
+              rows_update(
+                meta_column_update[[schema]],
+                by=columns_pkey,
+                copy = TRUE,
+                unmatched = "ignore")
+            
+            query_sql = dbplyr::sql_render(update_query)
+            
+            dbExecute(con, query_sql)
+            
+            meta_column_data[[schema]] %>%
+              filter(table_name == "metadata_columns") %>%
+              select(-any_of(column_dict_supplementary)) %>%
+              arrange(column_name)
+            meta_column_update[[schema]] %>%
+              arrange(column_name)
+            
+            cat("Updated ", schema,".metadata_columns\n")
+          }
+        }
       }
-    }
-  
-  
-  # Commit the transaction if successful
-  dbCommit(con)
-  cat("Transaction successful!")
-  
-}, error = function(e) {
-  # Rollback in case of error
-  dbRollback(con)
-  message("Transaction failed: ", e$message)
-})
+    
+    # Commit the transaction if successful
+    dbCommit(con)
+    cat("Transaction successful! Metadata is up to date!\n")
+    
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(con)
+    message("Transaction failed: ", e$message)
+  })
+} else {
+  cat("No updates or appends found. Metadata is up to date!\n")
+}
 ```
 
 # Write metadata tables to csv locally
