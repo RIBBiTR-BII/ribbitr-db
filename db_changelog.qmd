@@ -1,0 +1,12 @@
+---
+title: "ribbitr_db Changelog"
+author: "Cob Staines"
+format: html
+editor: source
+---
+
+# Change Log for RIBBiTR_DB
+
+## 2024-10-01
+### Changed
+- log_statement = mod to log all database modifications
