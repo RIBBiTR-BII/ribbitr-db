@@ -40,7 +40,7 @@ tryCatch({
 # dbDisconnect(connection)
 ```
 
-## Query Bd swabs for site/species combos with samples >= 150
+## Query Bd swabs for site/species combos with samples \>= 150
 
 ```{r}
 
