@@ -7,6 +7,16 @@ editor: source
 
 # Change Log for RIBBiTR_DB
 
+## 2024-10-09
+
+### Server maintenance
+
+-   Upgraded postgreSQL engine from version 13.9 to 13.15
+-   Updated certificate authority to rds-ca-rsa2048-g1. If connecting to server using SSL, [download certificate bundle here](https://truststore.pki.rds.amazonaws.com/us-west-1/us-west-1-bundle.pem)
+-   Set "track_commit_timestamp = on" for easier troubleshooting or and rollbacks
+-   Created public schema
+-   Enabled extensions postgis and uuid-ossp on public schema
+
 ## 2024-10-08
 
 ### Added
@@ -18,6 +28,6 @@ editor: source
 
 ## 2024-10-01
 
-### Changed
+### Server maintenance
 
--   log_statement = mod to log all database modifications
+-   Set "log_statement = mod" to log all database modifications for accountability and troubleshooting
