@@ -22,7 +22,7 @@ editor: source
 ### Added
 
 -   changelog to track and share database changes
--   metadata tables: each schema in RIBBiTR_DB now has two metadata tables:
+-   metadata tables: Metadata to help with documentation, communication of table and column purposes, and automation of data management. Each schema in RIBBiTR_DB now has two metadata tables:
     -   metadata_tables: provides lookup details on each table in the schema. All columns are derived from postgres information_schema.
     -   metadata_columns: provides lookup details on each column in each table in the schema. Some columns are derived from postgres information_schema, others are defined manually (see metadata_columns to see which specific metadata columns are user-defined).
 
