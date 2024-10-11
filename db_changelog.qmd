@@ -7,6 +7,17 @@ editor: source
 
 # Change Log for RIBBiTR_DB
 
+## 2024-10-11
+
+### Added
+
+-   Unique constraints for natural keys on survey_data schema for the following columns:
+    -   location table: location
+    -   region table: region
+    -   site table: site
+    -   survey table: visit_id, detection_type
+    -   visit table: site_id, date, survey_time
+
 ## 2024-10-09
 
 ### Server maintenance
