@@ -44,7 +44,8 @@ schemas <- dbGetQuery(con, "SELECT schema_name FROM information_schema.schemata
                       WHERE schema_name NOT LIKE 'pg_temp_%'
                       AND schema_name NOT LIKE 'pg_toast_temp_%'
                       AND schema_name != 'pg_catalog'
-                      AND schema_name != 'information_schema';")$schema_name
+                      AND schema_name != 'information_schema'
+                      AND schema_name != 'public';")$schema_name
 ```
 
 ## Define functions to pull table and column metadata

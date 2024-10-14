@@ -233,7 +233,8 @@ schemas <- dbGetQuery(con, "SELECT schema_name FROM information_schema.schemata
                       WHERE schema_name NOT LIKE 'pg_temp_%'
                       AND schema_name NOT LIKE 'pg_toast_temp_%'
                       AND schema_name != 'pg_catalog'
-                      AND schema_name != 'information_schema';")$schema_name
+                      AND schema_name != 'information_schema'
+                      AND schema_name != 'public';")$schema_name
 ```
 
 ## Pull pg data and metadata tables
@@ -377,6 +378,8 @@ for (schema in schemas) {
                                       meta_column_insert[[schema]])
   
 }
+
+cat("Updates: ", update, "\nInserts: ", insert, "\n")
 ```
 
 ## create temporary DB tables with upsert data, and upsert
