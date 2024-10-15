@@ -18,7 +18,7 @@ librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr
 
 ## Point to data directory
 
-Keeping data in a central directory. Naming convention uses download date to distinguish batches.
+Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
 
 ```{r}
 ddir = Sys.getenv("data_dir")  # data directory
@@ -36,10 +36,10 @@ wddir = here(ddir, "fulcrum", 'penn', '2024-09-13') # working data directory
 - Upload to Database in transaction
 - log transaction
 
-## Data chains (someday we can automate this... *sigh*)
+## Data chains (someday we can automate this...)
 
-- aural / survey / visit / site / region / location
 - capture / survey / visit / site / region / location
+- aural / survey / visit / site / region / location
 - ves / survey / visit / site / region / location
 
 # 1 - Import data
@@ -68,7 +68,8 @@ dbExecute(connection, "set search_path to survey_data")
 ```
 ## Pull metadata from database
 ```{r}
-metadata_columns = tbl(connection, "metadata_columns")
+metadata_columns = tbl(connection, "metadata_columns") %>%
+  collect()
 
 ```
 
@@ -142,7 +143,7 @@ UUIDgenerate_if_NA = function(str) {
 
 ## Pull dependent tables for each data chain
 
-# use naming convention "db\_" to distinguish the source
+### use naming convention "db\_" to distinguish the source
 
 ```{r}
 # pull relevant chain tables from DB
@@ -156,14 +157,94 @@ db_region = tbl(connection, "region")
 db_location = tbl(connection, "location")
 ```
 
-## Load most recent CSV Exports
+```{r}
+help = db_capture %>%
+  left_join(db_survey, by="survey_id") %>%
+  group_by(body_temp_c,
+           body_mass_g,
+           svl_mm,
+           time_of_capture,
+           bd_swab_id) %>%
+  mutate(count = n()) %>%
+  filter(count > 1) %>%
+  collect()
+```
 
-- read in csv files
-- drop unnecessary fulcrum columns
+## Load most recent raw CSV Exports
+- use naming convention "raw_" to distinguish source
+- name related tables similarly for natural grouping
+
+
+```{r}
+# general survey table
+raw_survey_info <- read_csv(here(wddir, "1_penn_surveyinformation", "1_penn_surveyinformation.csv"))
+
+# aural tables
+raw_aural_survey <- read_csv(here(wddir, "2_penn_acousticsurvey", "2_penn_acousticsurvey.csv"))
+raw_aural_obs <- read_csv(here(wddir, "2_penn_acousticsurvey", "2_penn_acousticsurvey_acoustic_survey.csv"))
+
+#ves tables
+raw_ves_survey <- read_csv(here(wddir, "4_penn_visualencountersurvey", "4_penn_visualencountersurvey.csv"))
+raw_ves_obs <- read_csv(here(wddir, "4_penn_visualencountersurvey", "4_penn_visualencountersurvey_visual_encounter_information.csv"))
+
+# capture tables
+raw_capture_survey <- read_csv(here(wddir, "5_penn_capturesurvey", "5_penn_capturesurvey.csv"))
+raw_capture_obs <- read_csv(here(wddir, "5_penn_capturesurvey", "5_penn_capturesurvey_captured_amphibian_information.csv"))
+raw_cmr <- read_csv(here(wddir, "supp_penn_cmrids", "supp_penn_cmrids.csv"))
+
+# sample processing tables
+raw_samp_process <- read_csv(here(wddir, "6_penn_sampleprocessing", "6_penn_sampleprocessing.csv"))
+raw_samp_process_obs <- read_csv(here(wddir, "6_penn_sampleprocessing", "6_penn_sampleprocessing_amphibian_capture_survey_collections.csv"))
+```
+# 2 - Clean data
+
+## check for null columns & duplicated rows
+- purely informational, any action taken in next step
+
+```{r}
+
+null_columns = function(dataframe) {
+  filtered = dataframe %>%
+    select(where(~ all(is.na(.)))) %>%
+    colnames()
+}
+
+# check null columns
+(null_columns(raw_survey_info))
+(null_columns(raw_aural_survey))
+(null_columns(raw_aural_obs))
+(null_columns(raw_ves_survey))
+(null_columns(raw_ves_obs))
+(null_columns(raw_capture_survey))
+(null_columns(raw_capture_obs))
+(null_columns(raw_cmr))
+(null_columns(raw_samp_process))
+(null_columns(raw_samp_process_obs))
+
+
+# check duplicated rows
+any(duplicated(raw_survey_info))
+any(duplicated(raw_aural_survey))
+any(duplicated(raw_aural_obs))
+any(duplicated(raw_ves_survey))
+any(duplicated(raw_ves_obs))
+any(duplicated(raw_capture_survey))
+any(duplicated(raw_capture_obs))
+any(duplicated(raw_cmr))
+any(duplicated(raw_samp_process))
+any(duplicated(raw_samp_process_obs))
+
+
+```
+
+## Drop irrelevant & fix structural issues
+- drop unnecessary columns
+- drop unnecessary rows
 - clean column names
-- drop/mutate specific columns
-
-# use naming convention "raw\_" to distinguish the source
+- drop/mutate/rename specific columns
+- Split or concatenate related columns
+- Convert to accurate data types
+- NA formatting
 
 ```{r}
 
@@ -179,158 +260,177 @@ db_location = tbl(connection, "location")
    "status",
    "project",
    "assigned_to",
-   "latitude" ,
-   "longitude",
+   "latitude", # could this be useful?
+   "longitude", # could this be useful?
    "geometry"
  )
 
-null_columns = function(dataframe) {
-  filtered = dataframe %>%
-    select(where(~ all(is.na(.)))) %>%
-    colnames()
-}
 
-
-raw_survey_info <- read_csv(here(wddir, "1_penn_surveyinformation",
-                             "1_penn_surveyinformation.csv")) %>%
-  select(!any_of(to_drop)) %>%
-  filter(!if_all(everything(), is.na)) %>%  # drop any rows all null
+clean_survey_info <- raw_survey_info %>%
+  select(-any_of(to_drop)) %>%
   clean_names() %>% 
+  rename(visit_comments = sampling_event_comments) %>%
   mutate(site = str_to_lower(site),
          site = str_replace_all(site, "-", "_"),
          site = str_replace_all(site, " ", "_"),
          survey_time = str_to_lower(survey_time)) %>%
-  rename(visit_comments = sampling_event_comments)
+  filter(!if_all(everything(), is.na))  # drop any rows all null
 
-raw_survey_acoustic <- read_csv(here(wddir, "2_penn_acousticsurvey",
-                                 "2_penn_acousticsurvey.csv")) %>%
-  select(!any_of(to_drop)) %>%
-  filter(!if_all(everything(), is.na)) %>%  # drop any rows all null
+clean_aural_survey <- raw_aural_survey %>%
+  select(-any_of(to_drop)) %>%
   clean_names() %>% 
   mutate(site = str_to_lower(site),
          site = str_replace_all(site, "-", "_"),
          site = str_replace_all(site, " ", "_"),
-         survey_time = str_to_lower(survey_time)) %>%
-  mutate(detection_type = "aural")
+         survey_time = str_to_lower(survey_time),
+         detection_type = "aural") %>%
+  filter(!if_all(everything(), is.na))  # drop any rows all null
 
-raw_acoustic_obs <- read_csv(here(wddir, "2_penn_acousticsurvey",
-                              "2_penn_acousticsurvey_acoustic_survey.csv")) %>%
-  select(!any_of(to_drop)) %>%
-  filter(!if_all(everything(), is.na)) %>%  # drop any rows all null
+clean_aural_obs <- raw_aural_obs %>%
+  select(-any_of(to_drop)) %>%
   clean_names() %>%
-  mutate(detection_type = "aural")
+  rename(species_aural = species_acoustic,
+         species_aural_other = species_acoustic_other,
+         aural_comments = acoustic_species_comments) %>%
+  mutate(species_aural = str_to_lower(str_replace_all(species_aural, " ", "_")),
+         species_aural_other = str_to_lower(str_replace_all(species_aural_other, " ", "_"))) %>%
+  filter(!if_all(everything(), is.na)) # drop any rows all null
 
-# don't load eDNA data
-# raw_survey_edna <- read_csv(here(wddir, "3_penn_ednasurvey",
-#                              "3_penn_ednasurvey.csv")) %>%
-#   select(!any_of(to_drop)) %>%
-#   clean_names()
-# 
-# raw_edna_obs_col <- read_csv(here(wddir, "3_penn_ednasurvey",
-#                               "3_penn_ednasurvey_edna_collection.csv")) %>%
-#   select(!any_of(to_drop)) %>%
-#   clean_names()
-# 
-# raw_edna_obs_filt <- read_csv(here(wddir, "3_penn_ednasurvey",
-#                                "3_penn_ednasurvey_edna_collection_edna_filtering.csv")) %>%
-#   select(!any_of(to_drop)) %>%
-#   clean_names()
-
-raw_survey_ves <- read_csv(here(wddir, "4_penn_visualencountersurvey",
-                            "4_penn_visualencountersurvey.csv")) %>%
-  select(!any_of(to_drop)) %>%
-  filter(!if_all(everything(), is.na)) %>%  # drop any rows all null
+clean_ves_survey <- raw_ves_survey %>%
+  select(-any_of(to_drop)) %>%
   clean_names() %>% 
   mutate(site = str_to_lower(site),
          site = str_replace_all(site, "-", "_"),
          site = str_replace_all(site, " ", "_"),
-         survey_time = str_to_lower(survey_time)) %>%
-  mutate(detection_type = "visual")
+         survey_time = str_to_lower(survey_time),
+         detection_type = "visual") %>%
+  filter(!if_all(everything(), is.na))  # drop any rows all null
 
-raw_ves_obs <- read_csv(here(wddir, "4_penn_visualencountersurvey", 
-                         "4_penn_visualencountersurvey_visual_encounter_information.csv")) %>%
-  select(!any_of(to_drop)) %>%
-  filter(!if_all(everything(), is.na)) %>%  # drop any rows all null
+clean_ves_obs <- raw_ves_obs %>%
+  select(-any_of(to_drop)) %>%
   clean_names() %>%
-  mutate(detection_type = "visual")
+  mutate(species_ves = str_to_lower(str_replace_all(species_ves, " ", "_")),
+         species_ves_other = str_to_lower(str_replace_all(species_ves_other, " ", "_"))) %>%
+  filter(!if_all(everything(), is.na))  # drop any rows all null
 
-raw_survey_capture <- read_csv(here(wddir, "5_penn_capturesurvey",
-                                "5_penn_capturesurvey.csv")) %>%
-  select(!any_of(to_drop)) %>%
-  filter(!if_all(everything(), is.na)) %>%  # drop any rows all null
+clean_capture_survey <- raw_capture_survey %>%
+  select(-any_of(to_drop)) %>%
   clean_names() %>% 
   mutate(site = str_to_lower(site),
          site = str_replace_all(site, "-", "_"),
          site = str_replace_all(site, " ", "_"),
-         survey_time = str_to_lower(survey_time)) %>%
-  mutate(detection_type = "capture")
+         survey_time = str_to_lower(survey_time),
+         detection_type = "capture") %>%
+  filter(!if_all(everything(), is.na))  # drop any rows all null
 
-raw_capture_obs <- read_csv(here(wddir, "5_penn_capturesurvey", 
-                             "5_penn_capturesurvey_captured_amphibian_information.csv")) %>%
-  select(!any_of(to_drop)) %>%
-  select(!"capture_status") %>% # capture status: was this individual successfully captured?
-  filter(!if_all(everything(), is.na)) %>%  # drop any rows all null
+clean_capture_obs <- raw_capture_obs %>%
+  select(-any_of(to_drop),
+        -capture_status,
+        -fulcrum_record_id) %>% # capture status: was this individual successfully captured?
   clean_names() %>%
-  mutate(detection_type = "capture")
+  rename(body_temp_c = body_temperature) %>%
+  mutate(species_capture = str_to_lower(str_replace_all(species_capture, " ", "_")),
+         species_capture_other = str_to_lower(str_replace_all(species_capture_other, " ", "_"))) %>%
+  filter(!if_all(everything(), is.na))  # drop any rows all null 
 
-raw_samp_proces <- read_csv(here(wddir, "6_penn_sampleprocessing",
-                             "6_penn_sampleprocessing.csv")) %>%
-  select(!any_of(to_drop)) %>%
-  filter(!if_all(everything(), is.na)) %>%  # drop any rows all null
-  clean_names()
+clean_cmr <- raw_cmr %>%
+  select(-any_of(to_drop)) %>%
+  clean_names() %>%
+  rename(site = location) %>%
+  mutate(site = str_to_lower(site),
+         site = str_replace_all(site, "-", "_"),
+         site = str_replace_all(site, " ", "_")) %>%
+  filter(!if_all(everything(), is.na))  # drop any rows all null
 
-raw_samp_procces_obs <- read_csv(here(wddir, "6_penn_sampleprocessing",
-                                  "6_penn_sampleprocessing_amphibian_capture_survey_collections.csv")) %>%
-  select(!any_of(to_drop)) %>%
-  filter(!if_all(everything(), is.na)) %>%  # drop any rows all null
-  clean_names()
+clean_samp_process <- raw_samp_process %>%
+  select(-any_of(to_drop)) %>%
+  clean_names() %>%
+  rename(site = location) %>%
+  mutate(site = str_to_lower(site),
+         site = str_replace_all(site, "-", "_"),
+         site = str_replace_all(site, " ", "_"),
+         survey_time = str_to_lower(survey_time)) %>%
+  filter(!if_all(everything(), is.na)) # drop any rows all null
 
-raw_cmr <- read_csv(here(wddir, "supp_penn_cmrids",
-                     "supp_penn_cmrids.csv")) %>%
-  select(!any_of(to_drop)) %>%
-  filter(!if_all(everything(), is.na)) %>%  # drop any rows all null
-  clean_names()
+clean_samp_process_obs <- raw_samp_process_obs %>%
+  select(-any_of(to_drop),
+         -fulcrum_record_id,
+         -all_of(c("norep_bathvolume_50ml_acid_05ml",
+                   "norep_bathvolume_100ml_acid_1ml",
+                   "norep_bathvolume_200ml_acid_2ml",
+                   "ul_of_norep_27mgml",
+                   "ul_of_norep_135mgml",
+                   "ul_of_norep_0675mgml",
+                   "ul_of_norep_03375mgml",
+                   "ul_of_norep_01688mgml",
+                   "photo",
+                   "photo_caption",
+                   "photo_url",
+                   "amp_ig_ne_injected",
+                   "amp_ig_soak_volume",
+                   "amp_ig_acidified",
+                   "amp_ig_comments"))) %>%
+  clean_names() %>%
+  rename(svl_mm = snout_vent_length,
+         body_and_bag_mass_g = body_and_bag_mass,
+         bag_mass_g = bag_mass,
+         body_mass_g = body_mass) %>%
+  mutate(sex = str_to_lower(sex),
+         sex_other = str_to_lower(sex_other),
+         capture_type = str_to_lower(capture_type),
+         life_stage = str_to_lower(life_stage),
+         life_stage_other = str_to_lower(life_stage_other),
+         species_capture = str_to_lower(str_replace_all(species_capture, " ", "_")),
+         species_capture_other = str_to_lower(str_replace_all(species_capture_other, " ", "_"))) %>%
+  filter(!if_all(everything(), is.na),
+         !(species_capture == "negative_control"))
 
 ```
 
-# 2 - Drop irrelevant: Early QA
+# 3 - Unify data
+- "One chain at a time"
+
+## Capture chain
+- capture / survey / visit / site / region / location
 
 ```{r}
 
-# check null columns
-(null_columns(raw_survey_info))
-(null_columns(raw_survey_acoustic))
-(null_columns(raw_acoustic_obs))
-(null_columns(raw_survey_ves))
-(null_columns(raw_ves_obs))
-(null_columns(raw_survey_capture))
-(null_columns(raw_capture_obs))
-(null_columns(raw_samp_proces))
-(null_columns(raw_samp_procces_obs))
-(null_columns(raw_cmr))
+unified_samp_proc =  clean_samp_process_obs %>% 
+  full_join(clean_samp_process, by= c("fulcrum_parent_id" = "fulcrum_id")) %>%
+  select(-fulcrum_id,
+         -fulcrum_parent_id)
 
-# check duplicated rows
-any(duplicated(raw_survey_info))
-any(duplicated(raw_survey_acoustic))
-any(duplicated(raw_acoustic_obs))
-any(duplicated(raw_survey_ves))
-any(duplicated(raw_ves_obs))
-any(duplicated(raw_survey_capture))
-any(duplicated(raw_capture_obs))
-any(duplicated(raw_samp_proces))
-any(duplicated(raw_samp_procces_obs))
-any(duplicated(raw_cmr))
+unified_capture = clean_capture_obs %>%
+  full_join(clean_capture_survey, by = c("fulcrum_parent_id" = "fulcrum_id")) %>%
+  full_join(unified_samp_proc, by=c("site", "date", "bag_id")) %>%
+  select(-fulcrum_id,
+         -fulcrum_parent_id)
 
-```
+# duplicated columns, resolve through drop or coalesce
+c(species_capture,
+  species_capture_other,
+  surevy_time,
+  survey_comments)
 
-# 3 - Fix struvtural issues
+# %>%
+#   full_join(clean_survey_info)
 
-- Renaming columns – descriptive and well formatted. Rename them well from the beginning, so you don’t have to do it again
-- Split or concatenate related columns
-- Convert to accurate data types
-- NA formatting
+# more duplicated columns!
+c(end_time,
+  start_time,
+  survey_time,
+  site_other)
 
-```{r}
+# exploration
+hope = unified_capture %>%
+  group_by(site, date, bag_id) %>%
+  mutate(count = n()) %>%
+  filter(count > 1)
+
+pope = unified_samp_proc %>%
+  group_by(site, date, bag_id) %>%
+  mutate(count = n()) %>%
+  filter(count > 1)
 
 ```
 
@@ -430,8 +530,7 @@ mid_surv_capture <- raw_survey_info %>%
             end_time.x,
             survey_time.y,
             air_temperature_measurement_time,
-            water_temperature_measurement_time)) %>% 
-  mutate(detection_type = "capture") %>% 
+            water_temperature_measurement_time)) %>%
   unite(observer, c("observers", "other_observers"), sep=",", na.rm = T) %>% 
   rename(start_time = start_time.y,
          end_time = end_time.y,
@@ -564,7 +663,6 @@ warningCondition("Survey append commented out. Rewrite as single transaction.")
 ```{r}
 #cap_col <- read_csv(here("clean_tables", "capture.csv"))
 
-
 mid_cap <- survey_info %>% 
   left_join(survey_capture, by = c("site" , "date")) %>% # could we do this on fin_survey or similar, to carry forward all names and ids? Need fulcrum_id though.
   select(fulcrum_id.y, detection_type, date, site, survey_time.x) %>% 
@@ -577,11 +675,7 @@ mid_cap <- survey_info %>%
 mid_samp_proc <- samp_proces %>% 
   left_join(samp_procces_obs, by= c("fulcrum_id" = "fulcrum_parent_id")) %>% # full join? to catch errors
   select(!c(fulcrum_id,
-            fulcrum_id.y,
-            fulcrum_record_id,
-            c(norep_bathvolume_50ml_acid_05ml:ul_of_norep_01688mgml), # explicitly drop (or explicitly select), not robust to change in column order
-            c(photo:photo_url),
-            c(amp_ig_ne_injected:amp_ig_comments))) 
+            fulcrum_id.y)) 
 
 # separate sample negative controls
 neg_controls <- mid_samp_proc %>% 
@@ -607,21 +701,11 @@ unique_cap <- mid_samp_proc %>%
             survey_comments)) %>% 
   rename(detection_type = detection_type.x,
          survey_time = survey_time.x,
-         species_capture = species_capture.x,
-         site = location) %>% 
+         species_capture = species_capture.x) %>% 
   unite(processor, c("processor", "processor_other"), na.rm = T, sep = "") %>% 
-  mutate(site = str_to_lower(str_replace_all(site, "-", "_")),
-         site = str_replace_all(site, " ", "_"),
-         species_capture = str_to_lower(str_replace_all(species_capture, " ", "_")),
-         survey_time = str_to_lower(survey_time)) %>% 
   unite(capture_comments, c("amphibian_comments", "capture_comments"), na.rm = T,
-        sep = ", ") %>% 
-  rename(body_temp_c = body_temperature,
-         svl_mm = snout_vent_length,
-         body_and_bag_mass_g = body_and_bag_mass,
-         bag_mass_g = bag_mass,
-         body_mass_g = body_mass) %>%
-  mutate(amp_id = if_else(capture_mark_recapture %in% ("cf358e11-d6da-4637-af56-c384d683e6fb"), "Pe_AMP00000", amp_id)) # to what does this cmr id correspond?
+        sep = ", ") %>%
+  mutate(amp_id = if_else(capture_mark_recapture %in% ("cf358e11-d6da-4637-af56-c384d683e6fb"), "Pe_AMP00000", amp_id)) # to what does this id correspond?
 
 
 
@@ -654,10 +738,7 @@ unique_cap_fkey <- unique_cap %>%
 final_cap <- unique_cap_fkey %>% 
   select(!c(survey_time, detection_type, site, date)) %>% 
   rename(microbiome_swab_id = microbiome_id,
-         sierra_bd_swab_id = bd_swab_id_sv) %>% 
-  mutate(sex = str_to_lower(sex),
-         capture_type = str_to_lower(capture_type),
-         life_stage = str_to_lower(life_stage)) %>% 
+         sierra_bd_swab_id = bd_swab_id_sv) %>%
   mutate(across(c(bd_swab_id:genetic_id), ~ifelse(str_detect(., "00000"), NA, .))) %>% 
   select(!c(sierra_bd_swab_id, bacterial_swab_id_foundations, location_other))
 
@@ -711,10 +792,6 @@ mid_ves <- survey_ves %>%
 unique_ves <- mid_ves %>% 
   unite(observer, c("observer", "observer_other"), na.rm = T, sep = "") %>% 
   unite(species_ves, c("species_ves", "species_ves_other"), na.rm = T, sep = "") %>% 
-  mutate(site = str_to_lower(str_replace_all(site, " ", "_")),
-         site = str_replace_all(site, "-", "_"),
-         survey_time = str_to_lower(survey_time),
-         species_ves = str_to_lower(str_replace_all(species_ves, " ", "_"))) %>% 
   rename(ves_comments = comments_ves,
          count = count_ves)
 
@@ -765,9 +842,7 @@ mid_aural <- survey_acoustic %>%
 
 unique_aural <- mid_aural %>% 
   rename(detection_type = detection_type.y) %>% 
-  mutate(site = str_to_lower(str_replace_all(site, " ", "_")),
-         site = str_replace_all(site, "-", "_"),
-         species_acoustic = str_to_lower(str_replace_all(species_acoustic, " ", "_")),
+  mutate(species_acoustic = str_to_lower(str_replace_all(species_acoustic, " ", "_")),
          survey_time = str_to_lower(survey_time)) %>% 
   rename(species_aural = species_acoustic,
          aural_comments = acoustic_species_comments)
