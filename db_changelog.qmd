@@ -17,6 +17,9 @@ editor: source
     -   site table: site
     -   survey table: visit_id, detection_type
     -   visit table: site_id, date, survey_time
+-   public schema views of all database metadata:
+    -   public.all_tables
+    -   public.all_columns
 
 ## 2024-10-09
 

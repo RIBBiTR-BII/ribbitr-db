@@ -215,6 +215,84 @@ tryCatch(
 
 ```
 
+# build public views of all tables and columns
+```{r}
+
+tables_sql = "DO $$
+DECLARE
+    sql text := 'CREATE OR REPLACE VIEW public.all_tables AS ';
+    first boolean := true;
+    rec record;  -- Declare a record variable
+BEGIN
+    FOR rec IN
+        SELECT table_schema
+        FROM information_schema.tables
+        WHERE table_name = 'metadata_tables'
+          AND table_type = 'BASE TABLE'
+    LOOP
+        IF first THEN
+            first := false;
+        ELSE
+            sql := sql || ' UNION ALL ';
+        END IF;
+        sql := sql || format('SELECT * FROM %I.metadata_tables', rec.table_schema);  -- Use the record variable
+    END LOOP;
+
+    -- Only execute if there are schemas found
+    IF NOT first THEN
+        EXECUTE sql;  -- Execute the constructed SQL to create the view
+    ELSE
+        RAISE NOTICE 'No tables named metadata_tables found.';
+    END IF;
+END $$;"
+
+columns_sql = "DO $$
+DECLARE
+    sql text := 'CREATE OR REPLACE VIEW public.all_columns AS ';
+    first boolean := true;
+    rec record;  -- Declare a record variable
+BEGIN
+    FOR rec IN
+        SELECT table_schema
+        FROM information_schema.tables
+        WHERE table_name = 'metadata_columns'
+          AND table_type = 'BASE TABLE'
+    LOOP
+        IF first THEN
+            first := false;
+        ELSE
+            sql := sql || ' UNION ALL ';
+        END IF;
+        sql := sql || format('SELECT * FROM %I.metadata_columns', rec.table_schema);  -- Use the record variable
+    END LOOP;
+
+    -- Only execute if there are schemas found
+    IF NOT first THEN
+        EXECUTE sql;  -- Execute the constructed SQL to create the view
+    ELSE
+        RAISE NOTICE 'No tables named metadata_columns found.';
+    END IF;
+END $$;"
+
+dbBegin(con)
+
+tryCatch(
+  {
+  dbExecute(con, tables_sql)
+  dbExecute(con, columns_sql)
+  
+  # Commit the transaction if successful
+  dbCommit(con)
+  cat("Transaction successful!")
+  
+  }, error = function(e) {
+  # Rollback in case of error
+  dbRollback(con)
+  message("Transaction failed: ", e$message)
+})
+```
+
+
 ```{r}
 dbDisconnect(con)
 ```
