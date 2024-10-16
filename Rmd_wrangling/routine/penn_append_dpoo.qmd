@@ -279,6 +279,7 @@ clean_survey_info <- raw_survey_info %>%
 clean_aural_survey <- raw_aural_survey %>%
   select(-any_of(to_drop)) %>%
   clean_names() %>% 
+  rename(survey_comments = acoustic_survey_comments) %>%
   mutate(site = str_to_lower(site),
          site = str_replace_all(site, "-", "_"),
          site = str_replace_all(site, " ", "_"),
@@ -293,24 +294,29 @@ clean_aural_obs <- raw_aural_obs %>%
          species_aural_other = species_acoustic_other,
          aural_comments = acoustic_species_comments) %>%
   mutate(species_aural = str_to_lower(str_replace_all(species_aural, " ", "_")),
-         species_aural_other = str_to_lower(str_replace_all(species_aural_other, " ", "_"))) %>%
+         species_aural_other = str_to_lower(str_replace_all(species_aural_other, " ", "_")),
+         aural_comments = str_replace_all(aural_comments, "\\n", ". ")) %>%
   filter(!if_all(everything(), is.na)) # drop any rows all null
 
 clean_ves_survey <- raw_ves_survey %>%
   select(-any_of(to_drop)) %>%
   clean_names() %>% 
+  rename(survey_comments = survey_description) %>%
   mutate(site = str_to_lower(site),
          site = str_replace_all(site, "-", "_"),
          site = str_replace_all(site, " ", "_"),
          survey_time = str_to_lower(survey_time),
+         survey_comments = str_replace_all(survey_comments, "\\n", ". "),
          detection_type = "visual") %>%
   filter(!if_all(everything(), is.na))  # drop any rows all null
 
 clean_ves_obs <- raw_ves_obs %>%
   select(-any_of(to_drop)) %>%
   clean_names() %>%
+  rename(ves_comments = comments_ves) %>%
   mutate(species_ves = str_to_lower(str_replace_all(species_ves, " ", "_")),
-         species_ves_other = str_to_lower(str_replace_all(species_ves_other, " ", "_"))) %>%
+         species_ves_other = str_to_lower(str_replace_all(species_ves_other, " ", "_")),
+         ves_comments = str_replace_all(ves_comments, "\\n", ". ")) %>%
   filter(!if_all(everything(), is.na))  # drop any rows all null
 
 clean_capture_survey <- raw_capture_survey %>%
@@ -320,6 +326,7 @@ clean_capture_survey <- raw_capture_survey %>%
          site = str_replace_all(site, "-", "_"),
          site = str_replace_all(site, " ", "_"),
          survey_time = str_to_lower(survey_time),
+         survey_comments = str_replace_all(survey_comments, "\\n", ". "),
          detection_type = "capture") %>%
   filter(!if_all(everything(), is.na))  # drop any rows all null
 
@@ -328,9 +335,11 @@ clean_capture_obs <- raw_capture_obs %>%
         -capture_status,
         -fulcrum_record_id) %>% # capture status: was this individual successfully captured?
   clean_names() %>%
-  rename(body_temp_c = body_temperature) %>%
+  rename(body_temp_c = body_temperature,
+         capture_comments = amphibian_comments) %>%
   mutate(species_capture = str_to_lower(str_replace_all(species_capture, " ", "_")),
-         species_capture_other = str_to_lower(str_replace_all(species_capture_other, " ", "_"))) %>%
+         species_capture_other = str_to_lower(str_replace_all(species_capture_other, " ", "_")),
+         capture_comments = str_replace_all(capture_comments, "\\n", ". ")) %>%
   filter(!if_all(everything(), is.na))  # drop any rows all null 
 
 clean_cmr <- raw_cmr %>%
@@ -381,7 +390,8 @@ clean_samp_process_obs <- raw_samp_process_obs %>%
          life_stage = str_to_lower(life_stage),
          life_stage_other = str_to_lower(life_stage_other),
          species_capture = str_to_lower(str_replace_all(species_capture, " ", "_")),
-         species_capture_other = str_to_lower(str_replace_all(species_capture_other, " ", "_"))) %>%
+         species_capture_other = str_to_lower(str_replace_all(species_capture_other, " ", "_")),
+         capture_comments = str_replace_all(capture_comments, "\\n", ". ")) %>%
   filter(!if_all(everything(), is.na),
          !(species_capture == "negative_control"))
 
@@ -402,9 +412,11 @@ unified_samp_proc =  clean_samp_process_obs %>%
 
 unified_capture = clean_capture_obs %>%
   full_join(clean_capture_survey, by = c("fulcrum_parent_id" = "fulcrum_id")) %>%
-  full_join(unified_samp_proc, by=c("site", "date", "bag_id")) %>%
-  select(-fulcrum_id,
+    select(-fulcrum_id,
          -fulcrum_parent_id)
+
+  full_join(unified_samp_proc, by=c("site", "date", "bag_id")) %>%
+
 
 # duplicated columns, resolve through drop or coalesce
 c(species_capture,
@@ -425,12 +437,22 @@ c(end_time,
 hope = unified_capture %>%
   group_by(site, date, bag_id) %>%
   mutate(count = n()) %>%
-  filter(count > 1)
+  filter(count > 1) %>%
+  ungroup() %>%
+  arrange(desc(bag_id)) %>%
+  collect()
+
+write.csv(hope, here("staging", "captures_confounded.csv"))
 
 pope = unified_samp_proc %>%
   group_by(site, date, bag_id) %>%
   mutate(count = n()) %>%
-  filter(count > 1)
+  filter(count > 1) %>%
+  ungroup() %>%
+  arrange(desc(bag_id)) %>%
+  collect()
+
+write.csv(pope, here("staging", "samples_confounded.csv"))
 
 ```
 

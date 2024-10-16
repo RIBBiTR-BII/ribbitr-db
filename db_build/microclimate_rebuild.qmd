@@ -37,10 +37,26 @@ error=function(cond) {
 ## pull all hobo tables
 
 ```{r}
-hobo_location = dbGetQuery(con, "SELECT * FROM ribbitr.hobo.hobo_location")
-hobo_region = dbGetQuery(con, "SELECT * FROM ribbitr.hobo.hobo_region")
-hobo_site = dbGetQuery(con, "SELECT * FROM ribbitr.hobo.hobo_site")
-hobo_obs = dbGetQuery(con, "SELECT * FROM ribbitr.hobo.hobo")  # uy que heavy
+# hobo_location = dbGetQuery(con, "SELECT * FROM ribbitr.hobo.hobo_location")
+# hobo_region = dbGetQuery(con, "SELECT * FROM ribbitr.hobo.hobo_region")
+# hobo_site = dbGetQuery(con, "SELECT * FROM ribbitr.hobo.hobo_site")
+# hobo_obs = dbGetQuery(con, "SELECT * FROM ribbitr.hobo.hobo")  # uy que heavy
+
+hobo_location = tbl(con, Id("hobo", "hobo_location"))
+hobo_region = tbl(con, Id("hobo", "hobo_region"))
+hobo_site = tbl(con, Id("hobo", "hobo_site"))
+hobo_obs = tbl(con, Id("hobo", "hobo"))
+
+sd_site = tbl(con, Id("survey_data", "site"))
+
+peace = hobo_site %>% collect()
+train = sd_site %>% collect()
+
+peacetrain = hobo_site %>%
+  left_join(sd_site, by="site") %>%
+  collect()
+
+sum(is.na(peacetrain$utme))
 ```
 
 ## create logger table
