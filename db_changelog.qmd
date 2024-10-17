@@ -7,6 +7,16 @@ editor: source
 
 # Change Log for RIBBiTR_DB
 
+## 2024-10-17
+
+### Changed
+
+-   Renamed possibly ambiguous "observer" columns in multiple tables in survey_data schema
+    -   survey.observer -> survey.survey_observer
+    -   aural.observer -> aural.aural_observer
+    -   capture.observer -> capture.capture_observer
+    -   ves.observer -> ves.ves_observer
+
 ## 2024-10-11
 
 ### Added
