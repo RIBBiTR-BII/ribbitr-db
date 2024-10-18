@@ -106,17 +106,7 @@ tbl_keys = function(table_str, metadata_columns=metadata_columns) {
   )))
 }
 
-UUIDgenerate_if_NA = function(str) {
-  if (is.na(str)) {
-    return(UUIDgenerate())
-  } else {
-    return(str)
-  }
-}
-
 # in dev
-
-tbl_name = "aural"
 
 # link 1 table(s) up
 tbl_link = function(tbl_name, metadata_columns) {
@@ -316,121 +306,171 @@ any(duplicated(raw_samp_process_obs))
 ```{r}
 
 # Fulcrum columns to drop. Best practice to drop by name
- to_drop = c(
-   "created_at",
-   "updated_at",
-   "created_by",
-   "updated_by",
-   "system_created_at",
-   "system_updated_at",
-   "version",
-   "status",
-   "project",
-   "assigned_to",
-   "latitude", # could this be useful?
-   "longitude", # could this be useful?
-   "geometry"
- )
+to_drop = c(
+  "created_at",
+  "updated_at",
+  "created_by",
+  "updated_by",
+  "system_created_at",
+  "system_updated_at",
+  "version",
+  "status",
+  "project",
+  "assigned_to",
+  "latitude", # could this be useful?
+  "longitude", # could this be useful?
+  "geometry"
+)
+
+calc_duration = function(start_time, end_time) {
+  duration = if_else(end_time < start_time,
+                         as_hms(86400) - start_time + end_time,
+                         end_time - start_time)
+  duration = duration / 60
+  duration = str_remove(duration, " secs")
+  duration = as.integer(round(as.numeric(duration), 0))
+}
 
 clean_survey_info <- raw_survey_info %>%
+  clean_names() %>% 
+  rename(air_temp_c = air_temperature_c,
+         air_time = air_temperature_measurement_time,
+         water_temp_c = water_temperature_c,
+         water_time = water_temperature_measurement_time,
+         wind = wind_conditions,
+         wind_speed_m_s = wind_speed_ms,
+         sky = sky_conditions,
+         relative_humidity_percent = humidity,
+         pressure_psi = pressure,
+         dissolved_o2_percent = dissolved_oxygen,
+         tds_ppm = total_dissolved_solids,
+         p_h = ph,
+         comments_visit = sampling_event_comments) %>%
+  unite(observers_survey, c("observers", "other_observers"), sep=",", remove = TRUE, na.rm = TRUE) %>%
+  mutate(site = str_to_lower(site),
+         site = str_replace_all(site, "-", "_"),
+         site = str_replace_all(site, " ", "_"),
+         comments_visit = str_replace_all(comments_visit, "\\n", ". "),
+         pressure_psi = ifelse(pressure_psi == 0, NA, pressure_psi),
+         number_observers = as.integer(str_count(observers_survey, ",") + 1)) %>%
   select(-any_of(to_drop),
          -survey_time,
          -start_time,
          -end_time) %>%
-  clean_names() %>% 
-  rename(visit_comments = sampling_event_comments) %>%
-  mutate(site = str_to_lower(site),
-         site = str_replace_all(site, "-", "_"),
-         site = str_replace_all(site, " ", "_")) %>%
   filter(!if_all(everything(), is.na))  # drop any rows all null
 
 clean_aural_survey <- raw_aural_survey %>%
-  select(-any_of(to_drop)) %>%
   clean_names() %>% 
-  rename(survey_comments = acoustic_survey_comments) %>%
+  rename(comments_survey = acoustic_survey_comments) %>%
   mutate(site = str_to_lower(site),
          site = str_replace_all(site, "-", "_"),
          site = str_replace_all(site, " ", "_"),
          survey_time = str_to_lower(survey_time),
+         comments_survey = str_replace_all(comments_survey, "\\n", ". "),
+         duration_minutes = calc_duration(start_time, end_time),
          detection_type = "aural") %>%
+  unite(observer_aural, c("observer", "observer_other"), sep=",", remove = TRUE, na.rm = TRUE) %>%
+  select(-any_of(to_drop)) %>%
   filter(!if_all(everything(), is.na))  # drop any rows all null
 
 clean_aural_obs <- raw_aural_obs %>%
-  select(-any_of(to_drop),
-         -fulcrum_record_id) %>%
   clean_names() %>%
   rename(species_aural = species_acoustic,
          species_aural_other = species_acoustic_other,
-         aural_comments = acoustic_species_comments) %>%
-  mutate(species_aural = str_to_lower(str_replace_all(species_aural, " ", "_")),
-         species_aural_other = str_to_lower(str_replace_all(species_aural_other, " ", "_")),
-         aural_comments = str_replace_all(aural_comments, "\\n", ". ")) %>%
+         comments_aural = acoustic_species_comments,
+         aural_id = fulcrum_record_id) %>%
+  mutate(species_aural = coalesce(species_aural, species_aural_other),
+         species_aural = str_to_lower(str_replace_all(species_aural, " ", "_")),
+         comments_aural_ = str_replace_all(comments_aural, "\\n", ". ")) %>%
+  select(-any_of(to_drop),
+         -species_aural_other) %>%
   filter(!if_all(everything(), is.na)) # drop any rows all null
 
 clean_ves_survey <- raw_ves_survey %>%
-  select(-any_of(to_drop)) %>%
   clean_names() %>% 
-  rename(survey_comments = survey_description) %>%
+  rename(comments_survey = survey_description) %>%
   mutate(site = str_to_lower(site),
          site = str_replace_all(site, "-", "_"),
          site = str_replace_all(site, " ", "_"),
          survey_time = str_to_lower(survey_time),
-         survey_comments = str_replace_all(survey_comments, "\\n", ". "),
+         comments_survey = str_replace_all(comments_survey, "\\n", ". "),
+         duration_minutes = calc_duration(start_time, end_time),
          detection_type = "visual") %>%
+  unite(observer_ves, c("observer", "observer_other"), sep=",", remove = TRUE, na.rm = TRUE) %>%
+  select(-any_of(to_drop)) %>%
   filter(!if_all(everything(), is.na))  # drop any rows all null
 
 clean_ves_obs <- raw_ves_obs %>%
-  select(-any_of(to_drop)) %>%
   clean_names() %>%
-  rename(ves_comments = comments_ves) %>%
-  mutate(species_ves = str_to_lower(str_replace_all(species_ves, " ", "_")),
-         species_ves_other = str_to_lower(str_replace_all(species_ves_other, " ", "_")),
-         ves_comments = str_replace_all(ves_comments, "\\n", ". ")) %>%
+  rename(ves_id = fulcrum_record_id) %>%
+  mutate(species_ves = coalesce(species_ves, species_ves_other),
+         species_ves = str_to_lower(str_replace_all(species_ves, " ", "_")),
+         comments_ves = str_replace_all(comments_ves, "\\n", ". ")) %>%
+  select(-any_of(to_drop),
+         -species_ves_other) %>%
   filter(!if_all(everything(), is.na))  # drop any rows all null
 
 clean_capture_survey <- raw_capture_survey %>%
-  select(-any_of(to_drop)) %>%
   clean_names() %>% 
+  rename(comments_survey = survey_comments) %>%
   mutate(site = str_to_lower(site),
          site = str_replace_all(site, "-", "_"),
          site = str_replace_all(site, " ", "_"),
          survey_time = str_to_lower(survey_time),
-         survey_comments = str_replace_all(survey_comments, "\\n", ". "),
+         comments_survey = str_replace_all(comments_survey, "\\n", ". "),
+         duration_minutes = calc_duration(start_time, end_time),
          detection_type = "capture") %>%
+  unite(observer_capture, c("observer", "observer_other"), sep=",", remove = TRUE, na.rm = TRUE) %>%
+  select(-any_of(to_drop)) %>%
   filter(!if_all(everything(), is.na))  # drop any rows all null
 
 clean_capture_obs <- raw_capture_obs %>%
-  select(-any_of(to_drop),
-        -capture_status,
-        -fulcrum_record_id) %>% # capture status: was this individual successfully captured?
   clean_names() %>%
   rename(body_temp_c = body_temperature,
-         capture_comments = amphibian_comments) %>%
-  mutate(species_capture = str_to_lower(str_replace_all(species_capture, " ", "_")),
-         species_capture_other = str_to_lower(str_replace_all(species_capture_other, " ", "_")),
-         capture_comments = str_replace_all(capture_comments, "\\n", ". ")) %>%
+         comments_capture = amphibian_comments,
+         capture_id = fulcrum_record_id) %>%
+  mutate(species_capture = coalesce(species_capture, species_capture_other),
+         species_capture = str_to_lower(str_replace_all(species_capture, " ", "_")),
+         comments_capture = str_replace_all(comments_capture, "\\n", ". ")) %>%
+  select(-any_of(to_drop),
+         -capture_status,
+         -species_capture_other) %>% # capture status: was this individual successfully captured?
   filter(!if_all(everything(), is.na))  # drop any rows all null 
 
 clean_cmr <- raw_cmr %>%
-  select(-any_of(to_drop)) %>%
   clean_names() %>%
   rename(site = location) %>%
   mutate(site = str_to_lower(site),
          site = str_replace_all(site, "-", "_"),
          site = str_replace_all(site, " ", "_")) %>%
+  select(-any_of(to_drop)) %>%
   filter(!if_all(everything(), is.na))  # drop any rows all null
 
 clean_samp_process <- raw_samp_process %>%
-  select(-any_of(to_drop)) %>%
   clean_names() %>%
   rename(site = location) %>%
   mutate(site = str_to_lower(site),
          site = str_replace_all(site, "-", "_"),
          site = str_replace_all(site, " ", "_"),
          survey_time = str_to_lower(survey_time)) %>%
+  select(-any_of(to_drop)) %>%
   filter(!if_all(everything(), is.na)) # drop any rows all null
 
 clean_samp_process_obs <- raw_samp_process_obs %>%
+  clean_names() %>%
+  rename(svl_mm = snout_vent_length,
+         body_and_bag_mass_g = body_and_bag_mass,
+         bag_mass_g = bag_mass,
+         body_mass_g = body_mass,
+         comments_sample = capture_comments) %>%
+  mutate(sex = str_to_lower(sex),
+         sex_other = str_to_lower(sex_other),
+         capture_type = str_to_lower(capture_type),
+         life_stage = str_to_lower(life_stage),
+         life_stage_other = str_to_lower(life_stage_other),
+         species_capture = coalesce(species_capture, species_capture_other),
+         species_capture = str_to_lower(str_replace_all(species_capture, " ", "_")),
+         comments_sample = str_replace_all(comments_sample, "\\n", ". ")) %>%
   select(-any_of(to_drop),
          -fulcrum_record_id,
          -all_of(c("norep_bathvolume_50ml_acid_05ml",
@@ -448,19 +488,6 @@ clean_samp_process_obs <- raw_samp_process_obs %>%
                    "amp_ig_soak_volume",
                    "amp_ig_acidified",
                    "amp_ig_comments"))) %>%
-  clean_names() %>%
-  rename(svl_mm = snout_vent_length,
-         body_and_bag_mass_g = body_and_bag_mass,
-         bag_mass_g = bag_mass,
-         body_mass_g = body_mass) %>%
-  mutate(sex = str_to_lower(sex),
-         sex_other = str_to_lower(sex_other),
-         capture_type = str_to_lower(capture_type),
-         life_stage = str_to_lower(life_stage),
-         life_stage_other = str_to_lower(life_stage_other),
-         species_capture = str_to_lower(str_replace_all(species_capture, " ", "_")),
-         species_capture_other = str_to_lower(str_replace_all(species_capture_other, " ", "_")),
-         capture_comments = str_replace_all(capture_comments, "\\n", ". ")) %>%
   filter(!if_all(everything(), is.na),
          !(species_capture == "negative_control"))
 
@@ -477,11 +504,11 @@ row_b = clean_survey_info %>%
   filter(fulcrum_id == "bbe6bef2-2ca6-43f3-b5e4-5db90f3ef82f")
 
 revision = row_a %>%
-  mutate(observers = paste0(row_a$observers, ",", row_b$observers),
-         water_temperature_measurement_time = row_b$water_temperature_measurement_time,
-         water_temperature_c = row_b$water_temperature_c,
-         total_dissolved_solids = row_b$total_dissolved_solids,
-         ph = row_b$ph)
+  mutate(observers_survey = paste0(row_a$observers_survey, ",", row_b$observers_survey),
+         water_time = row_b$water_time,
+         water_temp_c = row_b$water_temp_c,
+         tds_ppm = row_b$tds_ppm,
+         p_h = row_b$p_h)
 
 clean_survey_info = clean_survey_info %>%
   filter(!fulcrum_id %in% c("eea59aa0-4bae-4a1b-afa9-59c7285fbfe9",
@@ -521,22 +548,71 @@ if (any(is.na(unified_aural$site_id))) {
 
 ```
 
-### 4 - Synthesize aural data
+### 4 - Gelled aural data
 
 ```{r}
-synthesized_aural = unified_aural
+gelled_aural = unified_aural %>%
+  select(-comments_visit) %>% # update at end
+  group_by_at(tbl_nkey("visit", metadata_columns)) %>%
+  mutate(visit_id = ifelse(is.na(visit_id), UUIDgenerate(), visit_id)) %>%
+  ungroup() %>%
+  group_by_at(tbl_nkey("survey", metadata_columns)) %>%
+  mutate(survey_id = ifelse(is.na(survey_id), UUIDgenerate(), survey_id)) %>%
+  ungroup()
+
 ```
 
 ## VES chain
 - ves / survey / visit / site / region / location
 
+### Unify ves data
 ```{r}
 unified_ves = clean_ves_obs %>%
   full_join(clean_ves_survey, by = c("fulcrum_parent_id" = "fulcrum_id")) %>%
   select(-fulcrum_id,
          -fulcrum_parent_id) %>%
   left_join(clean_survey_info, by = c("site", "date")) %>%
-  left_join(db_support_keys, by = c("site", "date", "detection_type", "survey_time"))
+  left_join(db_site %>%
+              select(tbl_keys("site", metadata_columns)) %>%
+              collect(),
+            by = tbl_nkey("site", metadata_columns)) %>%
+  left_join(db_visit %>%
+              select(tbl_keys("visit", metadata_columns)) %>%
+              collect(),
+            by = tbl_nkey("visit", metadata_columns)) %>%
+  left_join(db_survey %>%
+              select(tbl_keys("survey", metadata_columns)) %>%
+              filter(!is.na(visit_id)) %>%
+              collect(),
+            by = tbl_nkey("survey", metadata_columns))
+
+if (any(is.na(unified_ves$site_id))) {
+  stop("unknown sites found. More rigorous coding needed :)")
+}
+
+```
+
+### Gel ves data
+```{r}
+
+peace = compare_df_cols(db_ves %>%
+                          filter(FALSE) %>%
+                          collect(), unified_ves)
+peace = compare_df_cols(db_survey %>%
+                          filter(FALSE) %>%
+                          collect(), unified_ves)
+peace = compare_df_cols(db_visit %>%
+                          filter(FALSE) %>%
+                          collect(), unified_ves)
+
+gelled_ves = unified_ves %>%
+  select(-comments_visit) %>% # update at end
+  group_by_at(tbl_nkey("visit", metadata_columns)) %>%
+  mutate(visit_id = ifelse(is.na(visit_id), UUIDgenerate(), visit_id)) %>%
+  ungroup() %>%
+  group_by_at(tbl_nkey("survey", metadata_columns)) %>%
+  mutate(survey_id = ifelse(is.na(survey_id), UUIDgenerate(), survey_id)) %>%
+  ungroup()
 
 ```
 
