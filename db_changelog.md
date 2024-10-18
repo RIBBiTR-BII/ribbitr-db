@@ -7,6 +7,12 @@ editor: source
 
 # Change Log for RIBBiTR_DB
 
+## 2024-10-18
+
+### Server maintenance
+
+-   Upgraded postgreSQL engine from version 13.15 to 16.3
+
 ## 2024-10-17
 
 ### Changed
