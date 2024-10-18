@@ -17,11 +17,18 @@ editor: source
 
 ### Changed
 
--   Renamed possibly ambiguous "observer" columns in multiple tables in survey_data schema
-    -   survey.observer -> survey.survey_observer
-    -   aural.observer -> aural.aural_observer
-    -   capture.observer -> capture.capture_observer
-    -   ves.observer -> ves.ves_observer
+-   Renamed possibly ambiguous columns in multiple tables in survey_data schema
+    -   survey.observers -> survey.observers_survey
+    -   survey.comments -> survey.comments_survey
+    -   aural.observer -> aural.observer_aural
+    -   aural.count -> aural.count_aural
+    -   aural.comments -> aural.comments_aural
+    -   capture.observer -> capture.observer_capture
+    -   capture.comments -> capture.comments_capture
+    -   ves.observer -> ves.observer_ves
+    -   ves.count -> ves.count_ves
+    -   ves.comments -> ves.comments_ves
+    -   visit.comments -> visit.comments_visit
 
 ## 2024-10-11
 
