@@ -13,24 +13,10 @@ if (!require(librarian)){
 
 # librarian downloads, if not already downloaded, and reads in needed packages
 librarian::shelf(tidyverse, DBI, RPostgres, here, janitor)
+librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 
 ## Connect to DB
-
-# establish connection
-tryCatch({
-  print("Connecting to Database…")
-  con <- dbConnect(dbDriver("Postgres"),
-                          dbname = Sys.getenv("aws_dbname"),
-                          host = Sys.getenv("aws_host"),
-                          port = Sys.getenv("aws_port"),
-                          user = Sys.getenv("aws_user"),
-                          password = Sys.getenv("aws_password"),
-                          timezone=NULL)
-  print("Database Connected!")
-},
-error=function(cond) {
-  message("Unable to connect to Database: ", cond$message)
-})
+con <- HopToDB(prefix = "ribbitr")
 
 ```
 
@@ -127,112 +113,112 @@ columns_pkey = c("table_schema", "table_name", "column_name")
 # dataframe_b = meta_column_data_pg[[schema]] %>% collect()
 # key_columns = columns_pkey
 # return_all = TRUE 
-
-compare_for_staging = function(dataframe_a, dataframe_b, key_columns, insert=TRUE, update=TRUE, orphan=FALSE, duplicate=FALSE, return_all=FALSE){
-  # dataframe_a is NEW data
-  # dataframe_b is OLD data
-  
-  output = list()
-  
-  # case 1: identical row appears in both dataframes
-  # logic: find duplicate rows
-  data_bind = bind_rows(dataframe_a, dataframe_b)
-  data_duplicate = data_bind[duplicated(data_bind),]
-  if (duplicate || return_all){
-    output[["duplicate"]] = data_duplicate
-  }
-  
-  # bind rows ignoring duplicates, tracking source
-  data_bind_uni = data_bind %>%
-    anti_join(data_duplicate, by = key_columns)
-  
-  # count grouped by key_columns (1 or 2)
-  data_pkey_counts = data_bind_uni %>%
-    group_by_at(key_columns) %>%
-    count() %>%
-    ungroup()
-  
-  data_bind_source = bind_rows(dataframe_a %>%
-                        mutate(d_source = "a"),
-                      dataframe_b %>%
-                        mutate(d_source = "b"))
-  
-  # case 2: unique to data_frame_b -> orphan
-  # logic: pkey compo found 1x in data_bind, from dataframe_b
-  if (orphan || return_all){
-    data_orphan = data_pkey_counts %>%
-      filter(n == 1) %>%
-      select(-n) %>%
-      inner_join(dataframe_b, by=key_columns)
-      
-    output[["orphan"]] = data_orphan
-  }
-
-  
-  # case 3: unique to data_frame_a -> insert
-  # logic: pkey combo found 1x in data_bind, from dataframe_a
-  if (insert || return_all){
-    data_insert = data_pkey_counts %>%
-      filter(n == 1) %>%
-      select(-n) %>%
-      inner_join(dataframe_a, by=key_columns)
-    
-    output[["insert"]] = data_insert
-  }
-
-  
-  # case 4: non-identical rows sharing pkeys -> update (from data_frame_a)
-  # logic: pkey combo found 2x in data_bind, is distinct among non-pkey columns
-  if (update || return_all){
-    data_update = data_pkey_counts %>%
-      filter(n == 2) %>%
-      select(-n) %>%
-      inner_join(dataframe_a, by=key_columns)
-    
-    output[["update"]] = data_update
-  }
-
-  
-  return(output)
-}
-
-
-stage_to_temp <- function(con, reference_table, novel_data) {
-  # check that all novel_data columns exist in reference table
-  ref_cols = colnames(reference_table)
-  nov_cols = colnames(novel_data)
-  if (length(setdiff(nov_cols, ref_cols)) > 0) {
-    stop("Columns in preference_table and novel_data do not align.")
-  }
-  
-  # build meaningful temp table name: [schema].[reference_table]_temp
-  table_path = as.character(reference_table$lazy_query$x)
-  path_parts = strsplit(gsub("\"", "", table_path), "\\.")
-  schema_name = path_parts[[1]][1]
-  table_name = path_parts[[1]][2]
-  temp_table_name = paste0(schema_name, "_", table_name, "_temp")
-  
-  # begin transaction
-
-  # drop table if exists
-  suppressMessages(
-    dbExecute(con, paste0("DROP TABLE IF EXISTS ", temp_table_name, ";"))
-  )
-  # copy reference table to temporary table
-  dbExecute(con, paste0("CREATE TEMP TABLE ", temp_table_name, " AS SELECT * FROM ", schema_name, ".", table_name, ";"))
-  # drop all existing rows
-  dbExecute(con, paste0("TRUNCATE TABLE ", temp_table_name))
-  # drop all columns in reference_table not in novel_data
-  drop_cols = setdiff(ref_cols, nov_cols)
-  if (length(drop_cols) > 0){
-    dbExecute(con, paste0("ALTER TABLE ", temp_table_name, " DROP COLUMN ", paste(drop_cols, collapse = ", DROP COLUMN ")))
-  }
-  # write all novel data to temp table
-  dbWriteTable(con, name = temp_table_name, value = novel_data, append = TRUE)
-
-  
-  return(temp_table_name)
-}
+# 
+# compare_for_staging = function(dataframe_a, dataframe_b, key_columns, insert=TRUE, update=TRUE, orphan=FALSE, duplicate=FALSE, return_all=FALSE){
+#   # dataframe_a is NEW data
+#   # dataframe_b is OLD data
+#   
+#   output = list()
+#   
+#   # case 1: identical row appears in both dataframes
+#   # logic: find duplicate rows
+#   data_bind = bind_rows(dataframe_a, dataframe_b)
+#   data_duplicate = data_bind[duplicated(data_bind),]
+#   if (duplicate || return_all){
+#     output[["duplicate"]] = data_duplicate
+#   }
+#   
+#   # bind rows ignoring duplicates, tracking source
+#   data_bind_uni = data_bind %>%
+#     anti_join(data_duplicate, by = key_columns)
+#   
+#   # count grouped by key_columns (1 or 2)
+#   data_pkey_counts = data_bind_uni %>%
+#     group_by_at(key_columns) %>%
+#     count() %>%
+#     ungroup()
+#   
+#   data_bind_source = bind_rows(dataframe_a %>%
+#                         mutate(d_source = "a"),
+#                       dataframe_b %>%
+#                         mutate(d_source = "b"))
+#   
+#   # case 2: unique to data_frame_b -> orphan
+#   # logic: pkey compo found 1x in data_bind, from dataframe_b
+#   if (orphan || return_all){
+#     data_orphan = data_pkey_counts %>%
+#       filter(n == 1) %>%
+#       select(-n) %>%
+#       inner_join(dataframe_b, by=key_columns)
+#       
+#     output[["orphan"]] = data_orphan
+#   }
+# 
+#   
+#   # case 3: unique to data_frame_a -> insert
+#   # logic: pkey combo found 1x in data_bind, from dataframe_a
+#   if (insert || return_all){
+#     data_insert = data_pkey_counts %>%
+#       filter(n == 1) %>%
+#       select(-n) %>%
+#       inner_join(dataframe_a, by=key_columns)
+#     
+#     output[["insert"]] = data_insert
+#   }
+# 
+#   
+#   # case 4: non-identical rows sharing pkeys -> update (from data_frame_a)
+#   # logic: pkey combo found 2x in data_bind, is distinct among non-pkey columns
+#   if (update || return_all){
+#     data_update = data_pkey_counts %>%
+#       filter(n == 2) %>%
+#       select(-n) %>%
+#       inner_join(dataframe_a, by=key_columns)
+#     
+#     output[["update"]] = data_update
+#   }
+# 
+#   
+#   return(output)
+# }
+# 
+# 
+# stage_to_temp <- function(con, reference_table, novel_data) {
+#   # check that all novel_data columns exist in reference table
+#   ref_cols = colnames(reference_table)
+#   nov_cols = colnames(novel_data)
+#   if (length(setdiff(nov_cols, ref_cols)) > 0) {
+#     stop("Columns in preference_table and novel_data do not align.")
+#   }
+#   
+#   # build meaningful temp table name: [schema].[reference_table]_temp
+#   table_path = as.character(reference_table$lazy_query$x)
+#   path_parts = strsplit(gsub("\"", "", table_path), "\\.")
+#   schema_name = path_parts[[1]][1]
+#   table_name = path_parts[[1]][2]
+#   temp_table_name = paste0(schema_name, "_", table_name, "_temp")
+#   
+#   # begin transaction
+# 
+#   # drop table if exists
+#   suppressMessages(
+#     dbExecute(con, paste0("DROP TABLE IF EXISTS ", temp_table_name, ";"))
+#   )
+#   # copy reference table to temporary table
+#   dbExecute(con, paste0("CREATE TEMP TABLE ", temp_table_name, " AS SELECT * FROM ", schema_name, ".", table_name, ";"))
+#   # drop all existing rows
+#   dbExecute(con, paste0("TRUNCATE TABLE ", temp_table_name))
+#   # drop all columns in reference_table not in novel_data
+#   drop_cols = setdiff(ref_cols, nov_cols)
+#   if (length(drop_cols) > 0){
+#     dbExecute(con, paste0("ALTER TABLE ", temp_table_name, " DROP COLUMN ", paste(drop_cols, collapse = ", DROP COLUMN ")))
+#   }
+#   # write all novel data to temp table
+#   dbWriteTable(con, name = temp_table_name, value = novel_data, append = TRUE)
+# 
+#   
+#   return(temp_table_name)
+# }
 
 ```
 
