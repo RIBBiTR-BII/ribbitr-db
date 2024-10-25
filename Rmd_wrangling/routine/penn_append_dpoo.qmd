@@ -13,7 +13,7 @@ if (!require(librarian)){
 }
 
 # librarian downloads, if not already downloaded, and reads in needed packages
-librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms)
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
 ```
 
 # 0 - Data Plan
@@ -40,103 +40,19 @@ librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr
 # can we run this in a withr statement, instead of leaving the connection hanging?
 
 ## Connect to DB
-dbcon <- HopToDB(prefix = "aws")
+dbcon <- HopToDB("ribbitr")
 
+## work in survey_data schema
 dbExecute(dbcon, "set search_path to survey_data")
 
-##Pull metadata from database
+## Pull metadata from database
 mdc = tbl(dbcon, "metadata_columns") %>%
   collect()
 
-## Point to localdata directory
-# Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
-
-
+## Point to local data directory
 ddir = Sys.getenv("data_dir")  # data directory
+# Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
 wddir = here(ddir, "fulcrum", 'penn', '2024-09-13') # working data directory
-
-```
-
-## Define functions
-
-```{r}
-
-tbl_pkey = function(table_str, metadata_columns=mdc) {
-  metadata_columns %>%
-    filter(table_name == table_str,
-           key_type == "PK") %>%
-    pull(column_name)
-}
-
-tbl_fkey = function(table_str, metadata_columns=mdc) {
-  metadata_columns %>%
-    filter(table_name == table_str,
-           key_type == "FK") %>%
-    pull(column_name)
-}
-
-tbl_nkey = function(table_str, metadata_columns=mdc) {
-  metadata_columns %>%
-    filter(table_name == table_str,
-           natural_key) %>%
-    pull(column_name)
-}
-
-tbl_keys = function(table_str, metadata_columns=mdc) {
-  return(unique(c(
-    tbl_pkey(table_str, metadata_columns=metadata_columns),
-    tbl_nkey(table_str, metadata_columns=metadata_columns),
-    tbl_fkey(table_str, metadata_columns=metadata_columns)
-  )))
-}
-
-# in dev
-
-# link 1 table(s) up
-tbl_link = function(tbl_name, metadata_columns) {
-  link = list()
-  link[["root"]] = tbl_name
-  
-  parents = list()
-  
-  tbl_current = tbl_name
-  
-  fkey_vec = tbl_fkey(tbl_name, mdc)
-  
-  for (ff in 1:length(fkey_vec)) {
-    fkey = fkey_vec[ff]
-    
-    tbl_parent = metadata_columns %>%
-      filter(column_name == fkey,
-             key_type == "PK") %>%
-      pull(table_name)
-    
-    nkey = tbl_nkey(tbl_parent, metadata_columns)
-    
-    parents[[ff]] = list(name=tbl_parent,
-                     pkey=fkey,
-                     nkey=nkey)
-  }
-  link[["parents"]] = parents
-  return(link)
-}
-
-
-tbl_join = function(dbcon, chain) {
-  
-  tbl = tbl(dbcon, chain$root)
-  
-  for (ii in 1:length(chain$parents)) {
-    tbl_next = tbl(dbcon, chain$parents[[ii]]$name)
-    
-    tbl = tbl %>%
-      left_join(tbl_next, by = c(chain$parents[[ii]]$pkey))
-  }
-  
-  return(tbl)
-}
-
-
 
 ```
 
@@ -155,53 +71,11 @@ db_site = tbl(dbcon, "site")
 db_region = tbl(dbcon, "region")
 db_location = tbl(dbcon, "location")
 
-# link_support_tbls = function(tbl) {
-#   output = tbl %>%
-#     left_join(db_survey %>%
-#                 select(tbl_keys("survey", mdc)) %>%
-#                 collect(),
-#               by = c("site", "date", "survey_time", "detection_type")) %>%
-#     left_join(db_visit %>%
-#                 select(tbl_keys("visit", mdc)) %>%
-#                 collect(),
-#               by = c("site", "date", "survey_time")) %>%    
-#     left_join(db_site %>%
-#                 select(tbl_keys("site", mdc)) %>%
-#                 collect(),
-#               by = "site") %>%
-#     left_join(db_region %>%
-#                 select(tbl_keys("region", mdc)) %>%
-#                 collect(),
-#               by = "region_id") %>%
-#     left_join(db_location %>%
-#                 select( tbl_keys("location", mdc)) %>%
-#                 collect(),
-#               by = "location_id")
-# }
-
-# db_support_tbls = db_survey %>%
-#   select(tbl_keys("survey", mdc)) %>%
-#   left_join(db_visit %>%
-#               select(tbl_keys("visit", mdc)),
-#             by = c("visit_id")) %>%
-#   left_join(db_site %>%
-#               select(tbl_keys("site", mdc)),
-#             by = "site_id") %>%
-#   left_join(db_region %>%
-#               select(tbl_keys("region", mdc)),
-#             by = "region_id") %>%
-#   left_join(db_location %>%
-#               select( tbl_keys("location", mdc)),
-#             by = "location_id") %>%
-#   collect()
-
-
 ```
 
 ## Load most recent raw CSV Exports
 - use naming convention "raw_" to distinguish source
 - name related tables similarly for natural grouping
-
 
 ```{r}
 # general survey table
@@ -227,7 +101,7 @@ raw_sample_obs <- read_csv(here(wddir, "6_penn_sampleprocessing", "6_penn_sample
 # 2 - Clean data
 
 ## check for null columns & duplicated rows
-- purely informational, any action taken in next step
+- purely informational, all action taken in next step
 
 ```{r}
 
@@ -249,7 +123,6 @@ null_columns = function(dataframe) {
 (null_columns(raw_sample_processing))
 (null_columns(raw_sample_obs))
 
-
 # check duplicated rows
 any(duplicated(raw_survey_info))
 any(duplicated(raw_aural_survey))
@@ -261,7 +134,6 @@ any(duplicated(raw_capture_obs))
 any(duplicated(raw_cmr))
 any(duplicated(raw_sample_processing))
 any(duplicated(raw_sample_obs))
-
 
 ```
 
@@ -543,6 +415,54 @@ clean_capture_obs$bag_id[clean_capture_obs$fulcrum_id == "4d5d73e8-847f-43e8-a8f
 
 ```
 
+# Generate stats for log
+```{r}
+dblog = list()
+dblog$date_min = min(c(clean_survey_info$date,
+      clean_aural_survey$date,
+      clean_ves_survey$date,
+      clean_capture_survey$date))
+
+dblog$date_max = max(c(clean_survey_info$date,
+      clean_aural_survey$date,
+      clean_ves_survey$date,
+      clean_capture_survey$date))
+```
+
+# Purge dates after date_min, to clean (1x only!)
+```{r}
+chain_aural = tbl_chain("capture", mdc, until="region")
+chain_ves = tbl_chain("capture", mdc, until="region")
+chain_capture = tbl_chain("capture", mdc, until="region")
+
+db_aural_filter = tbl_join(dbcon, chain_aural) %>%
+  filter(date >= dblog$date_min) %>%
+  select(survey_id,
+         visit_id) %>%
+  collect()
+
+db_capture_filter = tbl_join(dbcon, chain_capture) %>%
+  filter(date >= dblog$date_min) %>%
+  select(survey_id,
+         visit_id) %>%
+  collect()
+
+db_ves_filter = tbl_join(dbcon, chain_ves) %>%
+  filter(date >= dblog$date_min) %>%
+  select(survey_id,
+         visit_id) %>%
+  collect()
+
+
+to_drop = rbind(db_aural_filter,
+                db_capture_filter,
+                db_ves_filter)
+
+to_drop_survey_id = unique(to_drop$survey_id)
+to_drop_visit_id = unique(to_drop$visit_id)
+
+```
+
 # "One chain at a time"
 ## Aural chain
 - aural / survey / visit / site / region / location
@@ -603,6 +523,12 @@ subset_aural_survey = gelled_aural %>%
 # aural
 subset_aural = gelled_aural %>%
   select(any_of(colnames(db_aural)))
+
+tray = compare_for_staging(subset_aural_visit, db_visit %>% collect(), tbl_nkey('visit', mdc), return_all=TRUE)
+comp_aural_visit$app
+
+peace = tray$update %>%
+  left_join(db_visit %>% collect(), by=tbl_nkey('visit', mdc))
 
 ```
 
@@ -776,6 +702,7 @@ gelled_capture = unified_capture %>%
 subset_capture_visit = gelled_capture %>%
   select(any_of(colnames(db_visit)))
 
+compare
 # survey
 subset_capture_survey = gelled_capture %>%
   select(any_of(colnames(db_survey)))

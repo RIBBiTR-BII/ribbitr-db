@@ -14,137 +14,8 @@ if (!require(librarian)){
 # librarian downloads, if not already downloaded, and reads in needed packages
 librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
 
+# connect to database
 dbcon = HopToDB(prefix = "ribbitr")
-
-```
-
-## functions
-```{r}
-
-tbl_name = "region"
-
-tbl_link = function(tbl_name, metadata_columns) {
-  link = list()
-  link[["root"]] = tbl_name
-  
-  parents = list()
-  
-  tbl_current = tbl_name
-
-  fkey_vec = tbl_fkey(tbl_name, mdc)
-  
-  for (ffkey in fkey_vec) {
-    pkey = ffkey
-    
-    tbl_parent = metadata_columns %>%
-      filter(column_name == pkey,
-             key_type == "PK") %>%
-      select(table_schema, table_name) %>%
-      collect()
-    
-    nkey = tbl_nkey(tbl_parent$table_name, metadata_columns)
-    fkey = tbl_fkey(tbl_parent$table_name, metadata_columns)
-    
-    parents[[tbl_parent$table_name]] = list(schema=tbl_parent$table_schema,
-                         name=tbl_parent$table_name,
-                         pkey=pkey,
-                         nkey=nkey,
-                         fkey=fkey)
-  }
-  link[["parents"]] = parents
-  return(link)
-}
-
-
-tbl_chain = function(tbl_name, metadata_columns, until=NA) {
-  chain = list()
-  tbl_list = list(tbl_name)
-  tbl_remaining = TRUE
-  
-  # nest in list if not already
-  until = list(unlist(until))
-  
-  while (tbl_remaining) {
-    
-    # pop tbl_list
-    tbl_active = tbl_list[[1]]
-    tbl_list[[1]] = NULL
-    
-    link_active = tbl_link(tbl_active, metadata_columns)
-    
-    if (length(link_active$parents) > 0) {
-      for (ll in link_active$parents) {
-        
-        if (!(ll$name %in% until)) {
-          # add to search list, unless
-          tbl_list <- append(tbl_list, ll$name)
-        }
-        
-        chain$parents[[ll$name]] = ll
-      }
-    }
-    
-    tbl_remaining = length(tbl_list)
-    
-  }
-  
-  return(chain)
-}
-
-!(element %in% my_list)
-
-tbl_join = function(dbcon, link, tbl=NA, join="left", by="pkey", columns=NA) {
-  
-  if (is.na(tbl)[[1]]) {
-    tbl = tbl(dbcon, link$root)
-  }
-  
-  
-  for (pp in link$parents) {
-    tbl_next = tbl(dbcon, Id(pp$schema, pp$name)) %>%
-      select(any_of(na.omit(unique(unlist(c(
-        pp$pkey,
-        pp$nkey,
-        pp$fkey,
-        columns
-      ))))))
-    
-    cat("Joining with", pp$name, "...")
-    
-    if (join == "left") {
-      tbl = tbl %>%
-        left_join(tbl_next, by = c(pp[[by]]))
-    } else if (join == "full") {
-      tbl = tbl %>%
-        full_join(tbl_next, by = c(pp[[by]]))
-    } else if (join == "inner") {
-      tbl = tbl %>%
-        inner_join(tbl_next, by = c(pp[[by]]))
-    } else {
-      stop(join, " is not a valid join type. Should it be programmed in?")
-    }
-    
-    cat("done.\n")
-    
-  }
-  
-  return(tbl)
-}
-
-
-tbl_chain_join = function(dbcon, chain, tbl=NA, join="left", on="pkey", columns=NA) {
-  # fetch table if not provided
-  if (is.na(tbl)[[1]]) {
-    tbl_running = tbl(dbcon, link$root)
-  } else {
-    tbl_running = tbl
-  }
-  
-  tbl_running = tbl_join(dbcon, link, tbl=tbl_running, join=join, on=on, columns=columns)
-  
-  return(tbl_running)
-}
-
 
 ```
 
@@ -167,7 +38,9 @@ db_capture = tbl(dbcon, Id("survey_data", "capture")) %>%
   
 capture_chain = tbl_chain("capture", mdc, until="region")
 db_capture_penn = tbl_join(dbcon, capture_chain, tbl=db_capture) %>%
-  filter(region == "pennsylvania")
+  filter(region == "pennsylvania") %>%
+  filter(!is.na(site))
+
 
 db_capture_penn_bd = tbl(dbcon, Id("survey_data", "qpcr_bd_results")) %>%
   select(bd_swab_id,
@@ -177,10 +50,10 @@ db_capture_penn_bd = tbl(dbcon, Id("survey_data", "qpcr_bd_results")) %>%
          replicate,
          result
          ) %>%
-  left_join(db_capture_penn, by="bd_swab_id")
+  inner_join(db_capture_penn, by="bd_swab_id") # many bd_swab_id don't align with capture table...
 
 db_penn_bd = db_capture_penn_bd %>%
-  collect
+  collect()
 
 colnames(db_penn_bd)
 
