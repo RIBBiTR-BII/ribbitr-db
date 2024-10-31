@@ -7,6 +7,17 @@ editor: source
 
 # Change Log for RIBBiTR_DB
 
+## 2024-10-31
+
+### Changed
+
+- Dropped visits with NULL date
+- Created not null constraint on
+    - visit.date
+    - visit.site_id
+    - site.site
+    - location.location
+
 ## 2024-10-18
 
 ### Server maintenance

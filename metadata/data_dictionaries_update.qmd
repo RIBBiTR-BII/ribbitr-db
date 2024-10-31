@@ -16,7 +16,7 @@ librarian::shelf(tidyverse, DBI, RPostgres, here, janitor)
 librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 
 ## Connect to DB
-con <- HopToDB(prefix = "ribbitr")
+dbcon <- HopToDB(prefix = "ribbitr")
 
 ```
 
@@ -61,8 +61,7 @@ pull_pg_column_data <- function(schema) {
       c.table_name, c.ordinal_position
   ")
   
-  # columns <- dbGetQuery(con, query)
-  columns <- tbl(con, sql(query))
+  columns <- tbl(dbcon, sql(query))
   
   return(columns)
 }
@@ -79,8 +78,7 @@ pull_pg_table_data <- function(schema) {
       t.table_schema = '", schema, "'
   ")
   
-  # tables <- dbGetQuery(con, query)
-  tables <- tbl(con, sql(query))
+  tables <- tbl(dbcon, sql(query))
   
   return(tables)
 }
@@ -109,123 +107,12 @@ dict_supplementary_mutate <- function(dict, supplementary) {
 tables_pkey = c("table_schema", "table_name")
 columns_pkey = c("table_schema", "table_name", "column_name")
 
-# dataframe_a = pg_column_data[[schema]] %>% collect()
-# dataframe_b = meta_column_data_pg[[schema]] %>% collect()
-# key_columns = columns_pkey
-# return_all = TRUE 
-# 
-# compare_for_staging = function(dataframe_a, dataframe_b, key_columns, insert=TRUE, update=TRUE, orphan=FALSE, duplicate=FALSE, return_all=FALSE){
-#   # dataframe_a is NEW data
-#   # dataframe_b is OLD data
-#   
-#   output = list()
-#   
-#   # case 1: identical row appears in both dataframes
-#   # logic: find duplicate rows
-#   data_bind = bind_rows(dataframe_a, dataframe_b)
-#   data_duplicate = data_bind[duplicated(data_bind),]
-#   if (duplicate || return_all){
-#     output[["duplicate"]] = data_duplicate
-#   }
-#   
-#   # bind rows ignoring duplicates, tracking source
-#   data_bind_uni = data_bind %>%
-#     anti_join(data_duplicate, by = key_columns)
-#   
-#   # count grouped by key_columns (1 or 2)
-#   data_pkey_counts = data_bind_uni %>%
-#     group_by_at(key_columns) %>%
-#     count() %>%
-#     ungroup()
-#   
-#   data_bind_source = bind_rows(dataframe_a %>%
-#                         mutate(d_source = "a"),
-#                       dataframe_b %>%
-#                         mutate(d_source = "b"))
-#   
-#   # case 2: unique to data_frame_b -> orphan
-#   # logic: pkey compo found 1x in data_bind, from dataframe_b
-#   if (orphan || return_all){
-#     data_orphan = data_pkey_counts %>%
-#       filter(n == 1) %>%
-#       select(-n) %>%
-#       inner_join(dataframe_b, by=key_columns)
-#       
-#     output[["orphan"]] = data_orphan
-#   }
-# 
-#   
-#   # case 3: unique to data_frame_a -> insert
-#   # logic: pkey combo found 1x in data_bind, from dataframe_a
-#   if (insert || return_all){
-#     data_insert = data_pkey_counts %>%
-#       filter(n == 1) %>%
-#       select(-n) %>%
-#       inner_join(dataframe_a, by=key_columns)
-#     
-#     output[["insert"]] = data_insert
-#   }
-# 
-#   
-#   # case 4: non-identical rows sharing pkeys -> update (from data_frame_a)
-#   # logic: pkey combo found 2x in data_bind, is distinct among non-pkey columns
-#   if (update || return_all){
-#     data_update = data_pkey_counts %>%
-#       filter(n == 2) %>%
-#       select(-n) %>%
-#       inner_join(dataframe_a, by=key_columns)
-#     
-#     output[["update"]] = data_update
-#   }
-# 
-#   
-#   return(output)
-# }
-# 
-# 
-# stage_to_temp <- function(con, reference_table, novel_data) {
-#   # check that all novel_data columns exist in reference table
-#   ref_cols = colnames(reference_table)
-#   nov_cols = colnames(novel_data)
-#   if (length(setdiff(nov_cols, ref_cols)) > 0) {
-#     stop("Columns in preference_table and novel_data do not align.")
-#   }
-#   
-#   # build meaningful temp table name: [schema].[reference_table]_temp
-#   table_path = as.character(reference_table$lazy_query$x)
-#   path_parts = strsplit(gsub("\"", "", table_path), "\\.")
-#   schema_name = path_parts[[1]][1]
-#   table_name = path_parts[[1]][2]
-#   temp_table_name = paste0(schema_name, "_", table_name, "_temp")
-#   
-#   # begin transaction
-# 
-#   # drop table if exists
-#   suppressMessages(
-#     dbExecute(con, paste0("DROP TABLE IF EXISTS ", temp_table_name, ";"))
-#   )
-#   # copy reference table to temporary table
-#   dbExecute(con, paste0("CREATE TEMP TABLE ", temp_table_name, " AS SELECT * FROM ", schema_name, ".", table_name, ";"))
-#   # drop all existing rows
-#   dbExecute(con, paste0("TRUNCATE TABLE ", temp_table_name))
-#   # drop all columns in reference_table not in novel_data
-#   drop_cols = setdiff(ref_cols, nov_cols)
-#   if (length(drop_cols) > 0){
-#     dbExecute(con, paste0("ALTER TABLE ", temp_table_name, " DROP COLUMN ", paste(drop_cols, collapse = ", DROP COLUMN ")))
-#   }
-#   # write all novel data to temp table
-#   dbWriteTable(con, name = temp_table_name, value = novel_data, append = TRUE)
-# 
-#   
-#   return(temp_table_name)
-# }
-
 ```
 
 ## Pull Schemas
 
 ```{r}
-schemas <- dbGetQuery(con, "SELECT schema_name FROM information_schema.schemata
+schemas <- dbGetQuery(dbcon, "SELECT schema_name FROM information_schema.schemata
                       WHERE schema_name NOT LIKE 'pg_temp_%'
                       AND schema_name NOT LIKE 'pg_toast_temp_%'
                       AND schema_name != 'pg_catalog'
@@ -254,8 +141,8 @@ for (schema in schemas){
   pg_column_data[[schema]] = pull_pg_column_data(schema)
   
   # pull metadata tables from each schema, dropping supplementary columns
-  meta_table_data[[schema]] = tbl(con, Id(schema, "metadata_tables"))
-  meta_column_data[[schema]] = tbl(con, Id(schema, "metadata_columns"))
+  meta_table_data[[schema]] = tbl(dbcon, Id(schema, "metadata_tables"))
+  meta_column_data[[schema]] = tbl(dbcon, Id(schema, "metadata_columns"))
   
   meta_column_data_pg[[schema]] = meta_column_data[[schema]] %>%
     select(-any_of(column_dict_supplementary))
@@ -303,9 +190,9 @@ meta_column_update = list()
 meta_column_duplicate = list()
 
 for (schema in schemas) {
-  table_results = compare_for_staging(pg_table_data[[schema]] %>%
+  table_results = compare_for_staging(meta_table_data[[schema]] %>%
                                        collect(),
-                                     meta_table_data[[schema]] %>%
+                                      pg_table_data[[schema]] %>%
                                        collect(),
                                      tables_pkey,
                                      return_all= TRUE)
@@ -314,9 +201,9 @@ for (schema in schemas) {
   meta_table_update[[schema]] = table_results$update
   meta_table_duplicate[[schema]] = table_results$duplicate
   
-  column_results = compare_for_staging(pg_column_data[[schema]] %>%
+  column_results = compare_for_staging(meta_column_data_pg[[schema]] %>%
                                          collect(),
-                                       meta_column_data_pg[[schema]] %>%
+                                       pg_column_data[[schema]] %>%
                                          collect(),
                                        columns_pkey,
                                        return_all=TRUE)
@@ -382,7 +269,7 @@ cat("-------------\nUpdate: ", update, "\nInsert: ", insert, "\n")
 ```{r}
 if (update || insert) {
   # begin transaction
-  dbBegin(con)
+  dbBegin(dbcon)
   
   tryCatch(
     {
@@ -393,8 +280,8 @@ if (update || insert) {
           reference_table = meta_table_data[[schema]]
           # novel_data = pg_table_data[[schema]] %>% collect()
           novel_data = meta_table_upsert[[schema]]
-          temp_table_name = stage_to_temp(con, reference_table, novel_data)
-          pointer = tbl(con, temp_table_name)
+          temp_table_name = stage_to_temp(dbcon, reference_table, novel_data)
+          pointer = tbl(dbcon, temp_table_name)
           rows_upsert(meta_table_data[[schema]], pointer, by=tables_pkey, in_place=TRUE)
           
           cat("Tables upserted for schema: ", schema, "\n")
@@ -405,8 +292,8 @@ if (update || insert) {
           reference_table = meta_column_data[[schema]]
           # novel_data = pg_column_data[[schema]] %>% collect()
           novel_data = meta_column_upsert[[schema]]
-          temp_table_name = stage_to_temp(con, reference_table, novel_data)
-          pointer = tbl(con, temp_table_name)
+          temp_table_name = stage_to_temp(dbcon, reference_table, novel_data)
+          pointer = tbl(dbcon, temp_table_name)
           rows_upsert(meta_column_data[[schema]], pointer, by=columns_pkey, in_place=TRUE)
         
           cat("Columns upserted for schema: ", schema, "\n")
@@ -414,12 +301,12 @@ if (update || insert) {
       }
       
       # Commit the transaction if successful
-      dbCommit(con)
+      dbCommit(dbcon)
       print("Transaction successful! All tables are up to date.")
 
     }, error = function(e) {
       # Rollback in case of error
-      dbRollback(con)
+      dbRollback(dbcon)
       message("Transaction failed: ", e$message)
     })
 }else{

@@ -1,0 +1,26 @@
+---
+title: "pull_commit_timestamp"
+format: html
+editor: source
+---
+
+```{r setup}
+if (!require(librarian)){
+  install.packages("librarian")
+  library(librarian)
+}
+
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, DBI, RPostgres, here, janitor, RIBBiTR-BII/ribbitrrr)
+
+## Connect to DB
+dbcon <- hopToDB(prefix = "ribbitr")
+
+```
+
+```{r}
+sql_query = 'SELECT *, xmin AS transaction_id, pg_xact_commit_timestamp(xmin)
+FROM "survey_data"."visit"'
+
+visit_timestamp = dbGetQuery(dbcon, sql_query)
+```

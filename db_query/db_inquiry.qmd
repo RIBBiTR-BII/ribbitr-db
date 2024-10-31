@@ -15,7 +15,7 @@ if (!require(librarian)){
 librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
 
 # connect to database
-dbcon = HopToDB(prefix = "ribbitr")
+dbcon = hopToDB(prefix = "ribbitr")
 
 ```
 
@@ -32,32 +32,26 @@ db_capture = tbl(dbcon, Id("survey_data", "capture")) %>%
   select(all_of(tbl_keys("capture", mdc)),
          species_capture,
          bd_swab_id,
+         microbiome_swab_id,
+         bacterial_swab_id,
          life_stage,
          svl_mm) %>%
   filter(!is.na(bd_swab_id))
   
 capture_chain = tbl_chain("capture", mdc, until="region")
-db_capture_penn = tbl_join(dbcon, capture_chain, tbl=db_capture) %>%
-  filter(region == "pennsylvania") %>%
-  filter(!is.na(site))
 
+db_capture_chain = tbl_join(dbcon, capture_chain, tbl=db_capture) %>%
+  filter(date >= "2022-01-01",
+         date < "2023-01-01",
+         !is.na(site)) # drop orphan swab data currently missing site
 
-db_capture_penn_bd = tbl(dbcon, Id("survey_data", "qpcr_bd_results")) %>%
-  select(bd_swab_id,
-         detected,
-         average_ct,
-         average_target_quant,
-         replicate,
-         result
-         ) %>%
-  inner_join(db_capture_penn, by="bd_swab_id") # many bd_swab_id don't align with capture table...
-
-db_penn_bd = db_capture_penn_bd %>%
+db_capture_chain_bd = tbl(dbcon, Id("survey_data", "qpcr_bd_results")) %>%
+  inner_join(db_capture_chain, by="bd_swab_id") %>%
   collect()
 
 colnames(db_penn_bd)
 
-write_csv(db_penn_bd, here("staging", "penn_bd_query_01.csv"))
+write_csv(db_penn_bd, here("staging", "bd_query_01.csv"))
 
 ```
 
@@ -70,4 +64,40 @@ bd_results = tbl(dbcon, Id("survey_data", "qpcr_bd_results")) %>%
   arrange(desc(count)) %>%
   collect()
   
+```
+
+
+```{r}
+# pull relevant chain tables from DB
+db_aural = tbl(dbcon, Id("survey_data", "aural"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_ves = tbl(dbcon, Id("survey_data", "ves"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_location = tbl(dbcon, Id("survey_data", "location"))
+
+```
+
+```{r}
+
+mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
+  collect()
+
+visit_chain = tbl_chain("visit", mdc)
+db_visit_chain = tbl_join(dbcon, visit_chain, tbl=db_visit)
+tbl_nkey("visit", mdc)
+
+peace = db_visit_chain %>%
+  group_by("site", "date", "survey_time") %>%
+  filter(is.na(date)) %>% collect()
+
+null_vis_date = db_survey %>%
+  inner_join(peace, by="visit_id") %>%
+  collect()
+
+peace = db_visit %>%
+  filter(is.null(date)) %>% collect()
+
 ```

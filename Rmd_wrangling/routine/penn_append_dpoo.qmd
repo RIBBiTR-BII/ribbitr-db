@@ -40,13 +40,13 @@ librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr
 # can we run this in a withr statement, instead of leaving the connection hanging?
 
 ## Connect to DB
-dbcon <- HopToDB("ribbitr")
+dbcon <- hopToDB("ribbitr")
 
-## work in survey_data schema
-dbExecute(dbcon, "set search_path to survey_data")
+# ## work in survey_data schema
+# dbExecute(dbcon, "set search_path to survey_data")
 
 ## Pull metadata from database
-mdc = tbl(dbcon, "metadata_columns") %>%
+mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
   collect()
 
 ## Point to local data directory
@@ -62,16 +62,17 @@ wddir = here(ddir, "fulcrum", 'penn', '2024-09-13') # working data directory
 
 ```{r}
 # pull relevant chain tables from DB
-db_aural = tbl(dbcon, "aural")
-db_capture = tbl(dbcon, "capture")
-db_ves = tbl(dbcon, "ves")
-db_survey = tbl(dbcon, "survey")
-db_visit = tbl(dbcon, "visit")
-db_site = tbl(dbcon, "site")
-db_region = tbl(dbcon, "region")
-db_location = tbl(dbcon, "location")
+db_aural = tbl(dbcon, Id("survey_data", "aural"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_ves = tbl(dbcon, Id("survey_data", "ves"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_location = tbl(dbcon, Id("survey_data", "location"))
 
 ```
+
 
 ## Load most recent raw CSV Exports
 - use naming convention "raw_" to distinguish source
@@ -431,35 +432,71 @@ dblog$date_max = max(c(clean_survey_info$date,
 
 # Purge dates after date_min, to clean (1x only!)
 ```{r}
-chain_aural = tbl_chain("capture", mdc, until="region")
-chain_ves = tbl_chain("capture", mdc, until="region")
-chain_capture = tbl_chain("capture", mdc, until="region")
-
-db_aural_filter = tbl_join(dbcon, chain_aural) %>%
-  filter(date >= dblog$date_min) %>%
-  select(survey_id,
-         visit_id) %>%
-  collect()
-
-db_capture_filter = tbl_join(dbcon, chain_capture) %>%
-  filter(date >= dblog$date_min) %>%
-  select(survey_id,
-         visit_id) %>%
-  collect()
-
-db_ves_filter = tbl_join(dbcon, chain_ves) %>%
-  filter(date >= dblog$date_min) %>%
-  select(survey_id,
-         visit_id) %>%
-  collect()
-
-
-to_drop = rbind(db_aural_filter,
-                db_capture_filter,
-                db_ves_filter)
-
-to_drop_survey_id = unique(to_drop$survey_id)
-to_drop_visit_id = unique(to_drop$visit_id)
+# chain_aural = tbl_chain("aural", mdc, until="region")
+# chain_ves = tbl_chain("ves", mdc, until="region")
+# chain_capture = tbl_chain("capture", mdc, until="region")
+# 
+# to_drop = rbind(tbl_join(dbcon, chain_aural) %>%
+#                   filter(region == "pennsylvania",
+#                          date >= dblog$date_min) %>%
+#                   select(survey_id,
+#                          visit_id) %>%
+#                   collect(),
+#                 tbl_join(dbcon, chain_capture) %>%
+#                   filter(region == "pennsylvania",
+#                          date >= dblog$date_min) %>%
+#                   select(survey_id,
+#                          visit_id) %>%
+#                   collect(),
+#                 tbl_join(dbcon, chain_ves) %>%
+#                   filter(region == "pennsylvania",
+#                          date >= dblog$date_min) %>%
+#                   select(survey_id,
+#                          visit_id) %>%
+#                   collect())
+# 
+# to_drop_survey_id = unique(to_drop$survey_id)
+# to_drop_visit_id = unique(to_drop$visit_id)
+# 
+# 
+# db_aural_filter = db_aural %>%
+#         filter(!(survey_id %in% to_drop_survey_id)) %>%
+#   collect()
+# db_capture_filter = db_capture %>%
+#         filter(!(survey_id %in% to_drop_survey_id)) %>%
+#   collect()
+# db_ves_filter = db_ves %>%
+#         filter(!(survey_id %in% to_drop_survey_id)) %>%
+#   collect()
+# db_survey_filter = db_survey %>%
+#         filter(!(survey_id %in% to_drop_survey_id)) %>%
+#   collect()
+# db_visit_filter = db_visit %>%
+#         filter(!(visit_id %in% to_drop_visit_id)) %>%
+#   collect()
+# 
+# 
+# # here we drop from
+# dbBegin(dbcon)
+#   
+# tryCatch(
+#   {
+#     
+#     dbWriteTable(dbcon, "aural", db_aural_filter, overwrite = TRUE)
+#     dbWriteTable(dbcon, "capture", db_capture_filter, overwrite = TRUE)
+#     dbWriteTable(dbcon, "ves", db_ves_filter, overwrite = TRUE)
+#     dbWriteTable(dbcon, "survey", db_survey_filter, overwrite = TRUE)
+#     dbWriteTable(dbcon, "visit", db_visit_filter, overwrite = TRUE)
+#     
+#     # Commit the transaction if successful
+#     dbCommit(dbcon)
+#     print("Transaction successful!")
+# 
+#   }, error = function(e) {
+#     # Rollback in case of error
+#     dbRollback(dbcon)
+#     message("Transaction failed: ", e$message)
+#   })
 
 ```
 
@@ -515,20 +552,76 @@ gelled_aural = unified_aural %>%
 # visit
 subset_aural_visit = gelled_aural %>%
   select(any_of(colnames(db_visit)))
-
+stop("need to drop nulls here!")
+tray = compare_for_staging(db_visit %>% collect(), subset_aural_visit, tbl_nkey('visit', mdc))
+final_aural_visit = bind_rows(tray$insert,
+                              tray$update)
 # survey
 subset_aural_survey = gelled_aural %>%
   select(any_of(colnames(db_survey)))
+tray = compare_for_staging(db_visit %>% collect(), subset_aural_survey, tbl_nkey('survey', mdc))
+final_aural_survey = bind_rows(tray$insert,
+                               tray$update)
 
 # aural
 subset_aural = gelled_aural %>%
   select(any_of(colnames(db_aural)))
+tray = compare_for_staging(db_visit %>% collect(), subset_aural, tbl_nkey('aural', mdc))
+final_aural = bind_rows(tray$insert,
+                        tray$update)
 
-tray = compare_for_staging(subset_aural_visit, db_visit %>% collect(), tbl_nkey('visit', mdc), return_all=TRUE)
-comp_aural_visit$app
 
-peace = tray$update %>%
-  left_join(db_visit %>% collect(), by=tbl_nkey('visit', mdc))
+# begin transaction temp
+dbBegin(dbcon)
+
+to_upsert = list()
+
+tryCatch(
+  {
+    temp_aural_visit = stage_to_temp(dbcon, db_visit, final_aural_visit)
+    to_upsert[["visit"]] = temp_aural_visit
+    temp_aural_survey = stage_to_temp(dbcon, db_survey, final_aural_survey)
+    to_upsert[["survey"]] = temp_aural_survey
+    temp_aural = stage_to_temp(dbcon, db_aural, final_aural)
+    to_upsert[["aural"]] = temp_aural
+    
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful!")
+    
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    to_upsert = list()
+    message("Transaction failed: ", e$message)
+  })
+
+
+# begin upsert transaction
+dbBegin(dbcon)
+
+tryCatch(
+  {
+    pointer = tbl(dbcon, temp_aural_visit)
+    rows_upsert(db_visit, pointer, by=tbl_pkey("visit", mdc), in_place=TRUE)
+    
+    pointer = tbl(dbcon, temp_aural_survey)
+    rows_upsert(db_survey, pointer, by=tbl_pkey("survey", mdc), in_place=TRUE)
+    
+    pointer = tbl(dbcon, temp_aural)
+    rows_upsert(db_aural, pointer, by=tbl_pkey("aural", mdc), in_place=TRUE)
+    
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful!")
+    
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
+
+
 
 ```
 

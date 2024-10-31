@@ -1,0 +1,96 @@
+---
+title: "db_conflict_cleaning"
+format: html
+editor: source
+---
+
+```{r}
+if (!require(librarian)){
+  install.packages("librarian")
+  library(librarian)
+}
+
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
+
+# connect to database
+dbcon = hopToDB(prefix = "ribbitr")
+
+```
+
+Pull metadata and tables
+
+```{r}
+mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
+  collect()
+
+# pull relevant chain tables from DB
+db_aural = tbl(dbcon, Id("survey_data", "aural"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_ves = tbl(dbcon, Id("survey_data", "ves"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_location = tbl(dbcon, Id("survey_data", "location"))
+
+```
+
+# nas on natural key columns
+```{r}
+
+# join down
+aural_chain = tbl_chain("aural", mdc)
+capture_chain = tbl_chain("capture", mdc)
+ves_chain = tbl_chain("ves", mdc)
+
+db_aural_chain = tbl_join(dbcon, aural_chain, join = "full")
+db_capture_chain = tbl_join(dbcon, capture_chain, join = "full")
+db_ves_chain = tbl_join(dbcon, ves_chain, join = "full")
+
+# na on visit.date
+
+# identify conflict
+db_conflict_aural = db_aural_chain %>%
+  filter(is.null(date),
+         is.na(survey_id),
+         !is.na(visit_id)) %>%
+  collect()
+
+db_conflict_capture = db_capture_chain %>%
+  filter(is.null(date),
+         is.na(survey_id),
+         !is.na(visit_id)) %>%
+  collect()
+
+db_ves_capture = db_ves_chain %>%
+  filter(is.null(date),
+         is.na(survey_id),
+         !is.na(visit_id)) %>%
+  collect()
+
+# nothing depends on these. just drop.
+
+drop_visit = db_visit %>%
+  filter(is.na(date)) %>%
+  collect()
+
+# rows_delete(db_visit, drop_visit, by="visit_id", unmatched="ignore")
+# issues with above, dropped in dbeaver...
+```
+
+orphaned data
+
+```{r}
+
+# visit_ids in survey which are not found in visit
+survey_orphans = anti_join(db_survey, db_visit, by="visit_id")
+
+aural_orphans = left_join(db_aural, survey_orphans, by="survey_id") %>% collect()
+capture_orphans = left_join(db_capture, survey_orphans, by="survey_id") %>% collect()
+ves_orphans = left_join(db_ves, survey_orphans, by="survey_id") %>% collect()
+
+write_csv(survey_orphans, here("staged", "orphan_survey_data.csv"))
+
+peace = db_survey %>% collect()
+```
