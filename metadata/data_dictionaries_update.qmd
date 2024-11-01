@@ -6,17 +6,11 @@ editor: source
 ---
 
 ```{r setup, include=FALSE}
-if (!require(librarian)){
-  install.packages("librarian")
-  library(librarian)
-}
-
 # librarian downloads, if not already downloaded, and reads in needed packages
-librarian::shelf(tidyverse, DBI, RPostgres, here, janitor)
-librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+librarian::shelf(tidyverse, DBI, RPostgres, here, janitor, RIBBiTR-BII/ribbitrrr)
 
 ## Connect to DB
-dbcon <- HopToDB(prefix = "ribbitr")
+dbcon <- hopToDB(prefix = "ribbitr")
 
 ```
 

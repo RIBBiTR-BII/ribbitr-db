@@ -551,21 +551,23 @@ gelled_aural = unified_aural %>%
 ```{r}
 # visit
 subset_aural_visit = gelled_aural %>%
-  select(any_of(colnames(db_visit)))
-stop("need to drop nulls here!")
+  select(any_of(colnames(db_visit))) %>%
+  drop_na()
 tray = compare_for_staging(db_visit %>% collect(), subset_aural_visit, tbl_nkey('visit', mdc))
 final_aural_visit = bind_rows(tray$insert,
                               tray$update)
 # survey
 subset_aural_survey = gelled_aural %>%
-  select(any_of(colnames(db_survey)))
+  select(any_of(colnames(db_survey))) %>%
+  drop_na()
 tray = compare_for_staging(db_visit %>% collect(), subset_aural_survey, tbl_nkey('survey', mdc))
 final_aural_survey = bind_rows(tray$insert,
                                tray$update)
 
 # aural
 subset_aural = gelled_aural %>%
-  select(any_of(colnames(db_aural)))
+  select(any_of(colnames(db_aural))) %>%
+  drop_na()
 tray = compare_for_staging(db_visit %>% collect(), subset_aural, tbl_nkey('aural', mdc))
 final_aural = bind_rows(tray$insert,
                         tray$update)
@@ -673,15 +675,18 @@ gelled_ves = unified_ves %>%
 ```{r}
 # visit
 subset_ves_visit = gelled_ves %>%
-  select(any_of(colnames(db_visit)))
+  select(any_of(colnames(db_visit))) %>%
+  drop_na()
 
 # survey
 subset_ves_survey = gelled_ves %>%
-  select(any_of(colnames(db_survey)))
+  select(any_of(colnames(db_survey))) %>%
+  drop_na()
 
 # aural
 subset_ves = gelled_ves %>%
-  select(any_of(colnames(db_ves)))
+  select(any_of(colnames(db_ves))) %>%
+  drop_na()
 
 ```
 
@@ -700,14 +705,14 @@ unified_capture = clean_capture_obs %>%
   full_join(clean_capture_survey, by = c("fulcrum_parent_id" = "fulcrum_id")) %>%
     select(-fulcrum_id,
          -fulcrum_parent_id) %>%
-  full_join(unified_sample, by=c("site", "date", "bag_id")) %>%
-  mutate(species_capture = coalesce(species_capture.y, species_capture.x),
-         survey_time = coalesce(survey_time.x, survey_time.y)) %>%
-  select(-survey_time.x,
-         -survey_time.y,
-         -species_capture.x,
-         -species_capture.y) %>%
-  unite("comments_capture", c("comments_capture", "comments_sample"), sep=",", remove = TRUE, na.rm = TRUE) %>%
+  # full_join(unified_sample, by=c("site", "date", "bag_id")) %>%
+  # mutate(species_capture = coalesce(species_capture.y, species_capture.x),
+  #        survey_time = coalesce(survey_time.x, survey_time.y)) %>%
+  # select(-survey_time.x,
+  #        -survey_time.y,
+  #        -species_capture.x,
+  #        -species_capture.y) %>%
+  # unite("comments_capture", c("comments_capture", "comments_sample"), sep=",", remove = TRUE, na.rm = TRUE) %>%
   left_join(clean_survey_info, by = c("site", "date")) %>%
   select(-fulcrum_id) %>%
   left_join(db_site %>%
@@ -725,40 +730,42 @@ unified_capture = clean_capture_obs %>%
             by = tbl_nkey("survey", mdc))
 
 
-## QA/QC
-# 
-# # exploration
-# sample_unmatched = unified_sample %>%
-#   anti_join(unified_capture, by=c("site", "date", "bag_id")) %>%
-#   # select(site, date, bag_id, species_capture, sample_id) %>%
-#   mutate(capture_id = NA) %>%
-#   filter(!is.na(bag_id))
-# 
-# capture_unmatched = unified_capture %>%
-#   anti_join(unified_sample, by=c("site", "date", "bag_id")) %>%
-#   # select(site, date, bag_id, species_capture, capture_id) %>%
-#   mutate(sample_id = NA) %>%
-#   filter(!is.na(bag_id))
-# 
-# sample_capture_unmatched = bind_rows(unicorn, monkey) %>%
-#   arrange(site, date, bag_id) %>%
-#   group_by(site, date) %>%
-#   mutate(temp_id = cur_group_id()) %>%
-#   ungroup()
-#   select(site, date, bag_id, species_capture, capture_id, sample_id, start_time, end_time, observer_capture, observer_sample, comments_capture, comments_sample,)
-# 
-# test_site = "tuttle_pond"
-# test_date = "2024-07-08"
-# 
-# peace = unified_sample %>%
-#   filter(site == test_site,
-#          date == test_date) %>%
-#   arrange(bag_id)
-# 
-# train = unified_capture %>%
-#   filter(site == test_site,
-#          date == test_date) %>%
-#   arrange(bag_id)
+# QA/QC
+
+# exploration
+sample_unmatched = unified_sample %>%
+  anti_join(unified_capture, by=c("site", "date", "bag_id")) %>%
+  # select(site, date, bag_id, species_capture, sample_id) %>%
+  mutate(capture_id = as.character(NA)) %>%
+  filter(!is.na(bag_id))
+
+capture_unmatched = unified_capture %>%
+  anti_join(unified_sample, by=c("site", "date", "bag_id")) %>%
+  # select(site, date, bag_id, species_capture, capture_id) %>%
+  mutate(sample_id = as.character(NA)) %>%
+  filter(!is.na(bag_id))
+
+sample_capture_unmatched = bind_rows(capture_unmatched, sample_unmatched) %>%
+  arrange(site, date, bag_id) %>%
+  group_by(site, date) %>%
+  mutate(temp_id = cur_group_id()) %>%
+  ungroup() %>%
+  select(site, date, bag_id, species_capture, capture_id, sample_id, start_time, end_time, observer_capture, processor, observers_survey, comments_capture, comments_sample,)
+
+write_csv(sample_capture_unmatched, here("staging", "sample_campture_unmatched.csv"))
+
+test_site = "tuttle_pond"
+test_date = "2024-07-08"
+
+peace = unified_sample %>%
+  filter(site == test_site,
+         date == test_date) %>%
+  arrange(bag_id)
+
+train = unified_capture %>%
+  filter(site == test_site,
+         date == test_date) %>%
+  arrange(bag_id)
 
 ```
 

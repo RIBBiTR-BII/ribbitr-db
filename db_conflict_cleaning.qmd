@@ -5,10 +5,6 @@ editor: source
 ---
 
 ```{r}
-if (!require(librarian)){
-  install.packages("librarian")
-  library(librarian)
-}
 
 # librarian downloads, if not already downloaded, and reads in needed packages
 librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
@@ -33,6 +29,7 @@ db_visit = tbl(dbcon, Id("survey_data", "visit"))
 db_site = tbl(dbcon, Id("survey_data", "site"))
 db_region = tbl(dbcon, Id("survey_data", "region"))
 db_location = tbl(dbcon, Id("survey_data", "location"))
+db_qpcr_bd = tbl(dbcon, Id("survey_data", "qpcr_bd_results"))
 
 ```
 
@@ -63,7 +60,7 @@ db_conflict_capture = db_capture_chain %>%
          !is.na(visit_id)) %>%
   collect()
 
-db_ves_capture = db_ves_chain %>%
+db_conflict_ves = db_ves_chain %>%
   filter(is.null(date),
          is.na(survey_id),
          !is.na(visit_id)) %>%
@@ -76,7 +73,58 @@ drop_visit = db_visit %>%
   collect()
 
 # rows_delete(db_visit, drop_visit, by="visit_id", unmatched="ignore")
-# issues with above, dropped in dbeaver...
+
+## null detection type
+
+# visit_ids in survey which are not found in visit
+survey_invalid = db_survey %>%
+  filter(is.na(detection_type))
+
+aural_invalid = inner_join(db_aural, survey_invalid, by="survey_id") %>% collect()
+capture_invalid = inner_join(db_capture, survey_invalid, by="survey_id") %>% collect()
+ves_invalid = inner_join(db_ves, survey_invalid, by="survey_id") %>% collect()
+
+# no observations which depend on survey_invalid. great. drop the nulls.
+drop_survey = db_survey %>%
+  filter(is.na(observers_survey) & is.na(duration_minutes) & is.na(detection_type))
+
+
+dbBegin(dbcon)
+
+tryCatch(
+  {
+    db_survey = db_survey %>%
+      rows_delete(drop_survey, by="survey_id", unmatched = "ignore", in_place=TRUE)
+    
+    dbCommit(dbcon)
+    print("Transaction successful! All tables are up to date.")
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
+
+# relable as detection type "other"
+
+detection_type_rename = db_survey %>%
+  filter(is.na(detection_type)) %>%
+  mutate(detection_type = "other")
+
+dbBegin(dbcon)
+
+tryCatch(
+  {
+    db_survey = db_survey %>%
+      rows_update(detection_type_rename, by="survey_id", unmatched = "ignore", in_place=TRUE)
+    
+    dbCommit(dbcon)
+    print("Transaction successful!")
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
+
 ```
 
 orphaned data
@@ -86,11 +134,39 @@ orphaned data
 # visit_ids in survey which are not found in visit
 survey_orphans = anti_join(db_survey, db_visit, by="visit_id")
 
-aural_orphans = left_join(db_aural, survey_orphans, by="survey_id") %>% collect()
-capture_orphans = left_join(db_capture, survey_orphans, by="survey_id") %>% collect()
-ves_orphans = left_join(db_ves, survey_orphans, by="survey_id") %>% collect()
+aural_orphans = inner_join(db_aural, survey_orphans, by="survey_id") %>% collect()
+capture_orphans = inner_join(db_capture, survey_orphans, by="survey_id") %>% collect()
+ves_orphans = inner_join(db_ves, survey_orphans, by="survey_id") %>% collect()
 
-write_csv(survey_orphans, here("staged", "orphan_survey_data.csv"))
+# no orphans which depend on survey_orphans. great. drop them.
 
-peace = db_survey %>% collect()
+drop_survey = anti_join(db_survey, db_visit, by="visit_id") %>%
+  select(any_of(colnames(db_survey)))
+
+dbBegin(dbcon)
+
+tryCatch(
+  {
+    db_survey = db_survey %>%
+      rows_delete(drop_survey, by="survey_id", unmatched = "ignore", in_place=TRUE)
+    
+    dbCommit(dbcon)
+    print("Transaction successful! All tables are up to date.")
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
+
+```
+
+investigate duplicate bd_swab data...
+
+```{r}
+
+count_cap = db_capture %>% pull(bd_swab_id)
+count_pcr = db_qpcr_bd %>% pull(bd_swab_id)
+
+unique_cap = unique(db_capture %>% pull(bd_swab_id))
+unique_pcr = unique(db_qpcr_bd %>% pull(bd_swab_id))
 ```

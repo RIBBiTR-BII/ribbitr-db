@@ -1,0 +1,130 @@
+---
+title: "db_inquiry"
+format: html
+editor: source
+---
+
+
+```{r}
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, RIBBiTR-BII/ribbitrrr, here)
+
+# connect to database
+dbcon = hopToDB(prefix = "ribbitr")
+
+```
+
+## Query Bd/capture data
+
+```{r}
+# load column metadata for survey_data (data exploration). Use to see what columns exist.
+mdc = tbl(dbcon, Id("public", "all_columns")) %>%
+  filter(table_schema == "survey_data") %>%
+  collect()
+
+# captures
+
+# capture data table, select desired columns, filter to valid bs_swab_id
+db_capture = tbl(dbcon, Id("survey_data", "capture")) %>%
+  select(all_of(tbl_keys("capture", mdc)),
+         species_capture,
+         time_of_capture,
+         capture_trx_loc,
+         microhabitat_type,
+         body_temp_c,
+         substrate_temp_c,
+         svl_mm,
+         body_mass_g,
+         life_stage,
+         sex,
+         capture_animal_state,
+         bd_swab_id,
+         observer_capture,
+         comments_capture)
+  
+# generate table chain object of related supporting tables
+capture_chain = tbl_chain("capture", mdc)
+
+# recursively join supporting tables, filter to date range, valid site
+db_capture_chain = tbl_join(dbcon, capture_chain, tbl=db_capture, columns = c("comments_survey", "comments_visit")) %>%
+  filter(date < "2022-01-01",
+         location == "panama",
+         !is.na(site)) # drop orphan swab data currently missing site
+
+# inspect query (informational only)
+colnames(db_capture_chain)
+
+# pull data from database
+data_capture = db_capture_chain %>%
+  select(-region_id,
+         -location_id) %>%
+  collect()
+
+# aural
+
+db_aural = tbl(dbcon, Id("survey_data", "aural")) %>%
+  select(all_of(tbl_keys("aural", mdc)),
+         species_aural,
+         count_aural,
+         detection_location,
+         microhab,
+         life_stage,
+         call_index,
+         observer_aural,
+         comments_aural)
+  
+# generate table chain object of related supporting tables
+aural_chain = tbl_chain("aural", mdc)
+
+# recursively join supporting tables, filter to date range, valid site
+db_aural_chain = tbl_join(dbcon, aural_chain, tbl=db_aural, columns = c("comments_survey", "comments_visit")) %>%
+  filter(date < "2022-01-01",
+         location == "panama",
+         !is.na(site)) # drop orphan swab data currently missing site
+
+# inspect query (informational only)
+colnames(db_aural_chain)
+
+# pull data from database
+data_aural = db_aural_chain %>%
+  select(-region_id,
+         -location_id) %>%
+  collect()
+
+# ves
+db_ves = tbl(dbcon, Id("survey_data", "ves")) %>%
+  select(all_of(tbl_keys("ves", mdc)),
+         species_ves,
+         count_ves,
+         detection_location,
+         microhab,
+         life_stage,
+         visual_animal_state,
+         sex,
+         observer_ves,
+         comments_ves)
+  
+# generate table chain object of related supporting tables
+ves_chain = tbl_chain("ves", mdc)
+
+# recursively join supporting tables, filter to date range, valid site
+db_ves_chain = tbl_join(dbcon, ves_chain, tbl=db_ves, columns = c("comments_survey", "comments_visit")) %>%
+  filter(date < "2022-01-01",
+         location == "panama",
+         !is.na(site)) # drop orphan swab data currently missing site
+
+# inspect query (informational only)
+colnames(db_ves_chain)
+
+# pull data from database
+data_ves= db_ves_chain %>%
+  select(-region_id,
+         -location_id) %>%
+  collect()
+
+# write to 
+write_csv(data_capture, here("staging", paste0("panama_legacy_capture_query_", today(), ".csv")))
+write_csv(data_aural, here("staging", paste0("panama_legacy_aural_query_", today(), ".csv")))
+write_csv(data_ves, here("staging", paste0("panama_legacy_ves_query_", today(), ".csv")))
+
+```
