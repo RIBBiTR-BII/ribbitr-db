@@ -10,7 +10,7 @@ editor: source
 librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, RIBBiTR-BII/ribbitrrr, here)
 
 # connect to database
-dbcon = hopToDB(prefix = "ribbitr")
+dbcon = hopToDB("ribbitr")
 
 ```
 
@@ -45,11 +45,24 @@ db_capture = tbl(dbcon, Id("survey_data", "capture")) %>%
 # generate table chain object of related supporting tables
 capture_chain = tbl_chain("capture", mdc)
 
+db_qpcr_bd = tbl(dbcon, Id("survey_data", "qpcr_bd_results")) %>%
+  select(bd_swab_id,
+         detected,
+         average_ct,
+         average_target_quant,
+         target_quant_per_swab,
+         average_its1_copies_per_swab,
+         result,
+         replicate)
+
 # recursively join supporting tables, filter to date range, valid site
 db_capture_chain = tbl_join(dbcon, capture_chain, tbl=db_capture, columns = c("comments_survey", "comments_visit")) %>%
   filter(date < "2022-01-01",
          location == "panama",
-         !is.na(site)) # drop orphan swab data currently missing site
+         !is.na(site)) %>% # drop orphan swab data currently missing site
+  left_join(db_qpcr_bd, by = "bd_swab_id")
+
+
 
 # inspect query (informational only)
 colnames(db_capture_chain)
@@ -123,8 +136,21 @@ data_ves= db_ves_chain %>%
   collect()
 
 # write to 
-write_csv(data_capture, here("staging", paste0("panama_legacy_capture_query_", today(), ".csv")))
+write_csv(data_capture, here("staging", paste0("panama_legacy_capture_bd_query_", today(), ".csv")))
 write_csv(data_aural, here("staging", paste0("panama_legacy_aural_query_", today(), ".csv")))
 write_csv(data_ves, here("staging", paste0("panama_legacy_ves_query_", today(), ".csv")))
+
+```
+
+```{r}
+capture_date = data_capture %>%
+  select(date) %>%
+  arrange(desc(date)) %>%
+  mutate(month = month(date),
+         year = year(date)) %>%
+  select(-date)%>%
+  distinct()
+  
+
 
 ```
