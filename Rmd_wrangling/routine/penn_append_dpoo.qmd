@@ -7,13 +7,8 @@ editor: source
 ## Load Packages
 
 ```{r}
-if (!require(librarian)){
-  install.packages("librarian")
-  library(librarian)
-}
-
-# librarian downloads, if not already downloaded, and reads in needed packages
 librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 ```
 
 # 0 - Data Plan
@@ -541,37 +536,51 @@ gelled_aural = unified_aural %>%
   mutate(visit_id = ifelse(is.na(visit_id), UUIDgenerate(), visit_id)) %>%
   ungroup() %>%
   group_by_at(tbl_nkey("survey", mdc)) %>%
-  mutate(survey_id = ifelse(is.na(survey_id), UUIDgenerate(), survey_id)) %>%
-  ungroup()
+  mutate(start_time = as_hms(min(start_time)),
+         end_time = as_hms(max(end_time)),
+         comments_survey = str_c(unique(comments_survey), collapse = ", "), 
+         survey_id = ifelse(is.na(survey_id), fulcrum_id, survey_id),
+         survey_id = ifelse(is.na(survey_id), UUIDgenerate(), survey_id)) %>%
+  ungroup() %>%
+  select(-fulcrum_id)
 
 ```
 
 ### 5 - Subset aural tables
 
 ```{r}
+
 # visit
 subset_aural_visit = gelled_aural %>%
   select(any_of(colnames(db_visit))) %>%
-  drop_na()
-tray = compare_for_staging(db_visit %>% collect(), subset_aural_visit, tbl_nkey('visit', mdc))
+  distinct() %>%
+  drop_na(visit_id)
+tray = compare_for_staging(db_visit %>% collect(), subset_aural_visit, tbl_pkey('visit', mdc), return_all = TRUE, report = "aural_visit")
 final_aural_visit = bind_rows(tray$insert,
                               tray$update)
+
 # survey
 subset_aural_survey = gelled_aural %>%
   select(any_of(colnames(db_survey))) %>%
-  drop_na()
-tray = compare_for_staging(db_visit %>% collect(), subset_aural_survey, tbl_nkey('survey', mdc))
+  distinct() %>%
+  drop_na(survey_id)
+tray = compare_for_staging(db_survey %>% collect(), subset_aural_survey, tbl_pkey('survey', mdc), return_all = TRUE, report = "aural_survey")
 final_aural_survey = bind_rows(tray$insert,
                                tray$update)
 
 # aural
 subset_aural = gelled_aural %>%
   select(any_of(colnames(db_aural))) %>%
-  drop_na()
-tray = compare_for_staging(db_visit %>% collect(), subset_aural, tbl_nkey('aural', mdc))
+  distinct() %>%
+  drop_na(aural_id)
+tray = compare_for_staging(db_aural %>% collect(), subset_aural, tbl_pkey('aural', mdc), return_all = TRUE, report = "aural")
 final_aural = bind_rows(tray$insert,
                         tray$update)
+```
 
+### Stage and commit aural tables
+
+```{r}
 
 # begin transaction temp
 dbBegin(dbcon)
@@ -627,6 +636,12 @@ tryCatch(
 
 ```
 
+## Reload survey & visit
+```{r}
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+```
+
 ## VES chain
 - ves / survey / visit / site / region / location
 
@@ -665,9 +680,12 @@ gelled_ves = unified_ves %>%
   mutate(visit_id = ifelse(is.na(visit_id), UUIDgenerate(), visit_id)) %>%
   ungroup() %>%
   group_by_at(tbl_nkey("survey", mdc)) %>%
-  mutate(survey_id = ifelse(is.na(survey_id), UUIDgenerate(), survey_id)) %>%
+  mutate(start_time = as_hms(min(start_time)),
+         end_time = as_hms(max(end_time)),
+         comments_survey = str_c(unique(comments_survey), collapse = ", "),
+         survey_id = ifelse(is.na(survey_id), fulcrum_id, survey_id),
+         survey_id = ifelse(is.na(survey_id), UUIDgenerate(), survey_id)) %>%
   ungroup()
-
 ```
 
 ### 5 - Subset final ves tables
@@ -676,18 +694,94 @@ gelled_ves = unified_ves %>%
 # visit
 subset_ves_visit = gelled_ves %>%
   select(any_of(colnames(db_visit))) %>%
-  drop_na()
+  distinct() %>%
+  drop_na(visit_id)
+tray = compare_for_staging(db_visit %>% collect(), subset_ves_visit, tbl_pkey('visit', mdc), return_all = TRUE, report = "ves_visit")
+final_ves_visit = bind_rows(tray$insert,
+                             tray$update)
 
 # survey
 subset_ves_survey = gelled_ves %>%
   select(any_of(colnames(db_survey))) %>%
-  drop_na()
+  distinct() %>%
+  drop_na(survey_id)
+tray = compare_for_staging(db_survey %>% collect(), subset_ves_survey, tbl_pkey('survey', mdc), return_all = TRUE, report = "ves_survey")
+final_ves_survey = bind_rows(tray$insert,
+                             tray$update)
 
 # aural
 subset_ves = gelled_ves %>%
   select(any_of(colnames(db_ves))) %>%
-  drop_na()
+  distinct() %>%
+  drop_na(ves_id)
+tray = compare_for_staging(db_ves %>% collect(), subset_ves, tbl_pkey('ves', mdc), return_all = TRUE, report = "ves")
+final_ves = bind_rows(tray$insert,
+                      tray$update)
 
+```
+
+### Stage and commit aural tables
+
+```{r}
+
+# begin transaction temp
+dbBegin(dbcon)
+
+to_upsert = list()
+
+tryCatch(
+  {
+    temp_ves_visit = stage_to_temp(dbcon, db_visit, final_ves_visit)
+    to_upsert[["visit"]] = temp_ves_visit
+    temp_ves_survey = stage_to_temp(dbcon, db_survey, final_ves_survey)
+    to_upsert[["survey"]] = temp_ves_survey
+    temp_ves = stage_to_temp(dbcon, db_ves, final_ves)
+    to_upsert[["ves"]] = temp_ves
+    
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful!")
+    
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    to_upsert = list()
+    message("Transaction failed: ", e$message)
+  })
+
+
+# begin upsert transaction
+dbBegin(dbcon)
+
+tryCatch(
+  {
+    pointer = tbl(dbcon, temp_ves_visit)
+    rows_upsert(db_visit, pointer, by=tbl_pkey("visit", mdc), in_place=TRUE)
+    
+    pointer = tbl(dbcon, temp_ves_survey)
+    rows_upsert(db_survey, pointer, by=tbl_pkey("survey", mdc), in_place=TRUE)
+    
+    pointer = tbl(dbcon, temp_ves)
+    rows_upsert(db_ves, pointer, by=tbl_pkey("aural", mdc), in_place=TRUE)
+    
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful!")
+    
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
+
+
+
+```
+
+## Reload survey & visit
+```{r}
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
 ```
 
 ## Capture chain
