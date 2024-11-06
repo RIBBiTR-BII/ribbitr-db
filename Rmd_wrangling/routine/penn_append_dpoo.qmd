@@ -32,16 +32,11 @@ librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr
 ## DB Connection
 
 ```{r}
-# can we run this in a withr statement, instead of leaving the connection hanging?
-
 ## Connect to DB
 dbcon <- hopToDB("ribbitr")
 
-# ## work in survey_data schema
-# dbExecute(dbcon, "set search_path to survey_data")
-
 ## Pull metadata from database
-mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
+mdc = tbl(dbcon, Id("public", "all_tables")) %>%
   collect()
 
 ## Point to local data directory

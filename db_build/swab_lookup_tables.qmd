@@ -1,0 +1,70 @@
+---
+title: "penn_append"
+format: html
+editor: source
+---
+
+## Setup
+
+```{r}
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+## Connect to DB
+dbcon <- hopToDB("ribbitr")
+
+## Pull metadata from database
+mdc = tbl(dbcon, Id("public", "all_tables")) %>%
+  collect()
+```
+
+## Pull bd_swab_ids
+
+```{r}
+swab_id_capture = tbl(dbcon, Id("survey_data", "capture")) %>%
+  select(bd_swab_id) %>%
+  filter(!is.na(bd_swab_id)) %>%
+  collect()
+
+swab_id_results = tbl(dbcon, Id("survey_data", "bd_qpcr_results")) %>%
+  select(bd_swab_id) %>%
+  filter(!is.na(bd_swab_id)) %>%
+  collect()
+
+unique_swab_id = distinct(bind_rows(swab_id_capture, swab_id_results))
+```
+
+## Write to new table
+
+```{r}
+# dbWriteTable(dbcon, Id("survey_data", "bd_swab_lookup"), unique_swab_id, overwrite = TRUE)
+```
+
+## Pull amp_swab_ids
+
+```{r}
+amp_id_capture = tbl(dbcon, Id("survey_data", "capture")) %>%
+  select(amp_id,
+         amp_id_2,
+         amp_id_3,
+         amp_id_4) %>%
+  pivot_longer(cols = starts_with("amp_id"),    # Select columns to pivot
+               names_to = "sample",             # Name of the new column for the old column names
+               values_to = "amp_id") %>%
+  select(amp_id) %>%
+  filter(!is.na(amp_id)) %>%
+  collect()
+
+amp_id_results = tbl(dbcon, Id("survey_data", "amp_totals_gia")) %>%
+  select(amp_id) %>%
+  filter(!is.na(amp_id)) %>%
+  collect()
+
+unique_amp_id = distinct(bind_rows(amp_id_capture, amp_id_results))
+```
+
+## Write to new table
+
+```{r}
+# dbWriteTable(dbcon, Id("survey_data", "amp_lookup"), unique_amp_id, overwrite = TRUE)
+```
