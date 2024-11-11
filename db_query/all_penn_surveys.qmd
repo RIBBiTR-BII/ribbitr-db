@@ -1,0 +1,65 @@
+---
+title: "all penn surveys water"
+---
+
+## Setup
+```{r}
+# minimal packages for RIBBiTR DB data discovery
+librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, RIBBiTR-BII/ribbitrrr, here)
+
+# establish database connection
+dbcon = hopToDB("ribbitr")
+
+# load column metadata
+mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
+  filter(table_schema == "survey_data") %>%
+  collect()
+```
+
+## Point to all necesary tables (as lazy tables)
+```{r}
+# pre-load lazy tables
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
+```
+
+## Join all tables, select columns, and filter to desired rows
+```{r}
+
+# lazy table and collect
+db_water = db_survey %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  select(date,
+         site,
+         dissolved_o2_percent,
+         water_temp_c,
+         tds_ppm,
+         p_h,
+         survey_id,
+         air_time,
+         cloud_cover_percent,
+         salinity_ppt,
+         region,
+         country_name) %>%
+  filter(region == "pennsylvania")
+
+```
+
+## Collect data and save to csv
+```{r}
+
+data_water = db_water %>%
+  collect()
+
+file_out = here("staging", paste0("all_penn_surveys_water_", today(), ".csv"))
+write_csv(data_water, file_out)
+
+```
+

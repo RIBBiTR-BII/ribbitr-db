@@ -149,6 +149,33 @@ for (schema in schemas){
 
 ```
 
+## Patch for simultanious primary and foreign key status
+```{r}
+# 
+# consolidate_keys <- function(df) {
+#   df %>%
+#     group_by(table_schema, table_name, column_name) %>%
+#     summarise(across(everything(), function(col) {
+#       if (n_distinct(col) == 1) {
+#         first(col)
+#       } else if ("PK" %in% key_type && "FK" %in% key_type) {
+#         if (cur_column() == "key_type") {
+#           "PF"
+#         } else {
+#           na.omit(col)[1]
+#         }
+#       } else {
+#         na.omit(col)[1]
+#       }
+#     }), .groups = "drop") %>%
+#     arrange(table_schema, table_name, column_name)
+# }
+# 
+# for (schema in schemas) {
+#   pg_column_data[[schema]] = consolidate_keys(pg_column_data[[schema]])
+# }
+```
+
 ## QA: Compare pg and metadata for diferences
 
 -   check to make sure columns align between pg and metadata tables
@@ -259,6 +286,7 @@ for (schema in schemas) {
 cat("-------------\nUpdate: ", update, "\nInsert: ", insert, "\n")
 ```
 
+
 ## create temporary DB tables with upsert data, and upsert
 ```{r}
 if (update || insert) {
@@ -306,5 +334,43 @@ if (update || insert) {
 }else{
   print("No new data. All tables are up to date.")
 }
+
+```
+
+## drop orphans
+```{r}
+# does not work yet, tables don't share same source...
+
+# begin transaction
+dbBegin(dbcon)
+
+tryCatch(
+  {
+    for (schema in schemas) {
+      # some local test to avoid below if not needed
+      if (nrow(meta_table_orphan[[schema]]) > 0) {
+        # drop orphans
+        rows_delete(meta_table_data[[schema]], meta_table_orphan[[schema]], by=tables_pkey, in_place=TRUE)
+        
+        cat("Table orphans deleted for schema: ", schema, "\n")
+      }
+      
+      if (nrow(meta_column_upsert[[schema]]) > 0) {
+        # drop orphans
+        rows_upsert(meta_column_data[[schema]], meta_column_orphan[[schema]], by=columns_pkey, in_place=TRUE)
+      
+        cat("Column orphans deleted for schema: ", schema, "\n")
+      }
+    }
+    
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful! All tables are up to date.")
+
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
 
 ```

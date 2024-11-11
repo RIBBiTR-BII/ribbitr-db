@@ -28,8 +28,8 @@ db_survey = tbl(dbcon, Id("survey_data", "survey"))
 db_visit = tbl(dbcon, Id("survey_data", "visit"))
 db_site = tbl(dbcon, Id("survey_data", "site"))
 db_region = tbl(dbcon, Id("survey_data", "region"))
-db_location = tbl(dbcon, Id("survey_data", "location"))
-db_qpcr_bd = tbl(dbcon, Id("survey_data", "qpcr_bd_results"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
 
 ```
 
@@ -164,9 +164,172 @@ investigate duplicate bd_swab data...
 
 ```{r}
 
-count_cap = db_capture %>% pull(bd_swab_id)
-count_pcr = db_qpcr_bd %>% pull(bd_swab_id)
+count_cap = db_capture %>% 
+  filter(!is.na(bd_swab_id)) %>%
+  summarize(count = n()) %>%
+  pull(count)
 
-unique_cap = unique(db_capture %>% pull(bd_swab_id))
-unique_pcr = unique(db_qpcr_bd %>% pull(bd_swab_id))
+count_pcr = db_bd %>% 
+  filter(!is.na(bd_swab_id)) %>%
+  summarize(count = n()) %>%
+  pull(count)
+
+unique_cap = db_capture %>% 
+  filter(!is.na(bd_swab_id)) %>%
+  select(bd_swab_id) %>%
+  distinct() %>%
+  summarize(count = n()) %>%
+  pull(count)
+
+unique_pcr = db_bd %>% 
+  filter(!is.na(bd_swab_id)) %>%
+  select(bd_swab_id) %>%
+  distinct() %>%
+  summarize(count = n()) %>%
+  pull(count)
+
+# investigate duplicates
+
+dups_cap = db_capture %>%
+  filter(!is.na(bd_swab_id)) %>%
+  group_by(bd_swab_id) %>%
+  mutate(n = n()) %>%
+  filter(n>1) %>%
+  ungroup() %>%
+  collect()
+
+dups_pcr = db_bd %>%
+  filter(!is.na(bd_swab_id)) %>%
+  group_by(bd_swab_id) %>%
+  mutate(n = n()) %>%
+  filter(n>1) %>%
+  collect()
+
+```
+
+```{r}
+# drop duplicates acrosss all capture rows except capture_id
+
+duplicates_to_drop <- db_capture %>%
+  group_by(across(-capture_id)) %>%
+  mutate(row_number_in_group = row_number()) %>%
+  ungroup() %>%
+  filter(row_number_in_group > 1) %>%
+  select(-row_number_in_group)
+
+## drop
+# db_capture = db_capture %>%
+#   rows_delete(duplicates_to_drop, by="capture_id", unmatched = "ignore", in_place=TRUE)
+
+```
+
+
+```{r}
+# collect all bd_swab_ids and capture_ids
+
+peace = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  group_by(survey_id,
+           species_capture,
+           time_of_capture,
+           capture_trx_loc,
+           body_temp_c,
+           svl_mm,
+           body_mass_g,
+           microhabitat_type,
+           site,
+           date,
+           region) %>%
+  mutate(bd_id_count = n_distinct(bd_swab_id)) %>%
+  filter(bd_id_count > 1,
+         !is.na(time_of_capture)) %>%
+  ungroup() %>%
+  collect()
+
+summarise(value = paste(unique(value), collapse = ", "), .groups = "drop")
+
+train = db_capture %>%
+  filter(survey_id == "01b5d9e9-ef7f-463d-b4a9-f8a1d64b9bbd") %>%
+  collect()
+```
+
+```{r}
+cc_survey = db_survey %>%
+  mutate(
+    cloud_cover_percent = as.numeric(cloud_cover_percent),
+    cloud_cover_percent = coalesce(cloud_cover_percent, percent_cloud_cover))
+
+# update
+db_survey = db_survey %>%
+  rows_update(cc_survey, by="survey_id", unmatched = "ignore", in_place=TRUE)
+
+try = db_survey %>%
+  filter(!is.na(cloud_cover_percent)) %>%
+  collect()
+
+this = db_survey %>%
+  filter(!is.na(percent_cloud_cover)) %>%
+  collect()
+
+
+# move survey environmental columns to visit?
+colnames(db_survey)
+
+db_survey %>%
+  select("wind_speed_m_s",
+         "air_temp_c",
+         "water_temp_c",
+         "p_h",
+         "tds_ppm",
+         "wind",
+         "sky",
+         "air_time",
+         "water_time",
+         "fish",
+         # "description", ##???
+         "survey_quality",
+         "transect",
+         "samp_loc",
+         "pressure_psi",
+         "relative_humidty_percent",
+         "dissolved_o2_percent",
+         "salinity_ppt",
+         "cloud_cover_percent",
+         "precip",
+         "soil_humidity_m3m3",
+         "wind_speed_scale",
+         "precipitation_during_visit",
+         "precipitation_last_48_h",
+         "temperature_last_48_h",
+         "percent_cloud_cover",
+         "weather_condition_notes",
+         "pressure_psi_drop",
+         "relative_humidity_percent",
+         "relative_humidity_drop_percent",
+         "wind_speed_min_m_s",
+         "wind_speed_max_m_s",
+         "air_temp_c_drop",
+         "densiometer_d1_num_covered",
+         "d1_n",
+         "d1_s",
+         "d1_e",
+         "d1_w",
+         "d1_percent_cover",
+         "densiometer_d2_num_covered",
+         "d2_n",
+         "d2_s",
+         "d2_e",
+         "d2_w",
+         "d2_percent_cover",
+         "depth_of_water_from_d2_cm",
+         "percent_vegetation_cover",
+         "vegetation_notes",
+         "secchi_depth_cm",
+         "visit_id"
+         )
+
+
 ```
