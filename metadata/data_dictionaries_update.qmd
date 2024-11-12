@@ -5,9 +5,9 @@ format: html
 editor: source
 ---
 
-```{r setup, include=FALSE}
+```{r}
 # librarian downloads, if not already downloaded, and reads in needed packages
-librarian::shelf(tidyverse, DBI, RPostgres, here, janitor, RIBBiTR-BII/ribbitrrr)
+librarian::shelf(tidyverse, dbplyr, DBI, RPostgres, here, janitor, RIBBiTR-BII/ribbitrrr)
 
 ## Connect to DB
 dbcon <- hopToDB(prefix = "ribbitr")
@@ -18,7 +18,7 @@ dbcon <- hopToDB(prefix = "ribbitr")
 
 ```{r}
 pull_pg_column_data <- function(schema) {
-  query <- paste0("
+  col_query <- paste0("
     SELECT 
       c.table_schema,
       c.table_name,
@@ -30,34 +30,72 @@ pull_pg_column_data <- function(schema) {
       c.is_nullable,
       c.column_default,
       c.ordinal_position,
-      pg_catalog.col_description(format('%s.%s',c.table_schema,c.table_name)::regclass::oid, c.ordinal_position) as pg_description,
-      CASE 
-        WHEN tc.constraint_type = 'PRIMARY KEY' THEN 'PK'
-        WHEN tc.constraint_type = 'FOREIGN KEY' THEN 'FK'
-        WHEN tc.constraint_type = 'UNIQUE' THEN 'UQ'
-        ELSE NULL
-      END as key_type
+      pg_catalog.col_description(format('%s.%s',c.table_schema,c.table_name)::regclass::oid, c.ordinal_position) as pg_description
     FROM 
       information_schema.columns c
-    LEFT JOIN 
-      information_schema.key_column_usage kcu
-      ON c.table_schema = kcu.table_schema
-      AND c.table_name = kcu.table_name
-      AND c.column_name = kcu.column_name
-    LEFT JOIN 
-      information_schema.table_constraints tc
-      ON kcu.table_schema = tc.table_schema
-      AND kcu.table_name = tc.table_name
-      AND kcu.constraint_name = tc.constraint_name
     WHERE 
       c.table_schema = '", schema, "'
     ORDER BY 
       c.table_name, c.ordinal_position
   ")
   
-  columns <- tbl(dbcon, sql(query))
+  columns <- tbl(dbcon, sql(col_query)) %>% collect()
   
-  return(columns)
+  const_query <- paste0("
+    SELECT tc.table_schema, tc.table_name, kcu.column_name, tc.constraint_name, tc.constraint_type
+    FROM
+      information_schema.key_column_usage kcu
+    LEFT JOIN 
+      information_schema.table_constraints tc
+      ON kcu.table_schema = tc.table_schema
+      AND kcu.table_name = tc.table_name
+      AND kcu.constraint_name = tc.constraint_name
+    WHERE 
+      kcu.table_schema = '", schema, "'
+  ")
+  
+  constraints <-tbl(dbcon, sql(const_query)) %>% collect()
+  
+  pkeys = constraints %>%
+    filter(constraint_type == "PRIMARY KEY") %>%
+    select(table_name,
+           column_name) %>%
+    mutate(primary_key = TRUE)
+  
+  fkeys = constraints %>%
+    filter(constraint_type == "FOREIGN KEY") %>%
+    select(table_name,
+           column_name) %>%
+    mutate(foreign_key = TRUE)
+  
+  unique = constraints %>%
+    filter(constraint_type == "UNIQUE") %>%
+    select(table_name,
+           column_name) %>%
+    mutate(unique = TRUE)
+  
+  columns_constraints = columns %>%
+    left_join(pkeys, by = c("table_name", "column_name")) %>%
+    left_join(fkeys, by = c("table_name", "column_name")) %>%
+    left_join(unique, by = c("table_name", "column_name")) %>%
+    mutate(primary_key = ifelse(is.na(primary_key), FALSE, TRUE),
+           foreign_key = ifelse(is.na(foreign_key), FALSE, TRUE),
+           unique = ifelse(is.na(unique), FALSE, TRUE),
+           key_type = case_when(  # depreciate on Jan 2025
+             primary_key ~ "PK",
+             foreign_key ~ "FK",
+             TRUE ~ NA_character_)) %>%
+    select(table_schema,
+           table_name,
+           column_name,
+           primary_key,
+           foreign_key,
+           unique,
+           is_nullable,
+           everything())
+    
+  
+  return(columns_constraints)
 }
 
 pull_pg_table_data <- function(schema) {
@@ -83,8 +121,8 @@ column_dict_supplementary = c(
   "accuracy",
   "scale",
   "format",
-  "natural_key",
-  "reviewed"
+  "reviewed",
+  "natural_key"
 )
 
 
@@ -149,36 +187,8 @@ for (schema in schemas){
 
 ```
 
-## Patch for simultanious primary and foreign key status
-```{r}
-# 
-# consolidate_keys <- function(df) {
-#   df %>%
-#     group_by(table_schema, table_name, column_name) %>%
-#     summarise(across(everything(), function(col) {
-#       if (n_distinct(col) == 1) {
-#         first(col)
-#       } else if ("PK" %in% key_type && "FK" %in% key_type) {
-#         if (cur_column() == "key_type") {
-#           "PF"
-#         } else {
-#           na.omit(col)[1]
-#         }
-#       } else {
-#         na.omit(col)[1]
-#       }
-#     }), .groups = "drop") %>%
-#     arrange(table_schema, table_name, column_name)
-# }
-# 
-# for (schema in schemas) {
-#   pg_column_data[[schema]] = consolidate_keys(pg_column_data[[schema]])
-# }
-```
-
 ## QA: Compare pg and metadata for diferences
-
--   check to make sure columns align between pg and metadata tables
+check to make sure columns align between pg and metadata tables
 
 ```{r}
 # QC
@@ -190,7 +200,7 @@ for (schema in schemas){
   }
   
   if (!identical(colnames(meta_column_data_pg[[schema]]), colnames(pg_column_data[[schema]]))) {
-    stop(paste0("Columns in pg_column_data and meta_column_common do not align for schema '", schema))
+    stop(paste0("Columns in pg_column_data and meta_column_data_pg do not align for schema '", schema))
   }
 }
 
@@ -372,5 +382,45 @@ tryCatch(
     dbRollback(dbcon)
     message("Transaction failed: ", e$message)
   })
+
+```
+
+## temp for rewriting constraints:
+
+```{r}
+# dbBegin(dbcon)
+# 
+# tryCatch(
+#   {
+#     for (schema in schemas) {
+#       mdc_final = meta_column_data_sup[[schema]] %>%
+#         collect() %>%
+#         mutate(across(everything(), ~ifelse(is.na(.), "", .)),
+#                natural_key = as.logical(natural_key),
+#                natural_key = ifelse(is.na(natural_key), FALSE, natural_key)) %>%
+#         left_join(pg_column_data[[schema]], by = c("table_schema", "table_name", "column_name"))
+#       
+#       dbWriteTable(dbcon, Id(schema, "metadata_columns"), mdc_final, overwrite = TRUE)
+#     }
+#     
+# 
+# 
+#       for (schema in schemas) {
+#         column_pkey_str = paste0("
+#                               ALTER TABLE ribbitr.", schema, ".metadata_columns
+#                               ADD PRIMARY KEY (table_schema, table_name, column_name);
+#                               ")
+#         dbExecute(dbcon, column_pkey_str)
+#       }
+#
+#     dbCommit(dbcon)
+#     print("Transaction successful! All tables are up to date.")
+#     
+#   }, error = function(e) {
+#     # Rollback in case of error
+#     dbRollback(dbcon)
+#     message("Transaction failed: ", e$message)
+#   })
+
 
 ```

@@ -1,0 +1,98 @@
+---
+title: "create metadata views"
+format: html
+---
+
+```{r}
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, DBI, RPostgres, here, janitor, RIBBiTR-BII/ribbitrrr)
+
+## Connect to DB
+dbcon <- hopToDB(prefix = "ribbitr")
+
+```
+# drop views
+```{r}
+drop_tables = "DROP VIEW IF EXISTS public.all_tables;"
+dbExecute(dbcon, drop_tables)
+
+drop_columns = "DROP VIEW IF EXISTS public.all_columns;"
+dbExecute(dbcon, drop_columns)
+```
+
+# build public views of all tables and columns
+```{r}
+
+tables_sql = "DO $$
+DECLARE
+    sql text := 'CREATE OR REPLACE VIEW public.all_tables AS ';
+    first boolean := true;
+    rec record;  -- Declare a record variable
+BEGIN
+    FOR rec IN
+        SELECT table_schema
+        FROM information_schema.tables
+        WHERE table_name = 'metadata_tables'
+          AND table_type = 'BASE TABLE'
+    LOOP
+        IF first THEN
+            first := false;
+        ELSE
+            sql := sql || ' UNION ALL ';
+        END IF;
+        sql := sql || format('SELECT * FROM %I.metadata_tables', rec.table_schema);  -- Use the record variable
+    END LOOP;
+
+    -- Only execute if there are schemas found
+    IF NOT first THEN
+        EXECUTE sql;  -- Execute the constructed SQL to create the view
+    ELSE
+        RAISE NOTICE 'No tables named metadata_tables found.';
+    END IF;
+END $$;"
+
+columns_sql = "DO $$
+DECLARE
+    sql text := 'CREATE OR REPLACE VIEW public.all_columns AS ';
+    first boolean := true;
+    rec record;  -- Declare a record variable
+BEGIN
+    FOR rec IN
+        SELECT table_schema
+        FROM information_schema.tables
+        WHERE table_name = 'metadata_columns'
+          AND table_type = 'BASE TABLE'
+    LOOP
+        IF first THEN
+            first := false;
+        ELSE
+            sql := sql || ' UNION ALL ';
+        END IF;
+        sql := sql || format('SELECT * FROM %I.metadata_columns', rec.table_schema);  -- Use the record variable
+    END LOOP;
+
+    -- Only execute if there are schemas found
+    IF NOT first THEN
+        EXECUTE sql;  -- Execute the constructed SQL to create the view
+    ELSE
+        RAISE NOTICE 'No tables named metadata_columns found.';
+    END IF;
+END $$;"
+
+dbBegin(dbcon)
+
+tryCatch(
+  {
+  dbExecute(dbcon, tables_sql)
+  dbExecute(dbcon, columns_sql)
+  
+  # Commit the transaction if successful
+  dbCommit(dbcon)
+  cat("Transaction successful!")
+  
+  }, error = function(e) {
+  # Rollback in case of error
+  dbRollback(dbcon)
+  message("Transaction failed: ", e$message)
+})
+```
