@@ -1,0 +1,35 @@
+# identify xid
+
+```{r}
+
+xxid_list = tbl(dbcon, Id("survey_data", "aural")) %>%
+  mutate(xid = sql("xmin")) %>%
+  filter(aural_id %in% dup_aural$aural_id) %>%
+  select(xid) %>%
+  distinct() %>%
+  pull()
+
+xxid = as.character(xxid_list)
+```
+
+find related rows
+
+```{r}
+xid_aural <- tbl(dbcon, Id("survey_data", "aural")) %>%
+  mutate(xid = sql("xmin")) %>%
+  filter(xid == xxid) %>%
+  collect()
+```
+
+# propogate
+```{r}
+
+xid_survey = tbl(dbcon, Id("survey_data", "survey")) %>%
+  filter(survey_id %in% xid_aural$survey_id) %>%
+  collect()
+
+xid_visit = tbl(dbcon, Id("survey_data", "visit")) %>%
+  filter(visit_id %in% xid_survey$visit_id) %>%
+  collect()
+
+```

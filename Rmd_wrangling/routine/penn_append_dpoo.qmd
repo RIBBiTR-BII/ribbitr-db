@@ -3,6 +3,7 @@ title: "penn_append"
 format: html
 editor: source
 ---
+# Setup
 
 ## Load Packages
 
@@ -10,6 +11,25 @@ editor: source
 librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
 # librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 ```
+
+## DB Connection
+
+```{r}
+## Connect to DB
+dbcon <- hopToDB()
+
+## Pull metadata from database
+mdc = tbl(dbcon, Id("public", "all_columns")) %>%
+  filter(table_schema == "survey_data") %>%
+  collect()
+
+## Point to local data directory
+ddir = Sys.getenv("data_dir")  # data directory
+# Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
+wddir = here(ddir, "fulcrum", 'penn', '2024-09-13') # working data directory
+
+```
+
 
 # 0 - Data Plan
 
@@ -29,22 +49,6 @@ librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr
 
 # 1 - Import data
 
-## DB Connection
-
-```{r}
-## Connect to DB
-dbcon <- hopToDB("ribbitr")
-
-## Pull metadata from database
-mdc = tbl(dbcon, Id("public", "all_tables")) %>%
-  collect()
-
-## Point to local data directory
-ddir = Sys.getenv("data_dir")  # data directory
-# Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
-wddir = here(ddir, "fulcrum", 'penn', '2024-09-13') # working data directory
-
-```
 
 ## Pull dependent tables for each data chain
 
@@ -182,7 +186,8 @@ clean_survey_info <- raw_survey_info %>%
          dissolved_o2_percent = dissolved_oxygen,
          tds_ppm = total_dissolved_solids,
          p_h = ph,
-         comments_visit = sampling_event_comments) %>%
+         comments_visit = sampling_event_comments,
+         survey_info_id = fulcrum_id) %>%
   unite(observers_survey, c("observers", "other_observers"), sep=",", remove = TRUE, na.rm = TRUE) %>%
   mutate(site = str_to_lower(site),
          site = str_replace_all(site, "-", "_"),
@@ -371,9 +376,9 @@ clean_sample_obs <- raw_sample_obs %>%
 
 # aquatic probe died, group returned later to measure. Comining two survey rows into one
 row_a = clean_survey_info %>%
-  filter(fulcrum_id == "eea59aa0-4bae-4a1b-afa9-59c7285fbfe9")
+  filter(survey_info_id == "eea59aa0-4bae-4a1b-afa9-59c7285fbfe9")
 row_b = clean_survey_info %>%
-  filter(fulcrum_id == "bbe6bef2-2ca6-43f3-b5e4-5db90f3ef82f")
+  filter(survey_info_id == "bbe6bef2-2ca6-43f3-b5e4-5db90f3ef82f")
 
 revision_survey_info = row_a %>%
   mutate(observers_survey = paste0(row_a$observers_survey, ",", row_b$observers_survey),
@@ -383,7 +388,7 @@ revision_survey_info = row_a %>%
          p_h = row_b$p_h)
 
 clean_survey_info = clean_survey_info %>%
-  filter(!fulcrum_id %in% c("eea59aa0-4bae-4a1b-afa9-59c7285fbfe9",
+  filter(!survey_info_id %in% c("eea59aa0-4bae-4a1b-afa9-59c7285fbfe9",
                             "bbe6bef2-2ca6-43f3-b5e4-5db90f3ef82f")) %>%
   bind_rows(revision_survey_info)
 
@@ -406,7 +411,13 @@ clean_capture_obs$bag_id[clean_capture_obs$fulcrum_id == "4d5d73e8-847f-43e8-a8f
 
 ```
 
-# Generate stats for log
+# 3 Checks
+```{r}
+get_dupes(clean_survey_info, site, date)
+
+```
+
+## Generate stats for log
 ```{r}
 dblog = list()
 dblog$date_min = min(c(clean_survey_info$date,
@@ -420,7 +431,7 @@ dblog$date_max = max(c(clean_survey_info$date,
       clean_capture_survey$date))
 ```
 
-# Purge dates after date_min, to clean (1x only!)
+## Purge dates after date_min, to clean (1x only!)
 ```{r}
 # chain_aural = tbl_chain("aural", mdc, until="region")
 # chain_ves = tbl_chain("ves", mdc, until="region")
@@ -490,7 +501,9 @@ dblog$date_max = max(c(clean_survey_info$date,
 
 ```
 
-# "One chain at a time"
+
+# One chain at a time
+
 ## Aural chain
 - aural / survey / visit / site / region / location
 
@@ -499,8 +512,7 @@ dblog$date_max = max(c(clean_survey_info$date,
 ```{r}
 unified_aural = clean_aural_obs %>%
   full_join(clean_aural_survey, by = c("fulcrum_parent_id" = "fulcrum_id")) %>%
-  select(-fulcrum_id,
-         -fulcrum_parent_id) %>%
+  select(-fulcrum_parent_id) %>%
   left_join(clean_survey_info, by = c("site", "date")) %>%
   left_join(db_site %>%
               select(tbl_keys("site", mdc)) %>%
@@ -531,10 +543,7 @@ gelled_aural = unified_aural %>%
   mutate(visit_id = ifelse(is.na(visit_id), UUIDgenerate(), visit_id)) %>%
   ungroup() %>%
   group_by_at(tbl_nkey("survey", mdc)) %>%
-  mutate(start_time = as_hms(min(start_time)),
-         end_time = as_hms(max(end_time)),
-         comments_survey = str_c(unique(comments_survey), collapse = ", "), 
-         survey_id = ifelse(is.na(survey_id), fulcrum_id, survey_id),
+  mutate(survey_id = ifelse(is.na(survey_id), first(fulcrum_id), survey_id),
          survey_id = ifelse(is.na(survey_id), UUIDgenerate(), survey_id)) %>%
   ungroup() %>%
   select(-fulcrum_id)
@@ -553,6 +562,7 @@ subset_aural_visit = gelled_aural %>%
 tray = compare_for_staging(db_visit %>% collect(), subset_aural_visit, tbl_pkey('visit', mdc), return_all = TRUE, report = "aural_visit")
 final_aural_visit = bind_rows(tray$insert,
                               tray$update)
+dup_aural_visit = tray$duplicate
 
 # survey
 subset_aural_survey = gelled_aural %>%
@@ -562,6 +572,7 @@ subset_aural_survey = gelled_aural %>%
 tray = compare_for_staging(db_survey %>% collect(), subset_aural_survey, tbl_pkey('survey', mdc), return_all = TRUE, report = "aural_survey")
 final_aural_survey = bind_rows(tray$insert,
                                tray$update)
+dup_aural_survey = tray$duplicate
 
 # aural
 subset_aural = gelled_aural %>%
@@ -571,6 +582,8 @@ subset_aural = gelled_aural %>%
 tray = compare_for_staging(db_aural %>% collect(), subset_aural, tbl_pkey('aural', mdc), return_all = TRUE, report = "aural")
 final_aural = bind_rows(tray$insert,
                         tray$update)
+dup_aural = tray$duplicate
+
 ```
 
 ### Stage and commit aural tables
@@ -580,16 +593,11 @@ final_aural = bind_rows(tray$insert,
 # begin transaction temp
 dbBegin(dbcon)
 
-to_upsert = list()
-
 tryCatch(
   {
     temp_aural_visit = stage_to_temp(dbcon, db_visit, final_aural_visit)
-    to_upsert[["visit"]] = temp_aural_visit
     temp_aural_survey = stage_to_temp(dbcon, db_survey, final_aural_survey)
-    to_upsert[["survey"]] = temp_aural_survey
     temp_aural = stage_to_temp(dbcon, db_aural, final_aural)
-    to_upsert[["aural"]] = temp_aural
     
     # Commit the transaction if successful
     dbCommit(dbcon)
@@ -598,7 +606,6 @@ tryCatch(
   }, error = function(e) {
     # Rollback in case of error
     dbRollback(dbcon)
-    to_upsert = list()
     message("Transaction failed: ", e$message)
   })
 
@@ -612,7 +619,7 @@ tryCatch(
     rows_upsert(db_visit, pointer, by=tbl_pkey("visit", mdc), in_place=TRUE)
     
     pointer = tbl(dbcon, temp_aural_survey)
-    rows_upsert(db_survey, pointer, by=tbl_pkey("survey", mdc), in_place=TRUE)
+    rows_upsert(db_survey, pointer, by=tbl_nkey("survey", mdc), in_place=TRUE)
     
     pointer = tbl(dbcon, temp_aural)
     rows_upsert(db_aural, pointer, by=tbl_pkey("aural", mdc), in_place=TRUE)
@@ -627,25 +634,26 @@ tryCatch(
     message("Transaction failed: ", e$message)
   })
 
-
-
 ```
 
-## Reload survey & visit
+
+## VES chain
+- ves / survey / visit / site / region / location
+
+### Reload survey & visit
 ```{r}
+db_aural = tbl(dbcon, Id("survey_data", "aural"))
 db_survey = tbl(dbcon, Id("survey_data", "survey"))
 db_visit = tbl(dbcon, Id("survey_data", "visit"))
 ```
 
-## VES chain
-- ves / survey / visit / site / region / location
+
 
 ### Unify ves data
 ```{r}
 unified_ves = clean_ves_obs %>%
   full_join(clean_ves_survey, by = c("fulcrum_parent_id" = "fulcrum_id")) %>%
-  select(-fulcrum_id,
-         -fulcrum_parent_id) %>%
+  select(-fulcrum_parent_id) %>%
   left_join(clean_survey_info, by = c("site", "date")) %>%
   left_join(db_site %>%
               select(tbl_keys("site", mdc)) %>%
@@ -675,10 +683,7 @@ gelled_ves = unified_ves %>%
   mutate(visit_id = ifelse(is.na(visit_id), UUIDgenerate(), visit_id)) %>%
   ungroup() %>%
   group_by_at(tbl_nkey("survey", mdc)) %>%
-  mutate(start_time = as_hms(min(start_time)),
-         end_time = as_hms(max(end_time)),
-         comments_survey = str_c(unique(comments_survey), collapse = ", "),
-         survey_id = ifelse(is.na(survey_id), fulcrum_id, survey_id),
+  mutate(survey_id = ifelse(is.na(survey_id), first(fulcrum_id), survey_id),
          survey_id = ifelse(is.na(survey_id), UUIDgenerate(), survey_id)) %>%
   ungroup()
 ```
@@ -792,8 +797,8 @@ unified_sample =  clean_sample_obs %>%
 
 unified_capture = clean_capture_obs %>%
   full_join(clean_capture_survey, by = c("fulcrum_parent_id" = "fulcrum_id")) %>%
-    select(-fulcrum_id,
-         -fulcrum_parent_id) %>%
+  select(-fulcrum_parent_id) %>%
+  mutate(temp_capture_id = fulcrum_id) %>%
   # full_join(unified_sample, by=c("site", "date", "bag_id")) %>%
   # mutate(species_capture = coalesce(species_capture.y, species_capture.x),
   #        survey_time = coalesce(survey_time.x, survey_time.y)) %>%

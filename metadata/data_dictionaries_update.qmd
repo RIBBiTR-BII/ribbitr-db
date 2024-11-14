@@ -385,6 +385,10 @@ tryCatch(
 
 ```
 
+```{r}
+dbDisconnect(dbcon)
+```
+
 ## temp for rewriting constraints:
 
 ```{r}

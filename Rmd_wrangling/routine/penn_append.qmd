@@ -281,7 +281,7 @@ surv_info <- bind_rows(mid_surv_capture, mid_surv_ves, mid_surv_aural)
 
 unique_survey <- surv_info %>% 
   group_by(site, date, detection_type) %>% 
-  mutate(start_time = as_hms(mean(start_time)), # clean times
+  mutate(start_time = as_hms(mean(start_time)), # taking a mean across multiple surveys conducted on the same day?
          end_time = as_hms(mean(end_time))) %>% 
   select(!c("water_temperature_measurement_time", "air_temperature_measurement_time", "other_observers", "observers")) %>% 
   unite(survey_comments, c("survey_comments", "sampling_event_comments", "survey_description"), na.rm = T, sep = ",") %>% 
@@ -328,7 +328,7 @@ unique_survey_fkey <- unique_survey %>%
   mutate(p_h = if_else(p_h == 0.00, NA, p_h)) %>% 
   group_by(site, date, detection_type) %>% 
   mutate(survey_id = UUIDgenerate(output = c("uuid"))) %>% # move to end, after antijoin wtih survey table
-  filter(!duplicated(survey_id)) %>% # this should not be needed once above corrections made
+  filter(!duplicated(survey_id)) %>%
   mutate(duration_min = if_else(end_time < start_time,
                             as_hms(86400) - start_time + end_time,
                             end_time - start_time),

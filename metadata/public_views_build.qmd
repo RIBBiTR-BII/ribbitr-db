@@ -96,3 +96,7 @@ tryCatch(
   message("Transaction failed: ", e$message)
 })
 ```
+
+```{r}
+dbDisconnect(dbcon)
+```

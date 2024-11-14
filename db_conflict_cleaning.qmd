@@ -10,7 +10,7 @@ editor: source
 librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
 
 # connect to database
-dbcon = hopToDB(prefix = "ribbitr")
+dbcon = hopToDB("ribbitr")
 
 ```
 
@@ -256,7 +256,9 @@ train = db_capture %>%
   collect()
 ```
 
+
 ```{r}
+# coalesce percent_cloud_cover
 cc_survey = db_survey %>%
   mutate(
     cloud_cover_percent = as.numeric(cloud_cover_percent),
@@ -274,62 +276,82 @@ this = db_survey %>%
   filter(!is.na(percent_cloud_cover)) %>%
   collect()
 
+```
 
+```{r}
 # move survey environmental columns to visit?
 colnames(db_survey)
 
-db_survey %>%
-  select("wind_speed_m_s",
-         "air_temp_c",
-         "water_temp_c",
-         "p_h",
-         "tds_ppm",
-         "wind",
-         "sky",
-         "air_time",
-         "water_time",
-         "fish",
-         # "description", ##???
-         "survey_quality",
-         "transect",
-         "samp_loc",
-         "pressure_psi",
-         "relative_humidty_percent",
-         "dissolved_o2_percent",
-         "salinity_ppt",
-         "cloud_cover_percent",
-         "precip",
-         "soil_humidity_m3m3",
-         "wind_speed_scale",
-         "precipitation_during_visit",
-         "precipitation_last_48_h",
-         "temperature_last_48_h",
-         "percent_cloud_cover",
-         "weather_condition_notes",
-         "pressure_psi_drop",
-         "relative_humidity_percent",
-         "relative_humidity_drop_percent",
-         "wind_speed_min_m_s",
-         "wind_speed_max_m_s",
-         "air_temp_c_drop",
-         "densiometer_d1_num_covered",
-         "d1_n",
-         "d1_s",
-         "d1_e",
-         "d1_w",
-         "d1_percent_cover",
-         "densiometer_d2_num_covered",
-         "d2_n",
-         "d2_s",
-         "d2_e",
-         "d2_w",
-         "d2_percent_cover",
-         "depth_of_water_from_d2_cm",
-         "percent_vegetation_cover",
-         "vegetation_notes",
-         "secchi_depth_cm",
+env_cols = c(
+  "wind_speed_m_s",
+  "air_temp_c",
+  "water_temp_c",
+  "p_h",
+  "tds_ppm",
+  "wind",
+  "sky",
+  "air_time",
+  "water_time",
+  "survey_quality",
+  "transect",
+  "samp_loc",
+  "pressure_psi",
+  "relative_humidty_percent",
+  "dissolved_o2_percent",
+  "salinity_ppt",
+  "cloud_cover_percent",
+  "precip",
+  "soil_humidity_m3m3",
+  "wind_speed_scale",
+  "precipitation_during_visit",
+  "precipitation_last_48_h",
+  "temperature_last_48_h",
+  "weather_condition_notes",
+  "pressure_psi_drop",
+  "relative_humidity_percent",
+  "relative_humidity_drop_percent",
+  "wind_speed_min_m_s",
+  "wind_speed_max_m_s",
+  "air_temp_c_drop",
+  "densiometer_d1_num_covered",
+  "d1_n",
+  "d1_s",
+  "d1_e",
+  "d1_w",
+  "d1_percent_cover",
+  "densiometer_d2_num_covered",
+  "d2_n",
+  "d2_s",
+  "d2_e",
+  "d2_w",
+  "d2_percent_cover",
+  "depth_of_water_from_d2_cm",
+  "vegetation_cover_percent",
+  "vegetation_notes",
+  "secchi_depth_cm"
+)
+
+survey_env = db_survey %>%
+  select(all_of(env_cols),
          "visit_id"
          )
 
 
+distinct_check <- survey_env %>%
+  group_by(visit_id) %>%
+  filter(!is.na(air_time) | !is.na(water_time)) %>%
+  distinct() %>%
+  summarise(row_count = n(), .groups = 'drop') %>%
+  filter(row_count > 1) %>%
+  arrange(desc(row_count)) %>%
+  left_join(db_survey, by = "visit_id") %>%
+  collect()
+
+# looks like there are indeed cases where a set of env. parameters were taken at the beginning of each survey. In which case we leave env parameters in survey table.
+```
+what is relationship between survey_time and start_time?
+```{r}
+distinct_check <- db_survey
+
+  
 ```

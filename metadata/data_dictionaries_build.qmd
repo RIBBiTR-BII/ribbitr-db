@@ -237,5 +237,5 @@ tryCatch(
 
 
 ```{r}
-dbDisconnect(con)
+dbDisconnect(dbcon)
 ```
