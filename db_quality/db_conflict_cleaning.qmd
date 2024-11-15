@@ -10,7 +10,7 @@ editor: source
 librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
 
 # connect to database
-dbcon = hopToDB("ribbitr")
+dbcon = hopToDB()
 
 ```
 
@@ -349,9 +349,78 @@ distinct_check <- survey_env %>%
 
 # looks like there are indeed cases where a set of env. parameters were taken at the beginning of each survey. In which case we leave env parameters in survey table.
 ```
-what is relationship between survey_time and start_time?
-```{r}
-distinct_check <- db_survey
 
-  
+calculate survey.duration_minutes
+```{r}
+# flip start and end time when durration in greater than 18 hours
+
+rectified = db_survey %>%
+  mutate(dm = sql("
+    ROUND(CASE 
+      WHEN end_time::time < start_time::time 
+      THEN EXTRACT(EPOCH FROM (('24:00:00'::interval + end_time::interval) - start_time::interval)) / 60
+      ELSE EXTRACT(EPOCH FROM (end_time::interval - start_time::interval)) / 60
+    END, 0)
+  ")) %>%
+  filter(dm > 18 * 60) %>%
+  mutate(temp = start_time,
+         start_time = end_time,
+         end_time = temp) %>%
+  select(-dm,
+         -temp)
+
+db_survey = db_survey %>%
+  rows_update(rectified, by="survey_id", unmatched = "ignore", in_place=TRUE)
+
+```
+
+recalculate duration for all surveys
+```{r}
+dm_survey = db_survey %>%
+  mutate(duration_minutes = sql("
+    ROUND(CASE 
+      WHEN end_time::time < start_time::time 
+      THEN EXTRACT(EPOCH FROM (('24:00:00'::interval + end_time::interval) - start_time::interval)) / 60
+      ELSE EXTRACT(EPOCH FROM (end_time::interval - start_time::interval)) / 60
+    END, 0)
+  "))
+
+db_survey = db_survey %>%
+  rows_update(dm_survey, by="survey_id", unmatched = "ignore", in_place=TRUE)
+
+```
+
+calculate visit.time_of_day from min(survey.start_time)
+```{r}
+# preview
+db_survey %>%
+  left_join(db_visit, by = "visit_id") %>%
+  select(start_time, end_time, visit_id, time_of_day) %>%
+  mutate(mid_time = sql("
+    CASE 
+      WHEN end_time::time < start_time::time 
+      THEN ((('24:00:00'::interval - start_time::interval) + end_time::interval) / 2 + start_time::interval)::time
+      ELSE ((start_time::interval + end_time::interval) / 2)::time
+    END
+  ")) %>%
+  group_by(visit_id) %>%
+  mutate(tod_calc = ifelse(mean(hour(mid_time), na.rm=TRUE) >= 5 & mean(hour(mid_time), na.rm=TRUE) <= 18, "day", "night")) %>%
+  ungroup() %>%
+  filter(tod_calc != time_of_day)
+
+as.in
+glimpse(db_survey)
+
+# preview
+db_survey %>%
+  left_join(db_visit, by = "visit_id") %>%
+  select(start_time, end_time, visit_id, time_of_day) %>%
+  group_by(visit_id) %>%
+  mutate(tod_calc = ifelse(min(start_time, na.rm=TRUE) >= 6 & min(start_time, na.rm=TRUE) <= 18, "day", "night")) %>%
+  ungroup() %>%
+  filter(tod_calc != time_of_day)
+
+peace = collect(db_survey)
+
+mean(c(peace$start_time + peace$end_time))
 ```

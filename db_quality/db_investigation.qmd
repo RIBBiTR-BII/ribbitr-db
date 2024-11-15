@@ -1,0 +1,60 @@
+---
+title: "db_investigation"
+format: html
+editor: source
+---
+
+```{r}
+
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
+
+# connect to database
+dbcon = hopToDB("ribbitr")
+
+mdc = tbl(dbcon, "all_columns") %>%
+  filter(table_schema == "survey_data") %>%
+  collect()
+
+```
+
+pointers to tables
+
+```{r}
+
+db_aural = tbl(dbcon, Id("survey_data", "aural"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_ves = tbl(dbcon, Id("survey_data", "ves"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
+```
+
+How important is `time_of_day` as a natural key for visit?
+
+```{r}
+
+tbl_nkey("visit", mdc)
+
+visit_chain = tbl_chain("visit", mdc)
+
+iq_visit = tbl_left_join(dbcon, visit_chain) %>%
+  group_by(site_id, date) %>%
+  mutate(group_count = n()) %>%
+  ungroup() %>%
+  filter(group_count > 1) %>%
+  arrange(date, site_id, time_of_day) %>%
+  collect()
+
+```
+
+Yes, it is important in some cases. We will keep it, even though ultimately it is derived from survey.start_time.
+
+Confused start and end times
+```{r}
+db_survey %>%
+  filter(duration_minutes > 1800)
+```

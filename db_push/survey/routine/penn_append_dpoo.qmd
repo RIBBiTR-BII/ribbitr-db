@@ -63,7 +63,7 @@ db_survey = tbl(dbcon, Id("survey_data", "survey"))
 db_visit = tbl(dbcon, Id("survey_data", "visit"))
 db_site = tbl(dbcon, Id("survey_data", "site"))
 db_region = tbl(dbcon, Id("survey_data", "region"))
-db_location = tbl(dbcon, Id("survey_data", "location"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
 
 ```
 
@@ -196,9 +196,9 @@ clean_survey_info <- raw_survey_info %>%
          pressure_psi = ifelse(pressure_psi == 0, NA, pressure_psi),
          number_observers = as.integer(str_count(observers_survey, ",") + 1)) %>%
   select(-any_of(to_drop),
-         -survey_time,
          -start_time,
-         -end_time) %>%
+         -end_time,
+         -survey_time) %>%
   filter(!if_all(everything(), is.na))  # drop any rows all null
 
 clean_aural_survey <- raw_aural_survey %>%
@@ -207,7 +207,6 @@ clean_aural_survey <- raw_aural_survey %>%
   mutate(site = str_to_lower(site),
          site = str_replace_all(site, "-", "_"),
          site = str_replace_all(site, " ", "_"),
-         survey_time = str_to_lower(survey_time),
          comments_survey = str_replace_all(comments_survey, "\\n", ". "),
          duration_minutes = calc_duration(start_time, end_time),
          detection_type = "aural",
@@ -216,7 +215,8 @@ clean_aural_survey <- raw_aural_survey %>%
          date = as.Date(ifelse(survey_date - date > 1, date, survey_date), origin = "1970-01-01")) %>%
   unite(observer_aural, c("observer", "observer_other"), sep=",", remove = TRUE, na.rm = TRUE) %>%
   select(-any_of(to_drop),
-         -survey_date) %>%
+         -survey_date,
+         -survey_time,) %>%
   filter(!if_all(everything(), is.na),
          !is.na(site))  # drop any rows all null
 
@@ -228,7 +228,7 @@ clean_aural_obs <- raw_aural_obs %>%
   mutate(aural_id = fulcrum_id,
          species_aural = coalesce(species_aural, species_aural_other),
          species_aural = str_to_lower(str_replace_all(species_aural, " ", "_")),
-         comments_aural_ = str_replace_all(comments_aural, "\\n", ". ")) %>%
+         comments_aural = str_replace_all(comments_aural, "\\n", ". ")) %>%
   select(-any_of(to_drop),
          -species_aural_other) %>%
   filter(!if_all(everything(), is.na)) # drop any rows all null
@@ -239,7 +239,6 @@ clean_ves_survey <- raw_ves_survey %>%
   mutate(site = str_to_lower(site),
          site = str_replace_all(site, "-", "_"),
          site = str_replace_all(site, " ", "_"),
-         survey_time = str_to_lower(survey_time),
          comments_survey = str_replace_all(comments_survey, "\\n", ". "),
          duration_minutes = calc_duration(start_time, end_time),
          detection_type = "visual",
@@ -248,7 +247,8 @@ clean_ves_survey <- raw_ves_survey %>%
          date = as.Date(ifelse(survey_date - date > 1, date, survey_date), origin = "1970-01-01")) %>%
   unite(observer_ves, c("observer", "observer_other"), sep=",", remove = TRUE, na.rm = TRUE) %>%
   select(-any_of(to_drop),
-         -survey_date) %>%
+         -survey_date,
+         -survey_time) %>%
   filter(!if_all(everything(), is.na),
          !is.na(site))  # drop any rows all null
 
@@ -268,7 +268,6 @@ clean_capture_survey <- raw_capture_survey %>%
   mutate(site = str_to_lower(site),
          site = str_replace_all(site, "-", "_"),
          site = str_replace_all(site, " ", "_"),
-         survey_time = str_to_lower(survey_time),
          comments_survey = str_replace_all(comments_survey, "\\n", ". "),
          duration_minutes = calc_duration(start_time, end_time),
          detection_type = "capture",
@@ -277,7 +276,8 @@ clean_capture_survey <- raw_capture_survey %>%
          date = as.Date(ifelse(survey_date - date > 1, date, survey_date), origin = "1970-01-01")) %>%
   unite(observer_capture, c("observer", "observer_other"), sep=",", remove = TRUE, na.rm = TRUE) %>%
   select(-any_of(to_drop),
-         -survey_date) %>%
+         -survey_date,
+         -survey_time) %>%
   filter(!if_all(everything(), is.na),
          !is.na(site))  # drop any rows all null
 
@@ -317,14 +317,14 @@ clean_sample_processing <- raw_sample_processing %>%
   mutate(site = str_to_lower(site),
          site = str_replace_all(site, "-", "_"),
          site = str_replace_all(site, " ", "_"),
-         survey_time = str_to_lower(survey_time),
          created_at = with_tz(ymd_hms(created_at, tz = "UTC"), "America/New_York"),
          survey_date = as.Date(ifelse(hour(created_at) > 12, date(created_at), date(created_at) - days(1)), origin = "1970-01-01"),
          date = as.Date(ifelse(survey_date - date > 1, date, survey_date), origin = "1970-01-01")) %>%
   unite(processor, c("processor", "processor_other"), sep=",", remove = TRUE, na.rm = TRUE) %>%
   select(-any_of(to_drop),
          -survey_date,
-         -location_other) %>%
+         -location_other,
+         -survey_time) %>%
   filter(!if_all(everything(), is.na)) # drop any rows all null
 
 clean_sample_obs <- raw_sample_obs %>%
@@ -413,7 +413,9 @@ clean_capture_obs$bag_id[clean_capture_obs$fulcrum_id == "4d5d73e8-847f-43e8-a8f
 
 # 3 Checks
 ```{r}
-get_dupes(clean_survey_info, site, date)
+# check duplicates on visit nkey (ignoring time_of_day)
+clean_survey_info %>%
+  get_dupes(site, date)
 
 ```
 
@@ -526,11 +528,18 @@ unified_aural = clean_aural_obs %>%
               select(tbl_keys("survey", mdc)) %>%
               filter(!is.na(visit_id)) %>%
               collect(),
-            by = tbl_nkey("survey", mdc))
+            by = tbl_nkey("survey", mdc)) %>%
+  filter(!is.na(site),
+         !is.na(date))
 
 if (any(is.na(unified_aural$site_id))) {
   stop("unknown aural sites found. More rigorous coding needed :)")
 }
+
+unified_aural %>%
+  select(site, date, time_of_day, detection_type, start_time, end_time, comments_survey) %>%
+  distinct() %>%
+  get_dupes(site, date, time_of_day, detection_type)
 
 ```
 
@@ -543,10 +552,19 @@ gelled_aural = unified_aural %>%
   mutate(visit_id = ifelse(is.na(visit_id), UUIDgenerate(), visit_id)) %>%
   ungroup() %>%
   group_by_at(tbl_nkey("survey", mdc)) %>%
-  mutate(survey_id = ifelse(is.na(survey_id), first(fulcrum_id), survey_id),
+  mutate(start_time = mean(start_time),
+         end_time = mean(end_time),
+         comments_survey = str_c(comments_survey, collapse = ", "),
+         time_of_day = ifelse(start_time/(3600) > 6 & start_time/(3600) <= 18, "day", "night"),
+         survey_id = ifelse(is.na(survey_id), first(fulcrum_id), survey_id),
          survey_id = ifelse(is.na(survey_id), UUIDgenerate(), survey_id)) %>%
   ungroup() %>%
   select(-fulcrum_id)
+
+gelled_aural %>%
+  select(site, date, time_of_day, detection_type, start_time, end_time, comments_survey) %>%
+  distinct() %>%
+  get_dupes(site, date, time_of_day, detection_type)
 
 ```
 
@@ -583,6 +601,9 @@ tray = compare_for_staging(db_aural %>% collect(), subset_aural, tbl_pkey('aural
 final_aural = bind_rows(tray$insert,
                         tray$update)
 dup_aural = tray$duplicate
+
+subset_aural_visit %>%
+  get_dupes(visit_id)
 
 ```
 
@@ -672,6 +693,10 @@ unified_ves = clean_ves_obs %>%
 if (any(is.na(unified_ves$site_id))) {
   stop("unknown ves sites found. More rigorous coding needed :)")
 }
+
+peace = unified_ves %>%
+  distinct(site, date, time_of_day, detection_type, start_time, end_time, comments_survey) %>%
+  get_dupes(site, date, time_of_day, detection_type)
 
 ```
 
