@@ -46,8 +46,12 @@ iq_visit = tbl_left_join(dbcon, visit_chain) %>%
   mutate(group_count = n()) %>%
   ungroup() %>%
   filter(group_count > 1) %>%
-  arrange(date, site_id, time_of_day) %>%
+  arrange(date, site, time_of_day) %>%
   collect()
+
+db_survey %>%
+  collect() %>%
+  left_join(iq_visit, by = "visit_id")
 
 ```
 
@@ -58,3 +62,22 @@ Confused start and end times
 db_survey %>%
   filter(duration_minutes > 1800)
 ```
+
+# visits with no site or no date
+```{r}
+
+vlist = db_visit %>% select(visit_id) %>% distinct() %>% pull()
+
+peace = db_survey %>%
+  filter(!(visit_id %in% vlist)) %>%
+  collect()
+
+```
+
+```{r}
+
+db_survey %>%
+  left_join(db_visit, by = "visit_id") %>%
+  filter(is.na(date))
+```
+

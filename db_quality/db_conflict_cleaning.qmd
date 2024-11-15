@@ -392,35 +392,51 @@ db_survey = db_survey %>%
 
 calculate visit.time_of_day from min(survey.start_time)
 ```{r}
-# preview
-db_survey %>%
-  left_join(db_visit, by = "visit_id") %>%
-  select(start_time, end_time, visit_id, time_of_day) %>%
-  mutate(mid_time = sql("
-    CASE 
-      WHEN end_time::time < start_time::time 
-      THEN ((('24:00:00'::interval - start_time::interval) + end_time::interval) / 2 + start_time::interval)::time
-      ELSE ((start_time::interval + end_time::interval) / 2)::time
-    END
-  ")) %>%
-  group_by(visit_id) %>%
-  mutate(tod_calc = ifelse(mean(hour(mid_time), na.rm=TRUE) >= 5 & mean(hour(mid_time), na.rm=TRUE) <= 18, "day", "night")) %>%
-  ungroup() %>%
-  filter(tod_calc != time_of_day)
-
-as.in
-glimpse(db_survey)
+#define time of day as: midpoint of earliest survey start and latest survey end falls:
+#   between 5:00 am and 18:59 pm -- day
+#   Otherwise -- night
 
 # preview
 db_survey %>%
   left_join(db_visit, by = "visit_id") %>%
+  group_by(date) %>%
+  mutate(vs = n()) %>%
+  filter(vs == 1) %>%
+  ungroup() %>%
   select(start_time, end_time, visit_id, time_of_day) %>%
   group_by(visit_id) %>%
-  mutate(tod_calc = ifelse(min(start_time, na.rm=TRUE) >= 6 & min(start_time, na.rm=TRUE) <= 18, "day", "night")) %>%
+  mutate(mst = min(start_time, na.rm=TRUE),
+         met = max(end_time, na.rm=TRUE),
+         dur = ifelse(met < mst, met - mst + hours(24), met - mst),
+         mid_time = mst + dur/2,
+         tod_calc = ifelse(mean(hour(mid_time), na.rm=TRUE) >= 5 & mean(hour(mid_time), na.rm=TRUE) <= 18, "day", "night")) %>%
   ungroup() %>%
   filter(tod_calc != time_of_day)
 
-peace = collect(db_survey)
 
-mean(c(peace$start_time + peace$end_time))
+# revise
+tod_visit = db_survey %>%
+  left_join(db_visit, by = "visit_id") %>%
+  group_by(date) %>%
+  mutate(vs = n()) %>%
+  filter(vs == 1) %>%
+  ungroup() %>%
+  group_by(visit_id) %>%
+  mutate(mst = min(start_time, na.rm=TRUE),
+         met = max(end_time, na.rm=TRUE),
+         dur = ifelse(met < mst, met - mst + hours(24), met - mst),
+         mid_time = mst + dur/2,
+         time_of_day = ifelse(mean(hour(mid_time), na.rm=TRUE) >= 5 & mean(hour(mid_time), na.rm=TRUE) <= 18, "day", "night")) %>%
+  ungroup() %>%
+  select(-mst,
+         -met,
+         -dur,
+         -mid_time,
+         -vs) %>%
+  select(all_of(colnames(db_visit)))
+  
+db_visit = db_visit %>%
+  rows_update(tod_visit, by="visit_id", unmatched = "ignore", in_place=TRUE)
+
+
 ```
