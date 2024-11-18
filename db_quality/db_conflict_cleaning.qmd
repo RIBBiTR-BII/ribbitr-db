@@ -29,6 +29,8 @@ db_visit = tbl(dbcon, Id("survey_data", "visit"))
 db_site = tbl(dbcon, Id("survey_data", "site"))
 db_region = tbl(dbcon, Id("survey_data", "region"))
 db_country = tbl(dbcon, Id("survey_data", "country"))
+
+db_cmr = tbl(dbcon, Id("survey_data", "cmr"))
 db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
 
 ```
@@ -463,3 +465,55 @@ db_visit = db_visit %>%
 
 
 ```
+
+# CMR duplicates
+```{r}
+
+get_dupes(db_cmr %>% collect(), capture_mark_recapture)
+
+t1 = db_cmr %>%
+  distinct() %>%
+  mutate(cmr_id = as.character(cmr_id)) %>%
+  inner_join(db_capture, by="cmr_id") %>% collect()
+
+t2 = db_cmr %>%
+  distinct() %>%
+  inner_join(db_capture, by = c("local_cmr_id" = "cmr_id")) %>% collect()
+
+cmr_scrape = db_capture %>%
+  filter(!is.na(cmr_id)) %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_cmr, by = "cmr_id") %>%
+  select(cmr_id,
+         local_cmr_id,
+         species_capture,
+         site,
+         date,
+         region) %>%
+  distinct() %>%
+  collect()
+
+
+# does not generate unique uuids, needs fixing.
+cmr_clean = cmr_scrape %>%
+  mutate(uuidf = map_chr(cmr_id, ~ ifelse(!UUIDvalidate(.x), UUIDgenerate(), .x)),
+         local_cmr_id = ifelse(UUIDvalidate(cmr_id), local_cmr_id, cmr_id),
+         cmr_id = uuidf) %>%
+  select(-uuidf)
+
+cmr_repeats = cmr_clean %>%
+  group_by(local_cmr_id, site, species_capture) %>%
+  mutate(cmr_count = n()) %>%
+  ungroup() %>%
+  filter(cmr_count > 1)
+  
+
+
+
+
+```
+
+

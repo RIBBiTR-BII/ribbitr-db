@@ -244,7 +244,7 @@ gelled_visit = unified_visit %>%
               collect(),
             by = tbl_nkey("visit", mdc)) %>%
   group_by_at(tbl_nkey("visit", mdc)) %>%
-  mutate(visit_id = ifelse(is.na(visit_id), UUIDgenerate(), visit_id)) %>%
+  mutate(visit_id = map_chr(visit_id, ~ ifelse(is.na(.x), UUIDgenerate(), .x))) %>%
   ungroup()
 
 ```
