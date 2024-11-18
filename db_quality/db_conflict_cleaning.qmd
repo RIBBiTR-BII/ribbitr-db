@@ -33,7 +33,7 @@ db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
 
 ```
 
-# nas on natural key columns
+# NAs on natural key columns
 ```{r}
 
 # join down
@@ -257,6 +257,7 @@ train = db_capture %>%
 ```
 
 
+Coalesce misnamed/duplicate columns
 ```{r}
 # coalesce percent_cloud_cover
 cc_survey = db_survey %>%
@@ -275,6 +276,28 @@ try = db_survey %>%
 this = db_survey %>%
   filter(!is.na(percent_cloud_cover)) %>%
   collect()
+
+# relative_humidity_percent, relative_humidty_percent, relative_humidity_drop_percent
+
+try = db_survey %>%
+  filter(!is.na(relative_humidity_percent)) %>%
+  collect()
+
+that = db_survey %>%
+  filter(!is.na(relative_humidty_percent)) %>%
+  collect()
+
+rh_survey = db_survey %>%
+  mutate(
+    relative_humidity_percent = coalesce(relative_humidity_percent, relative_humidty_percent))
+
+now = rh_survey %>%
+  filter(!is.na(relative_humidity_percent)) %>%
+  collect()
+
+# update
+db_survey = db_survey %>%
+  rows_update(rh_survey, by="survey_id", unmatched = "ignore", in_place=TRUE)
 
 ```
 

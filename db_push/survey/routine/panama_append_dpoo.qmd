@@ -1,5 +1,5 @@
 ---
-title: "penn_append"
+title: "panama_append"
 format: html
 editor: source
 ---
@@ -10,13 +10,9 @@ editor: source
 ```{r}
 librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
 # librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
-```
 
-## DB Connection
-
-```{r}
 ## Connect to DB
-dbcon <- hopToDB()
+dbcon <- hopToDB("ribbitr")
 
 ## Pull metadata from database
 mdc = tbl(dbcon, Id("public", "all_columns")) %>%
@@ -26,7 +22,7 @@ mdc = tbl(dbcon, Id("public", "all_columns")) %>%
 ## Point to local data directory
 ddir = Sys.getenv("data_dir")  # data directory
 # Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
-wddir = here(ddir, "fulcrum", 'penn', '2024-09-13') # working data directory
+wddir = here(ddir, "fulcrum", 'panama', '2024-11-18', "panama_field_3_0") # working data directory
 
 ```
 
@@ -73,29 +69,41 @@ db_country = tbl(dbcon, Id("survey_data", "country"))
 - name related tables similarly for natural grouping
 
 ```{r}
+# list.files(path = here(wddir))
+
+# general visit table
+raw_visit_info <- read_csv(here(wddir, "panama_field_3_0.csv"))
+
 # general survey table
-raw_survey_info <- read_csv(here(wddir, "1_penn_surveyinformation", "1_penn_surveyinformation.csv"))
+raw_survey_info <- read_csv(here(wddir, "panama_field_3_0_survey_table_data.csv"))
 
-# aural tables
-raw_aural_survey <- read_csv(here(wddir, "2_penn_acousticsurvey", "2_penn_acousticsurvey.csv"))
-raw_aural_obs <- read_csv(here(wddir, "2_penn_acousticsurvey", "2_penn_acousticsurvey_acoustic_survey.csv"))
+# survey observations
+raw_aural <- read_csv(here(wddir, "panama_field_3_0_individual_call.csv"))
+raw_capture <- read_csv(here(wddir, "panama_field_3_0_individual_capture.csv"))
+raw_capture_target <- read_csv(here(wddir, "panama_field_3_0_individual_capture_target.csv"))
+raw_ves <- read_csv(here(wddir, "panama_field_3_0_individual_visual.csv"))
+raw_cmr <- read_csv(here(wddir, "panama_field_3_0_individual_cmr.csv"))
 
-# ves tables
-raw_ves_survey <- read_csv(here(wddir, "4_penn_visualencountersurvey", "4_penn_visualencountersurvey.csv"))
-raw_ves_obs <- read_csv(here(wddir, "4_penn_visualencountersurvey", "4_penn_visualencountersurvey_visual_encounter_information.csv"))
+# edna
+raw_edna <- read_csv(here(wddir, "panama_field_3_0_edna_samples.csv"))
 
-# capture tables
-raw_capture_survey <- read_csv(here(wddir, "5_penn_capturesurvey", "5_penn_capturesurvey.csv"))
-raw_capture_obs <- read_csv(here(wddir, "5_penn_capturesurvey", "5_penn_capturesurvey_captured_amphibian_information.csv"))
-raw_cmr <- read_csv(here(wddir, "supp_penn_cmrids", "supp_penn_cmrids.csv"))
 
-# sample processing & obs tables
-raw_sample_processing <- read_csv(here(wddir, "6_penn_sampleprocessing", "6_penn_sampleprocessing.csv"))
-raw_sample_obs <- read_csv(here(wddir, "6_penn_sampleprocessing", "6_penn_sampleprocessing_amphibian_capture_survey_collections.csv"))
+# # non RIBBiTR
+# raw_tadpole <- read_csv(here(wddir, "panama_field_3_0_tadpoles_sampling.csv"))
+# raw_acoustic <- read_csv(here(wddir, "panama_field_3_0_bioacousticdata.csv"))
+# raw_hobo <- read_csv(here(wddir, "panama_field_3_0_hobos_data.csv"))
 
-raw_edna_survey <- read_csv(here(wddir, "3_penn_ednasurvey", "3_penn_ednasurvey.csv"))
-raw_edna_collection <- read_csv(here(wddir, "3_penn_ednasurvey", "3_penn_ednasurvey_edna_collection.csv"))
-raw_edna_filtering <- read_csv(here(wddir, "3_penn_ednasurvey", "3_penn_ednasurvey_edna_collection_edna_filtering.csv"))
+raw_tables = c(
+  "raw_visit_info",
+  "raw_survey_info",
+  "raw_aural",
+  "raw_capture",
+  "raw_capture_target",
+  "raw_ves",
+  "raw_cmr",
+  "raw_edna"
+)
+
 
 ```
 # 2 - Clean data
@@ -111,29 +119,16 @@ null_columns = function(dataframe) {
     colnames()
 }
 
-# check null columns
-(null_columns(raw_survey_info))
-(null_columns(raw_aural_survey))
-(null_columns(raw_aural_obs))
-(null_columns(raw_ves_survey))
-(null_columns(raw_ves_obs))
-(null_columns(raw_capture_survey))
-(null_columns(raw_capture_obs))
-(null_columns(raw_cmr))
-(null_columns(raw_sample_processing))
-(null_columns(raw_sample_obs))
+for (table in raw_tables) {
+  cat(table, "\n\t", "Null columns:\n\t\t")
+  cat(paste(null_columns(get(table)), collapse = "\n\t\t"))
+  cat("\n\tAny duplicate columns:\n\t\t")
+  cat(any(duplicated(get(table))), "\n")
+  cat("\n\tOne-to_one columns:\n\t\t")
+  cat(paste(get_one_to_one(get(table)), collapse="\n\t\t"))
+  cat("\n")
+}
 
-# check duplicated rows
-any(duplicated(raw_survey_info))
-any(duplicated(raw_aural_survey))
-any(duplicated(raw_aural_obs))
-any(duplicated(raw_ves_survey))
-any(duplicated(raw_ves_obs))
-any(duplicated(raw_capture_survey))
-any(duplicated(raw_capture_obs))
-any(duplicated(raw_cmr))
-any(duplicated(raw_sample_processing))
-any(duplicated(raw_sample_obs))
 
 ```
 
@@ -176,255 +171,45 @@ calc_duration = function(start_time, end_time) {
 }
 
 # Begin cleaning
-
-clean_survey_info <- raw_survey_info %>%
-  clean_names() %>% 
-  rename(air_temp_c = air_temperature_c,
-         air_time = air_temperature_measurement_time,
-         water_temp_c = water_temperature_c,
-         water_time = water_temperature_measurement_time,
-         wind = wind_conditions,
-         wind_speed_m_s = wind_speed_ms,
-         sky = sky_conditions,
-         relative_humidity_percent = humidity,
-         pressure_psi = pressure,
-         dissolved_o2_percent = dissolved_oxygen,
-         tds_ppm = total_dissolved_solids,
-         p_h = ph,
-         comments_visit = sampling_event_comments,
-         survey_info_id = fulcrum_id,
-         time_of_day = survey_time) %>%
-  unite(observers_survey, c("observers", "other_observers"), sep=",", remove = TRUE, na.rm = TRUE) %>%
-  mutate(site = str_to_lower(site),
-         site = str_replace_all(site, "-", "_"),
-         site = str_replace_all(site, " ", "_"),
-         time_of_day = str_to_lower(time_of_day),
-         comments_visit = str_replace_all(comments_visit, "\\n", ". "),
-         pressure_psi = ifelse(pressure_psi == 0, NA, pressure_psi),
-         number_observers = as.integer(str_count(observers_survey, ",") + 1)) %>%
-  select(-any_of(to_drop),
-         -start_time,
-         -end_time) %>%
-  filter(!if_all(everything(), is.na))  # drop any rows all null
-
-clean_aural_survey <- raw_aural_survey %>%
-  clean_names() %>% 
-  rename(comments_survey = acoustic_survey_comments,
-         time_of_day = survey_time) %>%
-  mutate(site = str_to_lower(site),
-         site = str_replace_all(site, "-", "_"),
-         site = str_replace_all(site, " ", "_"),
-         time_of_day = str_to_lower(time_of_day),
-         comments_survey = str_replace_all(comments_survey, "\\n", ". "),
-         detection_type = "aural",
-         created_at = with_tz(ymd_hms(created_at, tz = "UTC"), "America/New_York"),
-         survey_date = as.Date(ifelse(hour(created_at) > 12, date(created_at), date(created_at) - days(1)), origin = "1970-01-01"),
-         date = as.Date(ifelse(survey_date - date > 1, date, survey_date), origin = "1970-01-01")) %>%
-  unite(observer_aural, c("observer", "observer_other"), sep=",", remove = TRUE, na.rm = TRUE) %>%
-  select(-any_of(to_drop),
-         -survey_date) %>%
-  filter(!if_all(everything(), is.na),
-         !is.na(site))  # drop any rows all null
-
-clean_aural_obs <- raw_aural_obs %>%
+clean_visit_info = raw_visit_info %>%
   clean_names() %>%
-  rename(species_aural = species_acoustic,
-         species_aural_other = species_acoustic_other,
-         comments_aural = acoustic_species_comments) %>%
-  mutate(aural_id = fulcrum_id,
-         species_aural = coalesce(species_aural, species_aural_other),
-         species_aural = str_to_lower(str_replace_all(species_aural, " ", "_")),
-         comments_aural = str_replace_all(comments_aural, "\\n", ". ")) %>%
-  select(-any_of(to_drop),
-         -species_aural_other) %>%
-  filter(!if_all(everything(), is.na)) # drop any rows all null
-
-clean_ves_survey <- raw_ves_survey %>%
-  clean_names() %>% 
-  rename(comments_survey = survey_description,
-         time_of_day = survey_time) %>%
-  mutate(site = str_to_lower(site),
-         site = str_replace_all(site, "-", "_"),
-         site = str_replace_all(site, " ", "_"),
-         time_of_day = str_to_lower(time_of_day),
-         comments_survey = str_replace_all(comments_survey, "\\n", ". "),
-         detection_type = "visual",
-         created_at = with_tz(ymd_hms(created_at, tz = "UTC"), "America/New_York"),
-         survey_date = as.Date(ifelse(hour(created_at) > 12, date(created_at), date(created_at) - days(1)), origin = "1970-01-01"),
-         date = as.Date(ifelse(survey_date - date > 1, date, survey_date), origin = "1970-01-01")) %>%
-  unite(observer_ves, c("observer", "observer_other"), sep=",", remove = TRUE, na.rm = TRUE) %>%
-  select(-any_of(to_drop),
-         -survey_date) %>%
-  filter(!if_all(everything(), is.na),
-         !is.na(site))  # drop any rows all null
-
-clean_ves_obs <- raw_ves_obs %>%
-  clean_names() %>%
-  mutate(ves_id = fulcrum_id,
-         species_ves = coalesce(species_ves, species_ves_other),
-         species_ves = str_to_lower(str_replace_all(species_ves, " ", "_")),
-         comments_ves = str_replace_all(comments_ves, "\\n", ". ")) %>%
-  select(-any_of(to_drop),
-         -species_ves_other) %>%
-  filter(!if_all(everything(), is.na))  # drop any rows all null
-
-clean_capture_survey <- raw_capture_survey %>%
-  clean_names() %>% 
-  rename(comments_survey = survey_comments,
-         time_of_day = survey_time) %>%
-  mutate(site = str_to_lower(site),
-         site = str_replace_all(site, "-", "_"),
-         site = str_replace_all(site, " ", "_"),
-         time_of_day = str_to_lower(time_of_day),
-         comments_survey = str_replace_all(comments_survey, "\\n", ". "),
-         detection_type = "capture",
-         created_at = with_tz(ymd_hms(created_at, tz = "UTC"), "America/New_York"),
-         survey_date = as.Date(ifelse(hour(created_at) > 12, date(created_at), date(created_at) - days(1)), origin = "1970-01-01"),
-         date = as.Date(ifelse(survey_date - date > 1, date, survey_date), origin = "1970-01-01")) %>%
-  unite(observer_capture, c("observer", "observer_other"), sep=",", remove = TRUE, na.rm = TRUE) %>%
-  select(-any_of(to_drop),
-         -survey_date) %>%
-  filter(!if_all(everything(), is.na),
-         !is.na(site))  # drop any rows all null
-
-clean_capture_obs <- raw_capture_obs %>%
-  clean_names() %>%
-  rename(body_temp_c = body_temperature,
-         comments_capture = amphibian_comments,
-         capture_latitude = latitude,
-         capture_longitude = longitude,
-         photo_id = bag_photo) %>%
-  mutate(capture_id = fulcrum_id,
-         species_capture = coalesce(species_capture, species_capture_other),
-         species_capture = str_to_lower(str_replace_all(species_capture, " ", "_")),
-         comments_capture = str_replace_all(comments_capture, "\\n", ". "),
-         bag_id = ifelse(bag_id == "BAG00", NA, bag_id),
-         photo = !is.na(photo_id)) %>%
-  select(-any_of(to_drop),
-         -all_of(c("capture_status",
-                   "species_capture_other",
-                   "bag_photo_caption",
-                   "bag_photo_url"))) %>% # capture status: was this individual successfully captured?
-  filter(!if_all(everything(), is.na))  # drop any rows all null 
-
-clean_cmr <- raw_cmr %>%
-  clean_names() %>%
-  rename(site = location) %>%
-  mutate(site = str_to_lower(site),
-         site = str_replace_all(site, "-", "_"),
-         site = str_replace_all(site, " ", "_")) %>%
   select(-any_of(to_drop)) %>%
-  filter(!if_all(everything(), is.na))  # drop any rows all null
+  filter(!if_all(everything(), is.na))
 
-clean_sample_processing <- raw_sample_processing %>%
+clean_survey_info = raw_survey_info %>%
   clean_names() %>%
-  rename(site = location,
-         comments_sample = survey_comments,
-         time_of_day = survey_time) %>%
-  mutate(site = str_to_lower(site),
-         site = str_replace_all(site, "-", "_"),
-         site = str_replace_all(site, " ", "_"),
-         time_of_day = str_to_lower(time_of_day),
-         created_at = with_tz(ymd_hms(created_at, tz = "UTC"), "America/New_York"),
-         survey_date = as.Date(ifelse(hour(created_at) > 12, date(created_at), date(created_at) - days(1)), origin = "1970-01-01"),
-         date = as.Date(ifelse(survey_date - date > 1, date, survey_date), origin = "1970-01-01")) %>%
-  unite(processor, c("processor", "processor_other"), sep=",", remove = TRUE, na.rm = TRUE) %>%
-  select(-any_of(to_drop),
-         -survey_date,
-         -location_other) %>%
-  filter(!if_all(everything(), is.na)) # drop any rows all null
+  select(-any_of(to_drop)) %>%
+  filter(!if_all(everything(), is.na))
 
-clean_sample_obs <- raw_sample_obs %>%
+clean_aural = raw_aural %>%
   clean_names() %>%
-  rename(svl_mm = snout_vent_length,
-         body_and_bag_mass_g = body_and_bag_mass,
-         bag_mass_g = bag_mass,
-         body_mass_g = body_mass,
-         microbiome_swab_id = microbiome_id,
-         comments_sample = capture_comments) %>%
-  mutate(sex = str_to_lower(sex),
-         sex_other = str_to_lower(sex_other),
-         capture_type = str_to_lower(capture_type),
-         life_stage = str_to_lower(life_stage),
-         life_stage_other = str_to_lower(life_stage_other),
-         species_capture = coalesce(species_capture, species_capture_other),
-         species_capture = str_to_lower(str_replace_all(species_capture, " ", "_")),
-         comments_sample = str_replace_all(comments_sample, "\\n", ". "),
-         sample_id = fulcrum_id) %>%
-  select(-any_of(to_drop),
-         -fulcrum_record_id,
-         -species_capture_other,
-         -all_of(c("norep_bathvolume_50ml_acid_05ml",
-                   "norep_bathvolume_100ml_acid_1ml",
-                   "norep_bathvolume_200ml_acid_2ml",
-                   "ul_of_norep_27mgml",
-                   "ul_of_norep_135mgml",
-                   "ul_of_norep_0675mgml",
-                   "ul_of_norep_03375mgml",
-                   "ul_of_norep_01688mgml",
-                   "photo",
-                   "photo_caption",
-                   "photo_url",
-                   "amp_ig_ne_injected",
-                   "amp_ig_soak_volume",
-                   "amp_ig_acidified",
-                   "amp_ig_comments",
-                   "bacterial_swab_id_foundations",
-                   "bd_swab_id_foundations",
-                   "microbiome_id_foundations",
-                   "life_stage_other",
-                   "sex_other"))) %>%
-  filter(!if_all(everything(), is.na),
-         !(species_capture == "negative_control"))
+  select(-any_of(to_drop)) %>%
+  filter(!if_all(everything(), is.na))
 
-clean_edna_survey = raw_edna_survey %>%
+clean_capture = raw_capture %>%
   clean_names() %>%
-  mutate(time_of_day = str_to_lower(survey_time))
+  select(-any_of(to_drop)) %>%
+  filter(!if_all(everything(), is.na))
 
-clean_edna_collection = raw_edna_collection %>%
-  clean_names()
+clean_capture_target = raw_capture_target %>%
+  clean_names() %>%
+  select(-any_of(to_drop)) %>%
+  filter(!if_all(everything(), is.na))
 
-clean_edna_filtering  = raw_edna_filtering %>%
-  clean_names()
+clean_ves = raw_ves%>%
+  clean_names() %>%
+  select(-any_of(to_drop)) %>%
+  filter(!if_all(everything(), is.na))
 
+clean_cmr = raw_cmr %>%
+  clean_names() %>%
+  select(-any_of(to_drop)) %>%
+  filter(!if_all(everything(), is.na))
 
-## Revisions: Handle special cases on a row-by-row basis
-# (make repeatable & unique to observation, in case this exact observation(s) shows up again in a future data import)
-
-# aquatic probe died, group returned later to measure. Comining two survey rows into one
-row_a = clean_survey_info %>%
-  filter(survey_info_id == "eea59aa0-4bae-4a1b-afa9-59c7285fbfe9")
-row_b = clean_survey_info %>%
-  filter(survey_info_id == "bbe6bef2-2ca6-43f3-b5e4-5db90f3ef82f")
-
-revision_survey_info = row_a %>%
-  mutate(observers_survey = paste0(row_a$observers_survey, ",", row_b$observers_survey),
-         water_time = row_b$water_time,
-         water_temp_c = row_b$water_temp_c,
-         tds_ppm = row_b$tds_ppm,
-         p_h = row_b$p_h)
-
-clean_survey_info = clean_survey_info %>%
-  filter(!survey_info_id %in% c("eea59aa0-4bae-4a1b-afa9-59c7285fbfe9",
-                            "bbe6bef2-2ca6-43f3-b5e4-5db90f3ef82f")) %>%
-  bind_rows(revision_survey_info)
-
-clean_sample_obs$bag_id[clean_sample_obs$fulcrum_id == "9f72d0b0-9252-46e6-8391-8531174e1f97"] = "BAG68"
-clean_sample_obs$bag_id[clean_sample_obs$fulcrum_id == "10e912f6-fdfb-4199-b7b0-aa137df728e4"] = "BAG70"
-clean_sample_obs$bag_id[clean_sample_obs$fulcrum_id == "42c0d6a7-cd2b-442e-9fe7-d7e37363de14"] = "BAG32"
-clean_sample_obs$bag_id[clean_sample_obs$fulcrum_id == "5a31383d-6210-42c7-8158-0f4818f0a66a"] = "BAG24"
-clean_sample_obs$bag_id[clean_sample_obs$fulcrum_id == "c844de38-b38f-43d8-a2db-6d4373ffb275"] = "BAG34"
-clean_sample_obs$bag_id[clean_sample_obs$fulcrum_id == "46c33c92-feb9-47ca-91d9-b519db773d69"] = "BAG64"
-clean_sample_obs$bag_id[clean_sample_obs$fulcrum_id == "6d285d19-c288-456c-8dda-42ea35352dff"] = "BAG83"
-
-
-clean_capture_obs$bag_id[clean_capture_obs$fulcrum_id == "78e8394d-60e4-4977-9f3b-9e57601b0980"] = "BAG10"
-clean_capture_obs$bag_id[clean_capture_obs$fulcrum_id == "c513fba1-d5bb-41cb-add0-5330250c6d0f"] = "BAG06"
-clean_capture_obs$bag_id[clean_capture_obs$fulcrum_id == "fb9736d2-d107-42a8-b5a0-09977b405010"] = "BAG18"
-clean_capture_obs$bag_id[clean_capture_obs$fulcrum_id == "862a7efb-be07-40f8-ba1f-d0f4f90a8cd8"] = "BAG15"
-clean_capture_obs$bag_id[clean_capture_obs$fulcrum_id == "4d5d73e8-847f-43e8-a8f1-db8c87371946"] = "BAG01"
-
-
+clean_edna = raw_edna %>%
+  clean_names() %>%
+  select(-any_of(to_drop)) %>%
+  filter(!if_all(everything(), is.na))
 
 ```
 
