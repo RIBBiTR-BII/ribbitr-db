@@ -10,11 +10,7 @@ editor: source
 ```{r}
 librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
 # librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
-```
 
-## DB Connection
-
-```{r}
 ## Connect to DB
 dbcon <- hopToDB()
 
@@ -26,7 +22,7 @@ mdc = tbl(dbcon, Id("public", "all_columns")) %>%
 ## Point to local data directory
 ddir = Sys.getenv("data_dir")  # data directory
 # Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
-wddir = here(ddir, "fulcrum", 'penn', '2024-09-13') # working data directory
+wddir = here(ddir, "fulcrum", 'penn', '2024-11-18') # working data directory
 
 ```
 
@@ -87,6 +83,7 @@ raw_ves_obs <- read_csv(here(wddir, "4_penn_visualencountersurvey", "4_penn_visu
 # capture tables
 raw_capture_survey <- read_csv(here(wddir, "5_penn_capturesurvey", "5_penn_capturesurvey.csv"))
 raw_capture_obs <- read_csv(here(wddir, "5_penn_capturesurvey", "5_penn_capturesurvey_captured_amphibian_information.csv"))
+
 raw_cmr <- read_csv(here(wddir, "supp_penn_cmrids", "supp_penn_cmrids.csv"))
 
 # sample processing & obs tables
@@ -312,8 +309,12 @@ clean_cmr <- raw_cmr %>%
   rename(site = location) %>%
   mutate(site = str_to_lower(site),
          site = str_replace_all(site, "-", "_"),
-         site = str_replace_all(site, " ", "_")) %>%
-  select(-any_of(to_drop)) %>%
+         site = str_replace_all(site, " ", "_"),
+         species = coalesce(species, species_other),
+         cmr_id = coalesce(cmr_id, cmr_id_other)) %>%
+  select(-any_of(to_drop),
+         -species_other,
+         -cmr_id_other) %>%
   filter(!if_all(everything(), is.na))  # drop any rows all null
 
 clean_sample_processing <- raw_sample_processing %>%
@@ -484,7 +485,7 @@ dblog$region = db_site %>%
 subset_visit = gelled_visit %>%
   select(any_of(colnames(db_visit))) %>%
   distinct() %>%
-  drop_na(visit_id)
+  filter(!is.na(visit_id))
 
 compare_visit = compare_df_cols(db_visit %>%
                                   filter(FALSE) %>%
@@ -565,6 +566,9 @@ gelled_aural = unified_aural %>%
   ungroup() %>%
   select(-fulcrum_id)
 
+peace = gelled_aural %>%
+  filter(survey_id == "21181bcc-4f52-44c0-a6e3-77fc83bd7a09")
+
 ```
 
 ### 5 - Subset aural tables
@@ -575,7 +579,7 @@ gelled_aural = unified_aural %>%
 subset_aural_survey = gelled_aural %>%
   select(any_of(colnames(db_survey))) %>%
   distinct() %>%
-  drop_na(survey_id)
+  filter(!is.na(survey_id))
 
 # compare columns
 compare_aural_survey = compare_df_cols(db_survey %>%
@@ -590,7 +594,7 @@ final_aural_survey = bind_rows(tray$insert,
 subset_aural = gelled_aural %>%
   select(any_of(colnames(db_aural))) %>%
   distinct() %>%
-  drop_na(aural_id)
+  filter(!is.na(aural_id))
 
 # compare columns
 compare_aural = compare_df_cols(db_aural %>%
@@ -696,7 +700,7 @@ gelled_ves = unified_ves %>%
 subset_ves_survey = gelled_ves %>%
   select(any_of(colnames(db_survey))) %>%
   distinct() %>%
-  drop_na(survey_id)
+  filter(!is.na(survey_id))
 
 # compare columns
 compare_ves_survey = compare_df_cols(db_survey %>%
@@ -712,7 +716,7 @@ final_ves_survey = bind_rows(tray$insert,
 subset_ves = gelled_ves %>%
   select(any_of(colnames(db_ves))) %>%
   distinct() %>%
-  drop_na(ves_id)
+  filter(!is.na(ves_id))
 
 # compare columns
 compare_ves = compare_df_cols(db_ves %>%
@@ -824,21 +828,21 @@ unified_capture = clean_capture_obs %>%
 #   group_by(site, date) %>%
 #   mutate(temp_id = cur_group_id()) %>%
 #   ungroup() %>%
-#   select(site, date, bag_id, species_capture, capture_id, sample_id, start_time, end_time, observer_capture, processor, observers_survey, comments_capture, comments_sample,)
+#   select(site, date, bag_id, species_capture, capture_id, sample_id, start_time, end_time, observer_capture, processor, comments_capture, comments_sample,)
 # 
 # write_csv(sample_capture_unmatched, here("staging", "sample_campture_unmatched.csv"))
 # 
-# test_site = "tuttle_pond"
-# test_date = "2024-07-08"
+# test_site = "rv_pond"
+# test_bag = "BAG17"
 # 
 # peace = unified_sample %>%
 #   filter(site == test_site,
-#          date == test_date) %>%
+#          bag_id == test_bag) %>%
 #   arrange(bag_id)
 # 
 # train = unified_capture %>%
 #   filter(site == test_site,
-#          date == test_date) %>%
+#          bag_id == test_bag) %>%
 #   arrange(bag_id)
 
 ```
@@ -846,18 +850,6 @@ unified_capture = clean_capture_obs %>%
 # Gelled capture
 
 ```{r}
-
-# compare db and constructed columns for anything weird.
-# peace = compare_df_cols(db_capture %>%
-#                           filter(FALSE) %>%
-#                           collect(), unified_capture)
-# peace = compare_df_cols(db_survey %>%
-#                           filter(FALSE) %>%
-#                           collect(), unified_capture)
-# peace = compare_df_cols(db_visit %>%
-#                           filter(FALSE) %>%
-#                           collect(), unified_capture)
-
 gelled_capture = unified_capture %>%
   group_by_at(tbl_nkey("survey", mdc)) %>%
   mutate(start_time = as_hms(mean(start_time)),
@@ -879,7 +871,7 @@ gelled_capture = unified_capture %>%
 subset_capture_survey = gelled_capture %>%
   select(any_of(colnames(db_survey))) %>%
   distinct() %>%
-  drop_na(survey_id)
+  filter(!is.na(survey_id))
 
 # compare columns
 compare_capture_survey = compare_df_cols(db_survey %>%
@@ -888,9 +880,6 @@ compare_capture_survey = compare_df_cols(db_survey %>%
 
 tray = compare_for_staging(db_survey %>% collect(), subset_capture_survey, tbl_pkey('survey', mdc), return_all = TRUE, report = "capture_survey")
 
-# differences arrise in time columns which are nonsubstantial. ignoring for now
-colcomp = compare_updates(tray)
-
 final_capture_survey = bind_rows(tray$insert,
                                  tray$update)
 
@@ -898,7 +887,7 @@ final_capture_survey = bind_rows(tray$insert,
 subset_capture = gelled_capture %>%
   select(any_of(colnames(db_capture))) %>%
   distinct() %>%
-  drop_na(capture_id)
+  filter(!is.na(capture_id))
 
 # compare columns
 compare_ves = compare_df_cols(db_ves %>%
@@ -957,14 +946,12 @@ db_capture = tbl(dbcon, Id("survey_data", "capture"))
 
 ```{r}
 
-cmr_cols <- read_csv(here("clean_tables", "penn_cmr.csv"))
-
-final_cmr <- cmr %>% 
-  select(!c(species_other, location, species)) %>% 
-  unite(cmr, c("cmr_id", "cmr_id_other"), na.rm = T, sep = "") %>% 
-  rename(capture_mark_recapture = fulcrum_id,
-         cmr_id = cmr)
-
-dbAppendTable(dbcon, "cmr", final_cmr)
+unified_cmr = clean_cmr %>%
+  inner_join(db_site %>%
+              select(tbl_keys("site", mdc)) %>%
+              collect(),
+            by = tbl_nkey("site", mdc)) %>%
+  select(-site,
+         -region_id)
 
 ```
