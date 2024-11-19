@@ -61,6 +61,8 @@ db_site = tbl(dbcon, Id("survey_data", "site"))
 db_region = tbl(dbcon, Id("survey_data", "region"))
 db_country = tbl(dbcon, Id("survey_data", "country"))
 
+db_cmr = tbl(dbcon, Id("survey_data", "cmr"))
+
 ```
 
 
@@ -94,6 +96,22 @@ raw_edna_survey <- read_csv(here(wddir, "3_penn_ednasurvey", "3_penn_ednasurvey.
 raw_edna_collection <- read_csv(here(wddir, "3_penn_ednasurvey", "3_penn_ednasurvey_edna_collection.csv"))
 raw_edna_filtering <- read_csv(here(wddir, "3_penn_ednasurvey", "3_penn_ednasurvey_edna_collection_edna_filtering.csv"))
 
+raw_tables = c(
+  "raw_survey_info",
+  "raw_aural_survey",
+  "raw_aural_obs",
+  "raw_ves_survey",
+  "raw_ves_obs",
+  "raw_capture_survey",
+  "raw_capture_obs",
+  "raw_cmr",
+  "raw_sample_processing",
+  "raw_sample_obs",
+  "raw_edna_survey",
+  "raw_edna_collection",
+  "raw_edna_filtering"
+)
+
 ```
 # 2 - Clean data
 
@@ -108,29 +126,15 @@ null_columns = function(dataframe) {
     colnames()
 }
 
-# check null columns
-(null_columns(raw_survey_info))
-(null_columns(raw_aural_survey))
-(null_columns(raw_aural_obs))
-(null_columns(raw_ves_survey))
-(null_columns(raw_ves_obs))
-(null_columns(raw_capture_survey))
-(null_columns(raw_capture_obs))
-(null_columns(raw_cmr))
-(null_columns(raw_sample_processing))
-(null_columns(raw_sample_obs))
-
-# check duplicated rows
-any(duplicated(raw_survey_info))
-any(duplicated(raw_aural_survey))
-any(duplicated(raw_aural_obs))
-any(duplicated(raw_ves_survey))
-any(duplicated(raw_ves_obs))
-any(duplicated(raw_capture_survey))
-any(duplicated(raw_capture_obs))
-any(duplicated(raw_cmr))
-any(duplicated(raw_sample_processing))
-any(duplicated(raw_sample_obs))
+for (table in raw_tables) {
+  cat(table, "\n\t", "Null columns:\n\t\t")
+  cat(paste(null_columns(get(table)), collapse = "\n\t\t"))
+  cat("\n\tAny duplicate columns:\n\t\t")
+  cat(any(duplicated(get(table))), "\n")
+  cat("\n\tOne-to_one columns:\n\t\t")
+  # cat(paste(get_one_to_one(get(table)), collapse="\n\t\t")) # fails for raw_capture_obs, not sure why. ignoring for now
+  cat("\n")
+}
 
 ```
 
@@ -306,13 +310,16 @@ clean_capture_obs <- raw_capture_obs %>%
 
 clean_cmr <- raw_cmr %>%
   clean_names() %>%
-  rename(site = location) %>%
+  rename(site = location,
+         local_cmr_id = cmr_id) %>%
   mutate(site = str_to_lower(site),
          site = str_replace_all(site, "-", "_"),
          site = str_replace_all(site, " ", "_"),
-         species = coalesce(species, species_other),
-         cmr_id = coalesce(cmr_id, cmr_id_other)) %>%
+         species_cmr = coalesce(species, species_other),
+         species_cmr = str_to_lower(str_replace_all(species_cmr, " ", "_")),
+         local_cmr_id = coalesce(local_cmr_id, cmr_id_other)) %>%
   select(-any_of(to_drop),
+         -species,
          -species_other,
          -cmr_id_other) %>%
   filter(!if_all(everything(), is.na))  # drop any rows all null
@@ -783,7 +790,8 @@ unified_sample =  clean_sample_obs %>%
 unified_capture = clean_capture_obs %>%
   full_join(clean_capture_survey, by = c("fulcrum_parent_id" = "fulcrum_id")) %>%
   select(-fulcrum_parent_id) %>%
-  mutate(temp_capture_id = fulcrum_id) %>%
+  mutate(temp_capture_id = fulcrum_id,
+         detection_type = "capture") %>%
   full_join(unified_sample, by=c("site", "date", "bag_id")) %>%
   mutate(species_capture = coalesce(species_capture.y, species_capture.x)) %>%
   select(-time_of_day.x,
@@ -804,8 +812,7 @@ unified_capture = clean_capture_obs %>%
   left_join(db_survey %>%
               select(tbl_keys("survey", mdc)) %>%
               collect(),
-            by = tbl_nkey("survey", mdc)) %>%
-  mutate(detection_type = "capture")
+            by = tbl_nkey("survey", mdc))
 
 # 
 # # QA/QC
@@ -847,10 +854,55 @@ unified_capture = clean_capture_obs %>%
 
 ```
 
+## CMR table
+```{r}
+unified_cmr = clean_cmr %>%
+  left_join(unified_capture %>%
+              select(capture_mark_recapture,
+                     date), by = c("fulcrum_id" = "capture_mark_recapture")) %>%
+  left_join(db_site %>%
+              select(site,
+                     site_id) %>%
+              collect(), by = "site") %>%
+  left_join(db_cmr %>% collect(), by = c("local_cmr_id", "species_cmr", "site_id" = "site_id_tagged")) %>%
+  arrange(date_tagged, date) %>%
+  group_by(local_cmr_id, species_cmr, site_id) %>%
+  rename(site_id_tagged = site_id) %>%
+  mutate(cmr_id = ifelse(is.na(cmr_id), first(fulcrum_id), cmr_id),
+         date_tagged = as.Date(ifelse(is.na(date_tagged), min(date), date_tagged)),
+         id_type = ifelse(is.na(id_type), "toe_clip", id_type)) %>%
+  ungroup() %>%
+  group_by(fulcrum_id) %>%
+  slice(1) %>%
+  ungroup() %>%
+  filter(!is.na(site_id_tagged),
+         !is.na(species_cmr))
+
+subset_cmr = unified_cmr %>%
+  arrange(date_tagged) %>%
+  group_by(local_cmr_id, species_cmr, site_id_tagged) %>%
+  slice(1) %>%
+  ungroup() %>%
+  select(any_of(colnames(db_cmr)))
+
+compare_cmr = compare_df_cols(db_cmr %>%
+                                  filter(FALSE) %>%
+                                  collect(), subset_cmr)
+
+tray = compare_for_staging(db_cmr %>% collect(), subset_cmr, "cmr_id", return_all = TRUE, report = "capture_survey")
+
+# never updating, unless done manually
+final_cmr = tray$insert
+
+```
+
 # Gelled capture
 
 ```{r}
 gelled_capture = unified_capture %>%
+  left_join(unified_cmr %>%
+              select(fulcrum_id, cmr_id),
+            by = c("capture_mark_recapture" = "fulcrum_id")) %>%
   group_by_at(tbl_nkey("survey", mdc)) %>%
   mutate(start_time = as_hms(mean(start_time)),
          end_time = as_hms(mean(end_time)),
@@ -859,7 +911,8 @@ gelled_capture = unified_capture %>%
          survey_id = ifelse(is.na(survey_id), first(temp_capture_id), survey_id),
          survey_id = ifelse(is.na(survey_id), UUIDgenerate(), survey_id)) %>%
   ungroup() %>%
-  select(-temp_capture_id) %>%
+  select(-temp_capture_id,
+         -capture_mark_recapture) %>%
   drop_na(visit_id)
 
 ```
@@ -890,16 +943,16 @@ subset_capture = gelled_capture %>%
   filter(!is.na(capture_id))
 
 # compare columns
-compare_ves = compare_df_cols(db_ves %>%
+compare_capture = compare_df_cols(db_capture %>%
                                   filter(FALSE) %>%
-                                  collect(), subset_ves)
+                                  collect(), subset_capture)
 
 
 tray = compare_for_staging(db_capture %>% collect(), subset_capture, tbl_pkey('capture', mdc), return_all = TRUE, report = "capture")
 final_capture = bind_rows(tray$insert,
                           tray$update)
 
-x_capture = (nrow(final_capture_survey) > 0) | (nrow(final_capture) > 0)
+x_capture = (nrow(final_capture_survey) > 0) | (nrow(final_capture) > 0 | nrow(final_cmr) > 0)
 
 ```
 
@@ -912,15 +965,18 @@ if (x_capture) {
   
   tryCatch(
     {
+      temp_cmr = stage_to_temp(dbcon, db_cmr, final_cmr)
       temp_capture_survey = stage_to_temp(dbcon, db_survey, final_capture_survey)
       temp_capture = stage_to_temp(dbcon, db_capture, final_capture)
       
+      pointer = tbl(dbcon, temp_cmr)
+      rows_upsert(db_cmr, pointer, by="cmr_id", in_place=TRUE)
       
       pointer = tbl(dbcon, temp_capture_survey)
-      rows_upsert(db_survey, pointer, by=tbl_nkey("survey", mdc), in_place=TRUE)
+      rows_upsert(db_survey, pointer, by="survey_id", in_place=TRUE)
       
       pointer = tbl(dbcon, temp_capture)
-      rows_upsert(db_capture, pointer, by=tbl_pkey("capture", mdc), in_place=TRUE)
+      rows_upsert(db_capture, pointer, by="capture_id", in_place=TRUE)
       
       # Commit the transaction if successful
       dbCommit(dbcon)
@@ -939,19 +995,4 @@ if (x_capture) {
 ```{r}
 db_survey = tbl(dbcon, Id("survey_data", "survey"))
 db_capture = tbl(dbcon, Id("survey_data", "capture"))
-```
-
-
-## CMR table
-
-```{r}
-
-unified_cmr = clean_cmr %>%
-  inner_join(db_site %>%
-              select(tbl_keys("site", mdc)) %>%
-              collect(),
-            by = tbl_nkey("site", mdc)) %>%
-  select(-site,
-         -region_id)
-
 ```

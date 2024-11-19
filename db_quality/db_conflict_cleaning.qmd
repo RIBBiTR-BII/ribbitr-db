@@ -12,6 +12,8 @@ librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr
 # connect to database
 dbcon = hopToDB()
 
+
+
 ```
 
 Pull metadata and tables
@@ -24,6 +26,7 @@ mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
 db_aural = tbl(dbcon, Id("survey_data", "aural"))
 db_capture = tbl(dbcon, Id("survey_data", "capture"))
 db_ves = tbl(dbcon, Id("survey_data", "ves"))
+
 db_survey = tbl(dbcon, Id("survey_data", "survey"))
 db_visit = tbl(dbcon, Id("survey_data", "visit"))
 db_site = tbl(dbcon, Id("survey_data", "site"))
@@ -469,16 +472,17 @@ db_visit = db_visit %>%
 # CMR duplicates
 ```{r}
 
-get_dupes(db_cmr %>% collect(), capture_mark_recapture)
+# backup old cmr table
+# cmr_backup = db_cmr %>%
+#   collect()
+# 
+# # write_csv(cmr_backup, here("staging", "cmr_table_2024-11-18.csv"))
+# 
+# capture_backup = db_capture %>%
+#   collect()
+# 
+# #write_csv(capture_backup, here("staging", "capture_table_2024-11-18.csv"))
 
-t1 = db_cmr %>%
-  distinct() %>%
-  mutate(cmr_id = as.character(cmr_id)) %>%
-  inner_join(db_capture, by="cmr_id") %>% collect()
-
-t2 = db_cmr %>%
-  distinct() %>%
-  inner_join(db_capture, by = c("local_cmr_id" = "cmr_id")) %>% collect()
 
 cmr_scrape = db_capture %>%
   filter(!is.na(cmr_id)) %>%
@@ -486,13 +490,17 @@ cmr_scrape = db_capture %>%
   left_join(db_visit, by = "visit_id") %>%
   left_join(db_site, by = "site_id") %>%
   left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
   left_join(db_cmr, by = "cmr_id") %>%
-  select(cmr_id,
+  select(capture_id,
+         cmr_id,
          local_cmr_id,
          species_capture,
          site,
+         site_id,
          date,
-         region) %>%
+         region,
+         country_name) %>%
   distinct() %>%
   collect()
 
@@ -501,15 +509,90 @@ cmr_scrape = db_capture %>%
 cmr_clean = cmr_scrape %>%
   mutate(uuidf = map_chr(cmr_id, ~ ifelse(!UUIDvalidate(.x), UUIDgenerate(), .x)),
          local_cmr_id = ifelse(UUIDvalidate(cmr_id), local_cmr_id, cmr_id),
-         cmr_id = uuidf) %>%
-  select(-uuidf)
+         temp_cmr_id = uuidf) %>%
+  filter(!is.na(local_cmr_id)) %>%
+  select(-uuidf,
+         -cmr_id)
 
-cmr_repeats = cmr_clean %>%
-  group_by(local_cmr_id, site, species_capture) %>%
-  mutate(cmr_count = n()) %>%
-  ungroup() %>%
-  filter(cmr_count > 1)
-  
+cmr_typed = cmr_clean %>%
+  mutate(id_type = case_when(is.na(local_cmr_id) ~ NA,
+                                   region == "pennsylvania" ~ "toe_clip",
+                                   TRUE ~ "pit_tag"))
+
+toe_distinct = cmr_typed %>%
+  filter(id_type == "toe_clip") %>%
+  arrange(date) %>%
+  group_by(species_capture, site_id) %>%
+  distinct(local_cmr_id, .keep_all = TRUE) %>%
+  ungroup()
+
+pit_distinct = cmr_typed %>%
+  filter(id_type == "pit_tag") %>%
+  arrange(date) %>%
+  distinct(local_cmr_id, .keep_all = TRUE) %>%
+  ungroup()
+
+cmr_distinct = bind_rows(toe_distinct,
+                         pit_distinct) %>%
+  rename(date_tagged = date,
+         site_id_tagged = site_id,
+         species_cmr = species_capture,
+         cmr_id = temp_cmr_id) %>%
+  select(cmr_id,
+         everything(),
+         -country_name,
+         -region,
+         -site,
+         -capture_id)
+
+# re-id duplicates in capture table...
+cmr_capture = cmr_clean %>%
+  select(-temp_cmr_id) %>%
+  left_join(toe_distinct %>%
+              select(local_cmr_id,
+                     species_capture,
+                     site_id,
+                     temp_cmr_id), by = c("local_cmr_id", "species_capture", "site_id")) %>%
+  left_join(pit_distinct %>%
+              select(local_cmr_id,
+                     temp_cmr_id), by = c("local_cmr_id")) %>%
+  mutate(new_cmr_id = coalesce(temp_cmr_id.x, temp_cmr_id.y)) %>%
+  select(capture_id, new_cmr_id) %>%
+  rename(cmr_id = new_cmr_id)
+
+dbWriteTable(dbcon, "temp_cmr_capture", cmr_capture, temporary = TRUE, overwrite = TRUE)
+
+update_capture = db_capture %>%
+  select(-cmr_id) %>%
+  mutate(capture_id_text = sql("capture_id::text")) %>%
+  left_join(
+    tbl(dbcon, "temp_cmr_capture"),
+    by = c("capture_id_text" = "capture_id")
+  ) %>%
+  select(-capture_id_text)
+
+dbBegin(dbcon)
+
+tryCatch(
+  {
+    
+    db_capture = db_capture %>%
+      rows_update(update_capture, by="capture_id", unmatched = "ignore", in_place = TRUE)
+    
+    
+    dbWriteTable(dbcon, Id("survey_data", "cmr"), cmr_distinct, overwrite = TRUE)
+    
+
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful!")
+    
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
+
 
 
 

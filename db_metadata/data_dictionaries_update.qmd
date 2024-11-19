@@ -10,7 +10,7 @@ editor: source
 librarian::shelf(tidyverse, dbplyr, DBI, RPostgres, here, janitor, RIBBiTR-BII/ribbitrrr)
 
 ## Connect to DB
-dbcon <- hopToDB(prefix = "ribbitr")
+dbcon <- hopToDB()
 
 ```
 
@@ -349,7 +349,7 @@ if (update || insert) {
 
 ## drop orphans
 ```{r}
-# does not work yet, tables don't share same source...
+# does not work yet, tables don't share same source. Could use DBI instead.
 
 # begin transaction
 dbBegin(dbcon)
@@ -367,7 +367,7 @@ tryCatch(
       
       if (nrow(meta_column_upsert[[schema]]) > 0) {
         # drop orphans
-        rows_upsert(meta_column_data[[schema]], meta_column_orphan[[schema]], by=columns_pkey, in_place=TRUE)
+        rows_delete(meta_column_data[[schema]], meta_column_orphan[[schema]], by=columns_pkey, in_place=TRUE)
       
         cat("Column orphans deleted for schema: ", schema, "\n")
       }
@@ -387,44 +387,4 @@ tryCatch(
 
 ```{r}
 dbDisconnect(dbcon)
-```
-
-## temp for rewriting constraints:
-
-```{r}
-# dbBegin(dbcon)
-# 
-# tryCatch(
-#   {
-#     for (schema in schemas) {
-#       mdc_final = meta_column_data_sup[[schema]] %>%
-#         collect() %>%
-#         mutate(across(everything(), ~ifelse(is.na(.), "", .)),
-#                natural_key = as.logical(natural_key),
-#                natural_key = ifelse(is.na(natural_key), FALSE, natural_key)) %>%
-#         left_join(pg_column_data[[schema]], by = c("table_schema", "table_name", "column_name"))
-#       
-#       dbWriteTable(dbcon, Id(schema, "metadata_columns"), mdc_final, overwrite = TRUE)
-#     }
-#     
-# 
-# 
-#       for (schema in schemas) {
-#         column_pkey_str = paste0("
-#                               ALTER TABLE ribbitr.", schema, ".metadata_columns
-#                               ADD PRIMARY KEY (table_schema, table_name, column_name);
-#                               ")
-#         dbExecute(dbcon, column_pkey_str)
-#       }
-#
-#     dbCommit(dbcon)
-#     print("Transaction successful! All tables are up to date.")
-#     
-#   }, error = function(e) {
-#     # Rollback in case of error
-#     dbRollback(dbcon)
-#     message("Transaction failed: ", e$message)
-#   })
-
-
 ```

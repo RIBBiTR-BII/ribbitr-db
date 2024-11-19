@@ -81,3 +81,42 @@ db_survey %>%
   filter(is.na(date))
 ```
 
+Looking for observation with the same survey_id, but belonging to different dates/sites/detection types.
+```{r}
+chain_aural = tbl_chain("aural", mdc)
+cn_aural = tbl_left_join(dbcon, chain_aural)
+
+rep_aural = cn_aural %>%
+  group_by(survey_id) %>%
+  summarise(u_dates = n_distinct(date),
+            u_sites = n_distinct(site),
+            u_det = n_distinct(detection_type)) %>%
+  filter(u_dates > 1 | u_sites > 1 | u_det > 1) %>%
+  collect()
+
+
+chain_capture = tbl_chain("capture", mdc)
+cn_capture = tbl_left_join(dbcon, chain_capture)
+
+rep_capture = cn_capture %>%
+  group_by(survey_id) %>%
+  summarise(u_dates = n_distinct(date),
+            u_sites = n_distinct(site),
+            u_det = n_distinct(detection_type)) %>%
+  filter(u_dates > 1 | u_sites > 1 | u_det > 1) %>%
+  collect()
+
+chain_ves = tbl_chain("ves", mdc)
+cn_ves = tbl_left_join(dbcon, chain_ves)
+
+rep_ves= cn_ves %>%
+  group_by(survey_id) %>%
+  summarise(u_dates = n_distinct(date),
+            u_sites = n_distinct(site),
+            u_det = n_distinct(detection_type)) %>%
+  filter(u_dates > 1 | u_sites > 1 | u_det > 1) %>%
+  collect()
+
+
+
+```
