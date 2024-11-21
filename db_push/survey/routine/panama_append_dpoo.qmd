@@ -12,7 +12,7 @@ librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr
 # librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 
 ## Connect to DB
-dbcon <- hopToDB("ribbitr")
+dbcon <- hopToDB()
 
 ## Pull metadata from database
 mdc = tbl(dbcon, Id("public", "all_columns")) %>%
@@ -60,6 +60,8 @@ db_visit = tbl(dbcon, Id("survey_data", "visit"))
 db_site = tbl(dbcon, Id("survey_data", "site"))
 db_region = tbl(dbcon, Id("survey_data", "region"))
 db_country = tbl(dbcon, Id("survey_data", "country"))
+
+db_cmr = tbl(dbcon, Id("survey_data", "cmr"))
 
 ```
 
@@ -173,30 +175,73 @@ calc_duration = function(start_time, end_time) {
 # Begin cleaning
 clean_visit_info = raw_visit_info %>%
   clean_names() %>%
+  rename(time_of_day = surveytime,
+         comments_visit = notes_site,
+         start_time = starttime,
+         end_time = endtime) %>%
+  mutate(site = str_to_lower(site),
+         site = str_replace_all(site, "-", "_"),
+         site = str_replace_all(site, " ", "_"),
+         duration_minutes = calc_duration(start_time, end_time),
+         temp_visit_id = fulcrum_id) %>%
+  unite(observers_survey, c("observers", "observers_other"), sep=",", remove = TRUE, na.rm = TRUE) %>%
   select(-any_of(to_drop)) %>%
   filter(!if_all(everything(), is.na))
 
 clean_survey_info = raw_survey_info %>%
   clean_names() %>%
+  rename(wind_speed_m_s = windspeed_metersseconds,
+         air_temp_c = airtemp_c,
+         water_temp_c = watertemp_c,
+         p_h = ph,
+         comments_survey = notes_survey,
+         precip = precipitation,
+         cloud_cover_percent = cloudcover,
+         relative_humidity_percent = humidity,
+         water_conductivity_us_cm = conductivity_s,
+         temp_survey_id = fulcrum_id,
+         visit_fulcrum_id = fulcrum_parent_id) %>%
+  mutate(pressure_psi = pressureinhg * 0.491154) %>%
   select(-any_of(to_drop)) %>%
   filter(!if_all(everything(), is.na))
 
 clean_aural = raw_aural %>%
   clean_names() %>%
-  select(-any_of(to_drop)) %>%
+  rename(count_aural = call_quantity,
+         detection_location = call_transectm_m,
+         microhab = call_microhab,
+         microhab_moredetail = call_microhab_other,
+         comments_aural = call_notesutm_offtransect,
+         aural_id = fulcrum_id,
+         visit_fulcrum_id = fulcrum_parent_id) %>%
+  mutate(species_aural = coalesce(call_species, call_species_other),
+         species_aural = str_to_lower(str_replace_all(species_aural, " ", "_")),
+         detection_location = as.character(detection_location),
+         count_aural = as.integer(count_aural),
+         microhab_moredetail = as.character(microhab_moredetail),
+         detection_type = "aural") %>%
+  select(-any_of(to_drop),
+         -call_species,
+         -call_species_other) %>%
   filter(!if_all(everything(), is.na))
 
 clean_capture = raw_capture %>%
+  rename(capture_id = fulcrum_id,
+         visit_fulcrum_id = fulcrum_parent_id) %>%
   clean_names() %>%
   select(-any_of(to_drop)) %>%
   filter(!if_all(everything(), is.na))
 
 clean_capture_target = raw_capture_target %>%
+  rename(target_id = fulcrum_id,
+         capture_fulcrum_id = fulcrum_parent_id) %>%
   clean_names() %>%
   select(-any_of(to_drop)) %>%
   filter(!if_all(everything(), is.na))
 
 clean_ves = raw_ves%>%
+  rename(ves_id = fulcrum_id,
+         visit_fulcrum_id = fulcrum_parent_id) %>%
   clean_names() %>%
   select(-any_of(to_drop)) %>%
   filter(!if_all(everything(), is.na))
@@ -207,6 +252,8 @@ clean_cmr = raw_cmr %>%
   filter(!if_all(everything(), is.na))
 
 clean_edna = raw_edna %>%
+  rename(edna_id = fulcrum_id,
+         visit_fulcrum_id = fulcrum_parent_id) %>%
   clean_names() %>%
   select(-any_of(to_drop)) %>%
   filter(!if_all(everything(), is.na))
@@ -218,17 +265,19 @@ clean_edna = raw_edna %>%
 ## unify visit
 
 ```{r}
-unique_visit <- bind_rows(clean_survey_info,
-                          clean_aural_survey,
-                          clean_capture_survey,
-                          clean_edna_survey,
-                          clean_ves_survey) %>% 
-  select(date, site, time_of_day) %>%
-  distinct()
-
-unified_visit = clean_survey_info %>%
-  full_join(unique_visit, by = c("site", "date", "time_of_day")) %>%
-  filter(!is.na(site))
+unified_visit = clean_visit_info %>%
+  filter(!is.na(date),
+         !is.na(time_of_day),
+         !is.na(site)) %>%
+  select(temp_visit_id,
+         date,
+         time_of_day,
+         site,
+         comments_visit) %>%
+  group_by(date, time_of_day, site) %>%
+  mutate(comments_visit = str_c(comments_visit, collapse = ", ")) %>%
+  slice(1) %>%
+  ungroup()
 
 ```
 
@@ -238,13 +287,14 @@ gelled_visit = unified_visit %>%
   inner_join(db_site %>%
               select(tbl_keys("site", mdc)) %>%
               collect(),
-            by = tbl_nkey("site", mdc)) %>%
+            by = "site") %>%
   left_join(db_visit %>%
               select(tbl_keys("visit", mdc)) %>%
               collect(),
             by = tbl_nkey("visit", mdc)) %>%
   group_by_at(tbl_nkey("visit", mdc)) %>%
-  mutate(visit_id = map_chr(visit_id, ~ ifelse(is.na(.x), UUIDgenerate(), .x))) %>%
+  mutate(visit_id = ifelse(is.na(visit_id), temp_visit_id, visit_id),
+         visit_id = map_chr(visit_id, ~ ifelse(is.na(.x), UUIDgenerate(), .x))) %>%
   ungroup()
 
 ```
@@ -258,7 +308,7 @@ dblog$site = gelled_visit$site %>% unique()
 dblog$site_id = gelled_visit$site_id %>% unique()
 dblog$region = db_site %>%
   left_join(db_region, by = "region_id") %>%
-  filter(site %in% dblog$sites) %>%
+  filter(site %in% dblog$site) %>%
   pull(region) %>%
   unique()
 
@@ -314,14 +364,13 @@ db_visit = tbl(dbcon, Id("survey_data", "visit"))
 ### 3 - Unify aural data
 
 ```{r}
-unified_aural = clean_aural_obs %>%
-  full_join(clean_aural_survey, by = c("fulcrum_parent_id" = "fulcrum_id")) %>%
-  select(-fulcrum_parent_id) %>%
-  left_join(clean_survey_info, by = c("site", "date", "time_of_day")) %>%
+unified_aural = clean_visit_info %>%
+  left_join(clean_survey_info, by = c("temp_visit_id" = "visit_fulcrum_id")) %>%
+  right_join(clean_aural, by = c("temp_visit_id" = "visit_fulcrum_id")) %>%
   inner_join(db_site %>%
               select(tbl_keys("site", mdc)) %>%
               collect(),
-            by = tbl_nkey("site", mdc)) %>%
+            by = "site") %>%
   left_join(db_visit %>%
               select(tbl_keys("visit", mdc)) %>%
               collect(),
@@ -345,10 +394,10 @@ gelled_aural = unified_aural %>%
          end_time = as_hms(mean(end_time)),
          duration_minutes = calc_duration(start_time, end_time),
          comments_survey = str_c(comments_survey, collapse = ", "),
-         survey_id = ifelse(is.na(survey_id), first(fulcrum_id), survey_id),
+         survey_id = ifelse(is.na(survey_id), first(temp_survey_id), survey_id),
          survey_id = ifelse(is.na(survey_id), UUIDgenerate(), survey_id)) %>%
   ungroup() %>%
-  select(-fulcrum_id)
+  select(-temp_survey_id)
 
 ```
 

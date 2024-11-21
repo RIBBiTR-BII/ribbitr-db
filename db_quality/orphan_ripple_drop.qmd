@@ -37,7 +37,9 @@ db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
 ```{r}
 drop_ids = c(
   "7d48b3df-73b4-4200-ae8e-70321aefcaf8",
-  "ec1122e1-bf4c-42eb-84fc-83d96bc09d96"
+  "ec1122e1-bf4c-42eb-84fc-83d96bc09d96",
+  "6d70d8da-2c79-4453-9023-1bf1e3f6e8c8",
+  "71a2327f-c7e8-43e1-bb1d-a1d263ef203a"
 )
 
 drop_visit = db_visit %>%
