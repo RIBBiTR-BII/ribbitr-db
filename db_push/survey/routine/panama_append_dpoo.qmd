@@ -198,7 +198,7 @@ clean_survey_info = raw_survey_info %>%
          precip = precipitation,
          cloud_cover_percent = cloudcover,
          relative_humidity_percent = humidity,
-         water_conductivity_us_cm = conductivity_s,
+         conductivity_us_cm = conductivity_s,
          temp_survey_id = fulcrum_id,
          visit_fulcrum_id = fulcrum_parent_id) %>%
   mutate(pressure_psi = pressureinhg * 0.491154) %>%
@@ -229,6 +229,7 @@ clean_capture = raw_capture %>%
   rename(capture_id = fulcrum_id,
          visit_fulcrum_id = fulcrum_parent_id) %>%
   clean_names() %>%
+  mutate(detection_type = "capture") %>%
   select(-any_of(to_drop)) %>%
   filter(!if_all(everything(), is.na))
 
@@ -241,8 +242,22 @@ clean_capture_target = raw_capture_target %>%
 
 clean_ves = raw_ves%>%
   rename(ves_id = fulcrum_id,
-         visit_fulcrum_id = fulcrum_parent_id) %>%
+         visit_fulcrum_id = fulcrum_parent_id,
+         count_ves = vis_quantity,
+         detaction_location = vis_transectm_m,
+         microhab = vis_microhab,
+         microhab_moredetail = vis_microhab_other,
+         life_stage = vis_lifestage,
+         sex = vis_sex,
+         comments_ves = vis_notesutm_offtransect) %>%
   clean_names() %>%
+  mutate(species_ves = coalesce(vis_species, vis_species_other),
+         species_ves = str_to_lower(str_replace_all(species_ves, " ", "_")),
+         detection_type = "ves",
+         visual_animal_state = case_when(
+           vis_dead == "no" ~ "alive",
+           vis_dead == "yes" ~ "dead",
+           TRUE ~ NA)) %>%
   select(-any_of(to_drop)) %>%
   filter(!if_all(everything(), is.na))
 
@@ -293,7 +308,7 @@ gelled_visit = unified_visit %>%
               collect(),
             by = tbl_nkey("visit", mdc)) %>%
   group_by_at(tbl_nkey("visit", mdc)) %>%
-  mutate(visit_id = ifelse(is.na(visit_id), temp_visit_id, visit_id),
+  mutate(visit_id = ifelse(is.na(visit_id), first(temp_visit_id), visit_id),
          visit_id = map_chr(visit_id, ~ ifelse(is.na(.x), UUIDgenerate(), .x))) %>%
   ungroup()
 
@@ -367,7 +382,7 @@ db_visit = tbl(dbcon, Id("survey_data", "visit"))
 unified_aural = clean_visit_info %>%
   left_join(clean_survey_info, by = c("temp_visit_id" = "visit_fulcrum_id")) %>%
   right_join(clean_aural, by = c("temp_visit_id" = "visit_fulcrum_id")) %>%
-  inner_join(db_site %>%
+  left_join(db_site %>%
               select(tbl_keys("site", mdc)) %>%
               collect(),
             by = "site") %>%
@@ -382,6 +397,10 @@ unified_aural = clean_visit_info %>%
             by = tbl_nkey("survey", mdc)) %>%
   filter(!is.na(site),
          !is.na(date))
+
+if (nrow(unified_aural %>% filter(is.na(site_id))) > 0) {
+  stop("Unknown sites returned, consider importing first.")
+}
 
 ```
 
@@ -486,14 +505,14 @@ db_aural = tbl(dbcon, Id("survey_data", "aural"))
 
 ### Unify ves data
 ```{r}
-unified_ves = clean_ves_obs %>%
-  full_join(clean_ves_survey, by = c("fulcrum_parent_id" = "fulcrum_id")) %>%
-  select(-fulcrum_parent_id) %>%
-  left_join(clean_survey_info, by = c("site", "date", "time_of_day")) %>%
-  inner_join(db_site %>%
+
+unified_ves = clean_visit_info %>%
+  left_join(clean_survey_info, by = c("temp_visit_id" = "visit_fulcrum_id")) %>%
+  right_join(clean_ves, by = c("temp_visit_id" = "visit_fulcrum_id")) %>%
+  left_join(db_site %>%
               select(tbl_keys("site", mdc)) %>%
               collect(),
-            by = tbl_nkey("site", mdc)) %>%
+            by = "site") %>%
   left_join(db_visit %>%
               select(tbl_keys("visit", mdc)) %>%
               collect(),
@@ -506,6 +525,10 @@ unified_ves = clean_ves_obs %>%
   filter(!is.na(site),
          !is.na(date))
 
+if (nrow(unified_aural %>% filter(is.na(site_id))) > 0) {
+  stop("Unknown sites returned, consider importing first.")
+}
+
 ```
 
 ### Gel ves data
@@ -516,7 +539,7 @@ gelled_ves = unified_ves %>%
          end_time = as_hms(mean(end_time)),
          duration_minutes = calc_duration(start_time, end_time),
          comments_survey = str_c(comments_survey, collapse = ", "),
-         survey_id = ifelse(is.na(survey_id), first(fulcrum_id), survey_id),
+         survey_id = ifelse(is.na(survey_id), first(temp_survey_id), survey_id),
          survey_id = ifelse(is.na(survey_id), UUIDgenerate(), survey_id)) %>%
   ungroup() %>%
   select(-fulcrum_id)

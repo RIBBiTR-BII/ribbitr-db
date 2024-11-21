@@ -8,11 +8,10 @@ editor: source
 
 # librarian downloads, if not already downloaded, and reads in needed packages
 librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 
 # connect to database
 dbcon = hopToDB()
-
-
 
 ```
 
@@ -212,9 +211,8 @@ dups_pcr = db_bd %>%
 
 ```
 
-```{r}
 # drop duplicates acrosss all capture rows except capture_id
-
+```{r}
 duplicates_to_drop <- db_capture %>%
   group_by(across(-capture_id)) %>%
   mutate(row_number_in_group = row_number()) %>%
@@ -228,9 +226,9 @@ duplicates_to_drop <- db_capture %>%
 
 ```
 
-
-```{r}
 # collect all bd_swab_ids and capture_ids
+```{r}
+
 
 peace = db_capture %>%
   left_join(db_survey, by = "survey_id") %>%
@@ -260,7 +258,6 @@ train = db_capture %>%
   filter(survey_id == "01b5d9e9-ef7f-463d-b4a9-f8a1d64b9bbd") %>%
   collect()
 ```
-
 
 Coalesce misnamed/duplicate columns
 ```{r}
@@ -307,7 +304,17 @@ db_survey = db_survey %>%
 ```
 
 ```{r}
-# move survey environmental columns to visit?
+# move survey environmental columns to their own table
+
+calc_duration = function(start_time, end_time) {
+  duration = if_else(end_time < start_time,
+                         as_hms(86400) - start_time + end_time,
+                         end_time - start_time)
+  duration = duration / 60
+  duration = str_remove(duration, " secs")
+  duration = as.integer(round(as.numeric(duration), 0))
+}
+
 colnames(db_survey)
 
 env_cols = c(
@@ -320,11 +327,8 @@ env_cols = c(
   "sky",
   "air_time",
   "water_time",
-  "survey_quality",
-  "transect",
   "samp_loc",
   "pressure_psi",
-  "relative_humidty_percent",
   "dissolved_o2_percent",
   "salinity_ppt",
   "cloud_cover_percent",
@@ -337,7 +341,6 @@ env_cols = c(
   "weather_condition_notes",
   "pressure_psi_drop",
   "relative_humidity_percent",
-  "relative_humidity_drop_percent",
   "wind_speed_min_m_s",
   "wind_speed_max_m_s",
   "air_temp_c_drop",
@@ -356,24 +359,53 @@ env_cols = c(
   "depth_of_water_from_d2_cm",
   "vegetation_cover_percent",
   "vegetation_notes",
-  "secchi_depth_cm"
+  "secchi_depth_cm",
+  "conductivity_us_cm",
+  "fish"
 )
 
-survey_env = db_survey %>%
-  select(all_of(env_cols),
-         "visit_id"
-         )
+setdiff(colnames(db_survey), env_cols)
 
+united_env = db_survey %>%
+  select(-survey_id) %>%
+  collect() %>%
+  mutate(detection_type = "environmental") %>%
+  group_by_at(env_cols) %>%
+  mutate(start_time = as_hms(min(water_time, air_time)),
+         end_time = as_hms(max(water_time, air_time)),
+         duration_minutes = calc_duration(start_time, end_time),
+         observers_survey = str_flatten_comma(unique(na.omit(unlist(str_split(observers_survey, ",\\s*")))), na.rm = TRUE),
+         number_of_observers = length(unique(na.omit(unlist(str_split(observers_survey, ",\\s*"))))),
+         comments_survey = str_flatten_comma(unique(comments_survey), na.rm = TRUE)) %>%
+  ungroup()
 
-distinct_check <- survey_env %>%
-  group_by(visit_id) %>%
-  filter(!is.na(air_time) | !is.na(water_time)) %>%
+gelled_env = united_env %>%
   distinct() %>%
-  summarise(row_count = n(), .groups = 'drop') %>%
-  filter(row_count > 1) %>%
-  arrange(desc(row_count)) %>%
-  left_join(db_survey, by = "visit_id") %>%
-  collect()
+  filter(rowSums(is.na(select(., air_time, water_time, air_temp_c, water_temp_c))) < 4) %>%
+  group_by(visit_id, air_time, water_time, air_temp_c, water_temp_c, sky, wind) %>%
+  summarise(across(everything(), ~ first(na.omit(.)), .names = "{col}"), .groups = "drop") %>%
+  ungroup() %>%
+  mutate(survey_id = "",
+         survey_id = map_chr(survey_id, ~UUIDgenerate()))
+
+repeated_env = unique_env %>%
+  select(-survey_id) %>%
+  group_by(visit_id) %>%
+  mutate(rcount = n()) %>%
+  ungroup() %>%
+  filter(rcount > 1) %>%
+  arrange(visit_id)
+
+subset_env_survey = gelled_env %>%
+  select(-any_of(env_cols))
+
+subset_env = gelled_env %>%
+  select(survey_id, 
+         any_of(env_cols))
+
+compare_survey_env = compare_df_cols(db_survey %>% filter(FALSE) %>% collect(), subset_env_survey)
+
+compare_env = compare_df_cols(db_survey %>% filter(FALSE) %>% collect(), subset_env)
 
 # looks like there are indeed cases where a set of env. parameters were taken at the beginning of each survey. In which case we leave env parameters in survey table.
 ```

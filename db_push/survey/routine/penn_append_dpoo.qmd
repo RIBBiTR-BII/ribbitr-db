@@ -193,7 +193,7 @@ clean_survey_info <- raw_survey_info %>%
          tds_ppm = total_dissolved_solids,
          p_h = ph,
          comments_visit = sampling_event_comments,
-         survey_info_id = fulcrum_id,
+         temp_survey_id = fulcrum_id,
          time_of_day = survey_time) %>%
   unite(observers_survey, c("observers", "other_observers"), sep=",", remove = TRUE, na.rm = TRUE) %>%
   mutate(site = str_to_lower(site),
@@ -387,7 +387,10 @@ clean_sample_obs <- raw_sample_obs %>%
 
 clean_edna_survey = raw_edna_survey %>%
   clean_names() %>%
-  mutate(time_of_day = str_to_lower(survey_time))
+  mutate(site = str_to_lower(site),
+         site = str_replace_all(site, "-", "_"),
+         site = str_replace_all(site, " ", "_"),
+         time_of_day = str_to_lower(survey_time))
 
 clean_edna_collection = raw_edna_collection %>%
   clean_names()
@@ -401,9 +404,9 @@ clean_edna_filtering  = raw_edna_filtering %>%
 
 # aquatic probe died, group returned later to measure. Comining two survey rows into one
 row_a = clean_survey_info %>%
-  filter(survey_info_id == "eea59aa0-4bae-4a1b-afa9-59c7285fbfe9")
+  filter(temp_survey_id == "eea59aa0-4bae-4a1b-afa9-59c7285fbfe9")
 row_b = clean_survey_info %>%
-  filter(survey_info_id == "bbe6bef2-2ca6-43f3-b5e4-5db90f3ef82f")
+  filter(temp_survey_id == "bbe6bef2-2ca6-43f3-b5e4-5db90f3ef82f")
 
 revision_survey_info = row_a %>%
   mutate(observers_survey = paste0(row_a$observers_survey, ",", row_b$observers_survey),
@@ -413,7 +416,7 @@ revision_survey_info = row_a %>%
          p_h = row_b$p_h)
 
 clean_survey_info = clean_survey_info %>%
-  filter(!survey_info_id %in% c("eea59aa0-4bae-4a1b-afa9-59c7285fbfe9",
+  filter(!temp_survey_id %in% c("eea59aa0-4bae-4a1b-afa9-59c7285fbfe9",
                             "bbe6bef2-2ca6-43f3-b5e4-5db90f3ef82f")) %>%
   bind_rows(revision_survey_info)
 
@@ -438,6 +441,7 @@ clean_capture_obs$bag_id[clean_capture_obs$fulcrum_id == "4d5d73e8-847f-43e8-a8f
 
 clean_capture_survey$site[clean_capture_survey$fulcrum_id == "30c9bf7f-5949-4b26-b1f0-3147dd731f74"] = "vorisek_pond"
 clean_capture_survey$site[clean_capture_survey$fulcrum_id == "e426c534-68d4-465e-92aa-252828715d49"] = "admin_pond"
+
 	
 
 
@@ -467,7 +471,7 @@ unified_visit = clean_survey_info %>%
 ### gel visit
 ```{r}
 gelled_visit = unified_visit %>%
-  inner_join(db_site %>%
+  left_join(db_site %>%
               select(tbl_keys("site", mdc)) %>%
               collect(),
             by = tbl_nkey("site", mdc)) %>%
@@ -478,6 +482,10 @@ gelled_visit = unified_visit %>%
   group_by_at(tbl_nkey("visit", mdc)) %>%
   mutate(visit_id = ifelse(is.na(visit_id), UUIDgenerate(), visit_id)) %>%
   ungroup()
+
+if (nrow(gelled_visit %>% filter(is.na(site_id))) > 0) {
+  stop("Unknown sites returned, consider importing first.")
+}
 
 ```
 
@@ -553,7 +561,7 @@ unified_aural = clean_aural_obs %>%
   select(-fulcrum_parent_id) %>%
   full_join(clean_survey_info, by = c("site", "date", "time_of_day")) %>%
   mutate(detection_type = ifelse(is.na(detection_type), "environmental", detection_type)) %>%
-  inner_join(db_site %>%
+  left_join(db_site %>%
               select(tbl_keys("site", mdc)) %>%
               collect(),
             by = tbl_nkey("site", mdc)) %>%
@@ -569,6 +577,10 @@ unified_aural = clean_aural_obs %>%
   filter(!is.na(site),
          !is.na(date))
 
+if (nrow(unified_aural %>% filter(is.na(site_id))) > 0) {
+  stop("Unknown sites returned, consider importing first.")
+}
+
 ```
 
 ### 4 - Gelled aural data
@@ -580,7 +592,7 @@ gelled_aural = unified_aural %>%
          end_time = as_hms(mean(end_time)),
          duration_minutes = calc_duration(start_time, end_time),
          comments_survey = str_c(comments_survey, collapse = ", "),
-         survey_id = ifelse(is.na(survey_id), first(fulcrum_id), survey_id),
+         survey_id = ifelse(is.na(survey_id), first(temp_survey_id), survey_id),
          survey_id = ifelse(is.na(survey_id), UUIDgenerate(), survey_id)) %>%
   ungroup() %>%
   select(-fulcrum_id)
@@ -680,7 +692,7 @@ unified_ves = clean_ves_obs %>%
   select(-fulcrum_parent_id) %>%
   left_join(clean_survey_info, by = c("site", "date", "time_of_day")) %>%
   mutate(detection_type = ifelse(is.na(detection_type), "environmental", detection_type)) %>%
-  inner_join(db_site %>%
+  left_join(db_site %>%
               select(tbl_keys("site", mdc)) %>%
               collect(),
             by = tbl_nkey("site", mdc)) %>%
@@ -696,6 +708,10 @@ unified_ves = clean_ves_obs %>%
   filter(!is.na(site),
          !is.na(date))
 
+if (nrow(unified_ves %>% filter(is.na(site_id))) > 0) {
+  stop("Unknown sites returned, consider importing first.")
+}
+
 ```
 
 ### Gel ves data
@@ -706,7 +722,7 @@ gelled_ves = unified_ves %>%
          end_time = as_hms(mean(end_time)),
          duration_minutes = calc_duration(start_time, end_time),
          comments_survey = str_c(comments_survey, collapse = ", "),
-         survey_id = ifelse(is.na(survey_id), first(fulcrum_id), survey_id),
+         survey_id = ifelse(is.na(survey_id), first(temp_survey_id), survey_id),
          survey_id = ifelse(is.na(survey_id), UUIDgenerate(), survey_id)) %>%
   ungroup() %>%
   select(-fulcrum_id)
@@ -803,19 +819,22 @@ unified_sample =  clean_sample_obs %>%
 
 unified_capture = clean_capture_obs %>%
   left_join(clean_capture_survey, by = c("fulcrum_parent_id" = "fulcrum_id")) %>%
+  filter(!is.na(site)) %>%  # drop captures which don't have corresponding site data in capture_survey
   select(-fulcrum_parent_id) %>%
-  mutate(temp_capture_id = fulcrum_id,
-         detection_type = "capture") %>%
   left_join(unified_sample, by=c("site", "date", "bag_id")) %>%
-  mutate(species_capture = coalesce(species_capture.y, species_capture.x)) %>%
+  mutate(species_capture = coalesce(species_capture.y, species_capture.x),
+         time_of_day = time_of_day.x) %>%
   select(-time_of_day.x,
          -time_of_day.y,
          -species_capture.x,
          -species_capture.y) %>%
   unite("comments_capture", c("comments_capture", "comments_sample"), sep=",", remove = TRUE, na.rm = TRUE) %>%
   left_join(clean_survey_info, by = c("site", "date")) %>%
-  select(-fulcrum_id) %>%
-  inner_join(db_site %>%
+  mutate(time_of_day = coalesce(time_of_day.x, time_of_day.y)) %>%
+  select(-fulcrum_id,
+         -time_of_day.x,
+         -time_of_day.y) %>%
+  left_join(db_site %>%
               select(tbl_keys("site", mdc)) %>%
               collect(),
             by = tbl_nkey("site", mdc)) %>%
@@ -827,6 +846,10 @@ unified_capture = clean_capture_obs %>%
               select(tbl_keys("survey", mdc)) %>%
               collect(),
             by = tbl_nkey("survey", mdc))
+
+if (nrow(unified_capture %>% filter(is.na(site_id))) > 0) {
+  stop("Unknown sites returned, consider importing first.")
+}
 
 # 
 # # QA/QC
@@ -922,11 +945,10 @@ gelled_capture = unified_capture %>%
          end_time = as_hms(mean(end_time)),
          duration_minutes = calc_duration(start_time, end_time),
          comments_survey = str_c(comments_survey, collapse = ", "),
-         survey_id = ifelse(is.na(survey_id), first(temp_capture_id), survey_id),
+         survey_id = ifelse(is.na(survey_id), first(temp_survey_id), survey_id),
          survey_id = ifelse(is.na(survey_id), UUIDgenerate(), survey_id)) %>%
   ungroup() %>%
-  select(-temp_capture_id,
-         -capture_mark_recapture) %>%
+  select(-capture_mark_recapture) %>%
   drop_na(visit_id)
 
 ```
