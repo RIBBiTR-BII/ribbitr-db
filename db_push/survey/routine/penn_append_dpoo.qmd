@@ -335,7 +335,8 @@ clean_sample_processing <- raw_sample_processing %>%
          time_of_day = str_to_lower(time_of_day),
          created_at = with_tz(ymd_hms(created_at, tz = "UTC"), "America/New_York"),
          survey_date = as.Date(ifelse(hour(created_at) > 12, date(created_at), date(created_at) - days(1)), origin = "1970-01-01"),
-         date = as.Date(ifelse(survey_date - date > 1, date, survey_date), origin = "1970-01-01")) %>%
+         date = as.Date(ifelse(survey_date - date > 1, date, survey_date), origin = "1970-01-01"),
+         detection_type = "capture") %>%
   unite(processor, c("processor", "processor_other"), sep=",", remove = TRUE, na.rm = TRUE) %>%
   select(-any_of(to_drop),
          -survey_date,
@@ -355,12 +356,13 @@ clean_sample_obs <- raw_sample_obs %>%
          capture_type = str_to_lower(capture_type),
          life_stage = str_to_lower(life_stage),
          life_stage_other = str_to_lower(life_stage_other),
-         species_capture = coalesce(species_capture, species_capture_other),
-         species_capture = str_to_lower(str_replace_all(species_capture, " ", "_")),
+         species_sample = coalesce(species_capture, species_capture_other),
+         species_sample = str_to_lower(str_replace_all(species_sample, " ", "_")),
          comments_sample = str_replace_all(comments_sample, "\\n", ". "),
          sample_id = fulcrum_id) %>%
   select(-any_of(to_drop),
          -fulcrum_record_id,
+         -species_capture,
          -species_capture_other,
          -all_of(c("norep_bathvolume_50ml_acid_05ml",
                    "norep_bathvolume_100ml_acid_1ml",
@@ -383,7 +385,7 @@ clean_sample_obs <- raw_sample_obs %>%
                    "life_stage_other",
                    "sex_other"))) %>%
   filter(!if_all(everything(), is.na),
-         !(species_capture == "negative_control"))
+         !(species_sample == "negative_control"))
 
 clean_edna_survey = raw_edna_survey %>%
   clean_names() %>%
@@ -441,6 +443,8 @@ clean_capture_obs$bag_id[clean_capture_obs$fulcrum_id == "4d5d73e8-847f-43e8-a8f
 
 clean_capture_survey$site[clean_capture_survey$fulcrum_id == "30c9bf7f-5949-4b26-b1f0-3147dd731f74"] = "vorisek_pond"
 clean_capture_survey$site[clean_capture_survey$fulcrum_id == "e426c534-68d4-465e-92aa-252828715d49"] = "admin_pond"
+clean_capture_survey$site[clean_capture_survey$fulcrum_id == "06c076fd-2014-49d1-8829-52287cd423f1"] = "tuttle_pond"
+
 
 	
 
@@ -457,6 +461,7 @@ clean_capture_survey$site[clean_capture_survey$fulcrum_id == "e426c534-68d4-465e
 unique_visit <- bind_rows(clean_survey_info,
                           clean_aural_survey,
                           clean_capture_survey,
+                          clean_sample_processing,
                           clean_edna_survey,
                           clean_ves_survey) %>% 
   select(date, site, time_of_day) %>%
@@ -821,13 +826,10 @@ unified_capture = clean_capture_obs %>%
   left_join(clean_capture_survey, by = c("fulcrum_parent_id" = "fulcrum_id")) %>%
   filter(!is.na(site)) %>%  # drop captures which don't have corresponding site data in capture_survey
   select(-fulcrum_parent_id) %>%
-  left_join(unified_sample, by=c("site", "date", "bag_id")) %>%
-  mutate(species_capture = coalesce(species_capture.y, species_capture.x),
-         time_of_day = time_of_day.x) %>%
-  select(-time_of_day.x,
-         -time_of_day.y,
-         -species_capture.x,
-         -species_capture.y) %>%
+  full_join(unified_sample, by=c("site", "date", "time_of_day", "bag_id", "detection_type")) %>%
+  mutate(species_capture = coalesce(species_capture, species_sample),
+         capture_id = map_chr(capture_id, ~ ifelse(is.na(.x), UUIDgenerate(), .x))) %>%
+  select(-species_sample) %>%
   unite("comments_capture", c("comments_capture", "comments_sample"), sep=",", remove = TRUE, na.rm = TRUE) %>%
   left_join(clean_survey_info, by = c("site", "date")) %>%
   mutate(time_of_day = coalesce(time_of_day.x, time_of_day.y)) %>%

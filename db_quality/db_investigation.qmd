@@ -31,6 +31,9 @@ db_site = tbl(dbcon, Id("survey_data", "site"))
 db_region = tbl(dbcon, Id("survey_data", "region"))
 db_country = tbl(dbcon, Id("survey_data", "country"))
 
+db_bd_qpcr = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+db_cmr= tbl(dbcon, Id("survey_data", "cmr"))
+
 ```
 
 How important is `time_of_day` as a natural key for visit?
@@ -117,6 +120,24 @@ rep_ves= cn_ves %>%
   filter(u_dates > 1 | u_sites > 1 | u_det > 1) %>%
   collect()
 
+
+
+```
+# who is?
+```{r}
+
+who_is = db_survey %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  select(survey_id, detection_type, transect, visit_id,  time_of_day, site, date, region, country_name) %>%
+  group_by(site, date, detection_type) %>%
+  mutate(rcount = n()) %>%
+  ungroup() %>%
+  filter(rcount > 1) %>%
+  arrange(visit_id) %>%
+  collect()
 
 
 ```

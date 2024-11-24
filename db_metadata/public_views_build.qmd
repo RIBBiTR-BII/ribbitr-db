@@ -8,7 +8,7 @@ format: html
 librarian::shelf(tidyverse, dbplyr, DBI, RPostgres, here, janitor, RIBBiTR-BII/ribbitrrr)
 
 ## Connect to DB
-dbcon <- hopToDB(prefix = "ribbitr")
+dbcon <- hopToDB()
 
 ```
 # drop views

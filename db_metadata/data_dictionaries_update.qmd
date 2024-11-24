@@ -115,6 +115,40 @@ pull_pg_table_data <- function(schema) {
   return(tables)
 }
 
+pull_fkey_refs <- function() {
+  
+  fkey_query <- paste0("
+    SELECT 
+        kcu.table_schema AS table_schema,
+        kcu.table_name AS table_name,
+        kcu.column_name AS column_name,
+        ccu.table_schema AS fkey_ref_schema,
+        ccu.table_name AS fkey_ref_table,
+        ccu.column_name AS fkey_ref_column
+    FROM 
+        information_schema.table_constraints AS tc 
+    JOIN 
+        information_schema.key_column_usage AS kcu 
+        ON tc.constraint_name = kcu.constraint_name 
+        AND tc.constraint_schema = kcu.constraint_schema
+    JOIN 
+        information_schema.referential_constraints AS rc 
+        ON tc.constraint_name = rc.constraint_name 
+        AND tc.constraint_schema = rc.constraint_schema
+    JOIN 
+        information_schema.key_column_usage AS ccu 
+        ON rc.unique_constraint_name = ccu.constraint_name 
+        AND rc.unique_constraint_schema = ccu.constraint_schema
+    WHERE 
+        tc.constraint_type = 'FOREIGN KEY'
+    ORDER BY 
+        kcu.table_name, kcu.column_name
+  ")
+  
+  fkeys <-tbl(dbcon, sql(fkey_query)) %>% collect()
+  return(fkeys)
+}
+
 column_dict_supplementary = c(
   "definition",
   "units",
@@ -167,10 +201,13 @@ meta_column_data_pg = list()
 # supplementary columns derived from manual human input
 meta_column_data_sup = list()
 
+fkey_table = pull_fkey_refs()
+
 for (schema in schemas){
   # pull pg data from information_schema
   pg_table_data[[schema]] = pull_pg_table_data(schema)
-  pg_column_data[[schema]] = pull_pg_column_data(schema)
+  pg_column_data[[schema]] = pull_pg_column_data(schema) %>%
+    left_join(fkey_table, by = c("table_schema", "table_name", "column_name"))
   
   # pull metadata tables from each schema, dropping supplementary columns
   meta_table_data[[schema]] = tbl(dbcon, Id(schema, "metadata_tables"))
@@ -387,4 +424,19 @@ tryCatch(
 
 ```{r}
 dbDisconnect(dbcon)
+```
+
+# create new metadata columns
+
+```{r}
+# for (schema in schemas) {
+#   newcols = paste0("ALTER TABLE ", schema, ".metadata_columns
+# ADD COLUMN fkey_ref_schema VARCHAR(255),
+# ADD COLUMN fkey_ref_table VARCHAR(255),
+# ADD COLUMN fkey_ref_column VARCHAR(255);")
+#   
+#   dbExecute(dbcon, newcols)
+#   
+#   print(schema)
+# }
 ```

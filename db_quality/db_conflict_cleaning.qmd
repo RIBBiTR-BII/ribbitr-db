@@ -25,6 +25,7 @@ mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
 db_aural = tbl(dbcon, Id("survey_data", "aural"))
 db_capture = tbl(dbcon, Id("survey_data", "capture"))
 db_ves = tbl(dbcon, Id("survey_data", "ves"))
+db_env = tbl(dbcon, Id("survey_data", "environmental"))
 
 db_survey = tbl(dbcon, Id("survey_data", "survey"))
 db_visit = tbl(dbcon, Id("survey_data", "visit"))
@@ -366,30 +367,51 @@ env_cols = c(
 
 setdiff(colnames(db_survey), env_cols)
 
+```
+
+# scrape environmental surveys
+
+```{r}
+
 united_env = db_survey %>%
-  select(-survey_id) %>%
+  select(-survey_id,
+         -start_time,
+         -end_time,
+         -duration_minutes,
+         -detection_type,
+         -description,
+         -transect) %>%
   collect() %>%
   mutate(detection_type = "environmental") %>%
-  group_by_at(env_cols) %>%
-  mutate(start_time = as_hms(min(water_time, air_time)),
-         end_time = as_hms(max(water_time, air_time)),
-         duration_minutes = calc_duration(start_time, end_time),
-         observers_survey = str_flatten_comma(unique(na.omit(unlist(str_split(observers_survey, ",\\s*")))), na.rm = TRUE),
-         number_of_observers = length(unique(na.omit(unlist(str_split(observers_survey, ",\\s*"))))),
-         comments_survey = str_flatten_comma(unique(comments_survey), na.rm = TRUE)) %>%
-  ungroup()
-
-gelled_env = united_env %>%
   distinct() %>%
   filter(rowSums(is.na(select(., air_time, water_time, air_temp_c, water_temp_c))) < 4) %>%
   group_by(visit_id, air_time, water_time, air_temp_c, water_temp_c, sky, wind) %>%
   summarise(across(everything(), ~ first(na.omit(.)), .names = "{col}"), .groups = "drop") %>%
+  ungroup()
+  
+gelled_env = united_env %>%
+  group_by(visit_id) %>%
+  mutate(start_time_temp = as_hms(min(water_time, air_time)),
+         end_time_temp = as_hms(max(water_time, air_time)),
+         duration_minutes = calc_duration(start_time_temp, end_time_temp),
+         start_time = as_hms(ifelse(duration_minutes > 720, end_time_temp, start_time_temp)),
+         end_time = as_hms(ifelse(duration_minutes > 720, start_time_temp, end_time_temp)),
+         duration_minutes = calc_duration(start_time, end_time),
+         observers_survey = str_flatten_comma(unique(na.omit(unlist(str_split(observers_survey, ",\\s*")))), na.rm = TRUE),
+         comments_survey = str_flatten_comma(unique(comments_survey), na.rm = TRUE),
+         survey_id = UUIDgenerate()) %>%
   ungroup() %>%
-  mutate(survey_id = "",
-         survey_id = map_chr(survey_id, ~UUIDgenerate()))
+  mutate(number_observers = length(unique(na.omit(unlist(str_split(observers_survey, ",\\s*"))))),
+         environmental_id = "",
+         environmental_id = map_chr(environmental_id, ~UUIDgenerate())) %>%
+  select(-start_time_temp,
+         -end_time_temp)
+```
 
-repeated_env = unique_env %>%
-  select(-survey_id) %>%
+```{r}
+# subset and checks
+
+repeated_env = gelled_env %>%
   group_by(visit_id) %>%
   mutate(rcount = n()) %>%
   ungroup() %>%
@@ -397,17 +419,195 @@ repeated_env = unique_env %>%
   arrange(visit_id)
 
 subset_env_survey = gelled_env %>%
-  select(-any_of(env_cols))
+  select(-any_of(env_cols),
+         -environmental_id) %>%
+  distinct() %>%
+  drop_na(survey_id)
+
+repeated_env_survey = subset_env_survey  %>%
+  group_by(visit_id) %>%
+  mutate(rcount = n()) %>%
+  ungroup() %>%
+  filter(rcount > 1) %>%
+  arrange(visit_id)
+
+get_dupes(subset_env_survey, visit_id)
 
 subset_env = gelled_env %>%
-  select(survey_id, 
-         any_of(env_cols))
+  select(environmental_id,
+         survey_id, 
+         any_of(env_cols)) %>%
+  mutate(comments_environmental = "") %>%
+  distinct() %>%
+  drop_na(environmental_id)
+
+get_dupes(subset_env, environmental_id)
 
 compare_survey_env = compare_df_cols(db_survey %>% filter(FALSE) %>% collect(), subset_env_survey)
 
+tray = compare_for_staging(db_survey %>% collect(), subset_env_survey, key_columns = "survey_id", return_all = TRUE, report = "env_survey")
+
 compare_env = compare_df_cols(db_survey %>% filter(FALSE) %>% collect(), subset_env)
 
-# looks like there are indeed cases where a set of env. parameters were taken at the beginning of each survey. In which case we leave env parameters in survey table.
+
+
+```
+
+```{r}
+
+# commit
+
+dbBegin(dbcon)
+
+tryCatch(
+  {
+    # drop existing environmental surveys first.
+    drop_env = "DELETE FROM survey_data.survey WHERE detection_type = 'environmental'"
+    dbExecute(dbcon, drop_env)
+    
+    
+    temp_survey_env = stage_to_temp(dbcon, db_survey, subset_env_survey)
+    pointer = tbl(dbcon, temp_survey_env)
+    db_survey = rows_insert(db_survey, pointer, by="survey_id", in_place = TRUE, conflict = "ignore")
+    
+    
+    dbWriteTable(dbcon, Id("survey_data", "environmental"), subset_env, overwrite = TRUE)
+    
+
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful!")
+    
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
+
+# write to env table
+# backup survey table
+# append to survey table
+
+```
+
+# Drop environmental columns from survey table
+
+```{r}
+
+setdiff(colnames(db_survey), env_cols)
+setdiff(env_cols, colnames(db_survey))
+
+setdiff(colnames(db_env), env_cols)
+setdiff(env_cols, colnames(db_env))
+
+drop_env_cols = "
+ALTER TABLE survey_data.survey
+DROP COLUMN wind_speed_m_s,
+DROP COLUMN air_temp_c,
+DROP COLUMN water_temp_c,
+DROP COLUMN p_h,
+DROP COLUMN tds_ppm,
+DROP COLUMN wind,
+DROP COLUMN sky,
+DROP COLUMN air_time,
+DROP COLUMN water_time,
+DROP COLUMN samp_loc,
+DROP COLUMN pressure_psi,
+DROP COLUMN dissolved_o2_percent,
+DROP COLUMN salinity_ppt,
+DROP COLUMN cloud_cover_percent,
+DROP COLUMN precip,
+DROP COLUMN soil_humidity_m3m3,
+DROP COLUMN wind_speed_scale,
+DROP COLUMN precipitation_during_visit,
+DROP COLUMN precipitation_last_48_h,
+DROP COLUMN temperature_last_48_h,
+DROP COLUMN weather_condition_notes,
+DROP COLUMN pressure_psi_drop,
+DROP COLUMN relative_humidity_percent,
+DROP COLUMN wind_speed_min_m_s,
+DROP COLUMN wind_speed_max_m_s,
+DROP COLUMN air_temp_c_drop,
+DROP COLUMN densiometer_d1_num_covered,
+DROP COLUMN d1_n,
+DROP COLUMN d1_s,
+DROP COLUMN d1_e,
+DROP COLUMN d1_w,
+DROP COLUMN d1_percent_cover,
+DROP COLUMN densiometer_d2_num_covered,
+DROP COLUMN d2_n,
+DROP COLUMN d2_s,
+DROP COLUMN d2_e,
+DROP COLUMN d2_w,
+DROP COLUMN d2_percent_cover,
+DROP COLUMN depth_of_water_from_d2_cm,
+DROP COLUMN vegetation_cover_percent,
+DROP COLUMN vegetation_notes,
+DROP COLUMN secchi_depth_cm,
+DROP COLUMN conductivity_us_cm,
+DROP COLUMN fish"
+
+dbExecute(dbcon, drop_env_cols)
+
+```
+
+# investigate surveys with no children
+```{r}
+ids_aural = db_aural %>%
+  select(survey_id)
+ids_capture = db_capture %>%
+  select(survey_id)
+ids_ves = db_ves %>%
+  select(survey_id)
+ids_env = db_env %>%
+  select(survey_id)
+
+all_survey_ids = ids_aural %>%
+  full_join(ids_capture, by = "survey_id") %>%
+  full_join(ids_ves, by = "survey_id") %>%
+  full_join(ids_env, by = "survey_id") %>%
+  distinct()
+
+loaners = db_survey %>%
+  anti_join(all_survey_ids, by = "survey_id") %>%
+  select(survey_id)
+
+get_dupes(db_survey %>% collect(), visit_id, detection_type)
+
+drop_others = db_survey %>%
+  filter(detection_type == "other",
+         is.na(comments_survey)) %>%
+  left_join(loaners, by = "survey_id")
+
+db_survey = db_survey %>%
+  rows_delete(drop_others, by = "survey_id", in_place = TRUE, unmatched = "ignore")
+
+```
+
+# build taxa table
+```{r}
+sn_aural = db_aural %>%
+  select(species_aural) %>%
+  rename(scientific_name = species_aural) %>%
+  distinct()
+sn_capture = db_capture %>%
+  select(species_capture) %>%
+  rename(scientific_name = species_capture) %>%
+  distinct()
+sn_ves = db_ves %>%
+  select(species_ves) %>%
+  rename(scientific_name = species_ves) %>%
+  distinct()
+
+all_sn = sn_aural %>%
+  full_join(sn_capture, by = "scientific_name") %>%
+  full_join(sn_ves, by = "scientific_name") %>%
+  filter(!is.na(scientific_name)) %>%
+  arrange(scientific_name) %>%
+  collect()
+
+# try to link up with taxa database!
+
 ```
 
 calculate survey.duration_minutes

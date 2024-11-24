@@ -132,6 +132,41 @@ build_column_dictionary <- function(schema) {
   return(columns_constraints)
 }
 
+
+pull_fkey_refs <- function() {
+  
+  fkey_query <- paste0("
+    SELECT 
+        kcu.table_schema AS table_schema,
+        kcu.table_name AS table_name,
+        kcu.column_name AS column_name,
+        ccu.table_schema AS fkey_ref_schema,
+        ccu.table_name AS fkey_ref_table,
+        ccu.column_name AS fkey_ref_column
+    FROM 
+        information_schema.table_constraints AS tc 
+    JOIN 
+        information_schema.key_column_usage AS kcu 
+        ON tc.constraint_name = kcu.constraint_name 
+        AND tc.constraint_schema = kcu.constraint_schema
+    JOIN 
+        information_schema.referential_constraints AS rc 
+        ON tc.constraint_name = rc.constraint_name 
+        AND tc.constraint_schema = rc.constraint_schema
+    JOIN 
+        information_schema.key_column_usage AS ccu 
+        ON rc.unique_constraint_name = ccu.constraint_name 
+        AND rc.unique_constraint_schema = ccu.constraint_schema
+    WHERE 
+        tc.constraint_type = 'FOREIGN KEY'
+    ORDER BY 
+        kcu.table_name, kcu.column_name
+  ")
+  
+  fkeys <-tbl(dbcon, sql(fkey_query)) %>% collect()
+  return(fkeys)
+}
+
 column_dict_supplementary= c(
   "definition",
   "units",
@@ -168,13 +203,16 @@ column_dict_mutate_supplementary <- function(dict) {
 table_dict_build = list()
 column_dict_build = list()
 
+fkey_table = pull_fkey_refs()
+
 for (schema in schemas) {
   table_dict_build[[schema]] <- build_table_dictionary(schema) %>%
     collect()
   
   column_dict_build[[schema]] <- column_dict_mutate_supplementary(build_column_dictionary(schema)) %>%
     select(table_schema, table_name, column_name, all_of(column_dict_supplementary), everything()) %>%
-    collect()
+    collect() %>%
+    left_join(fkey_table, by = c("table_schema", "table_name", "column_name"))
   
   cat("Dictionaries assembled for schema:", schema, "\n")
 }
