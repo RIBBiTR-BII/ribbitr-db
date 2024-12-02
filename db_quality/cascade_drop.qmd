@@ -24,6 +24,7 @@ mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
 db_aural = tbl(dbcon, Id("survey_data", "aural"))
 db_capture = tbl(dbcon, Id("survey_data", "capture"))
 db_ves = tbl(dbcon, Id("survey_data", "ves"))
+db_env = tbl(dbcon, Id("survey_data", "environmental"))
 db_survey = tbl(dbcon, Id("survey_data", "survey"))
 db_visit = tbl(dbcon, Id("survey_data", "visit"))
 db_site = tbl(dbcon, Id("survey_data", "site"))
@@ -36,10 +37,14 @@ db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
 # Visit orphans
 ```{r}
 drop_ids = c(
-  "7d48b3df-73b4-4200-ae8e-70321aefcaf8",
-  "ec1122e1-bf4c-42eb-84fc-83d96bc09d96",
-  "6d70d8da-2c79-4453-9023-1bf1e3f6e8c8",
-  "71a2327f-c7e8-43e1-bb1d-a1d263ef203a"
+"31450e5e-cb89-4a31-8296-bbc242b47f39",
+"4a1c6ac2-ffcb-4149-8c8f-3800ad81e4ab",
+"fdefc621-590f-41e3-9b58-53216a08c0a5",				
+"2d89e471-e06d-48e9-ac2a-a14cf7973d16",
+"df9de723-712c-4daf-a155-8c05354abf17",
+"38033072-39bb-4428-bd29-936c4f871b69",
+"6bc0e6b9-f46b-4722-83db-2b851bbcced5",
+"e9b2462f-a946-4640-8ce3-52651168bd37"
 )
 
 drop_visit = db_visit %>%
@@ -49,6 +54,11 @@ drop_survey = db_survey %>%
   right_join(drop_visit, by = "visit_id") %>%
   select(all_of(colnames(db_survey))) %>%
   filter(!is.na(survey_id))
+
+drop_env = db_env %>%
+  right_join(drop_survey, by = "survey_id") %>%
+  select(all_of(colnames(db_env))) %>%
+  filter(!is.na(environmental_id))
 
 drop_aural = db_aural %>%
   right_join(drop_survey, by = "survey_id") %>%
@@ -80,6 +90,8 @@ tryCatch(
       rows_delete(drop_capture, by="capture_id", unmatched = "ignore", in_place=TRUE)
     db_ves = db_ves %>%
       rows_delete(drop_ves, by="ves_id", unmatched = "ignore", in_place=TRUE)
+    db_env = db_env %>%
+      rows_delete(drop_env, by="environmental_id", unmatched = "ignore", in_place=TRUE)
     
     db_survey = db_survey %>%
       rows_delete(drop_survey, by="survey_id", unmatched = "ignore", in_place=TRUE)
@@ -101,11 +113,17 @@ tryCatch(
 # survey orphans
 ```{r}
 drop_ids = c(
-  "21181bcc-4f52-44c0-a6e3-77fc83bd7a09"
+  "07c49df3-0a05-4c24-8612-56789d233f97",
+  "5d21a517-4941-425a-8ebe-5b6385b3c877"
 )
 
 drop_survey = db_survey %>%
   filter(survey_id %in% drop_ids)
+
+drop_env = db_env %>%
+  right_join(drop_survey, by = "survey_id") %>%
+  select(all_of(colnames(db_env))) %>%
+  filter(!is.na(environmental_id))
 
 drop_aural = db_aural %>%
   right_join(drop_survey, by = "survey_id") %>%
@@ -137,7 +155,8 @@ tryCatch(
       rows_delete(drop_capture, by="capture_id", unmatched = "ignore", in_place=TRUE)
     db_ves = db_ves %>%
       rows_delete(drop_ves, by="ves_id", unmatched = "ignore", in_place=TRUE)
-    
+    db_env = db_env %>%
+      rows_delete(drop_env, by="environmental_id", unmatched = "ignore", in_place=TRUE)
     db_survey = db_survey %>%
       rows_delete(drop_survey, by="survey_id", unmatched = "ignore", in_place=TRUE)
     

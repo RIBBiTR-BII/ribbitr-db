@@ -38,6 +38,22 @@ db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
 
 ```
 
+# add hemisphere to utm zone
+```{r}
+rev_site = db_site %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  mutate(utm_zone = ifelse(country_name == "brazil", paste0(utm_zone, "S"), paste0(utm_zone, "N"))) %>%
+  select(all_of(colnames(db_site)))
+
+peace = rev_site %>%
+  collect()
+
+db_site = db_site %>%
+  rows_update(rev_site, by = "site_id", unmatched = "ignore", in_place = TRUE)
+
+```
+
 # NAs on natural key columns
 ```{r}
 
@@ -211,6 +227,7 @@ dups_pcr = db_bd %>%
   collect()
 
 ```
+
 
 # drop duplicates acrosss all capture rows except capture_id
 ```{r}
@@ -401,7 +418,7 @@ gelled_env = united_env %>%
          comments_survey = str_flatten_comma(unique(comments_survey), na.rm = TRUE),
          survey_id = UUIDgenerate()) %>%
   ungroup() %>%
-  mutate(number_observers = length(unique(na.omit(unlist(str_split(observers_survey, ",\\s*"))))),
+  mutate(number_observers = map_int(observers_survey, ~ length(unique(na.omit(unlist(str_split(gsub(" ", "", .x), ",")))))),
          environmental_id = "",
          environmental_id = map_chr(environmental_id, ~UUIDgenerate())) %>%
   select(-start_time_temp,
@@ -552,6 +569,7 @@ dbExecute(dbcon, drop_env_cols)
 ```
 
 # investigate surveys with no children
+
 ```{r}
 ids_aural = db_aural %>%
   select(survey_id)
