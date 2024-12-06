@@ -1,0 +1,60 @@
+---
+title: "panama colostethus"
+format: html
+editor: source
+---
+
+
+```{r}
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, janitor, RIBBiTR-BII/ribbitrrr, here)
+
+# connect to database
+dbcon = hopToDB()
+
+```
+
+# pull db
+```{r}
+mdt = tbl(dbcon, Id("kira_pep", "metadata_tables")) %>%
+  collect()
+
+mdc = tbl(dbcon, Id("kira_pep", "metadata_columns")) %>%
+  collect()
+
+# pull relevant chain tables from DB
+db_capture = tbl(dbcon, Id("kira_pep", "capture"))
+db_survey = tbl(dbcon, Id("kira_pep", "survey"))
+db_visit = tbl(dbcon, Id("kira_pep", "visit"))
+db_bd = tbl(dbcon, Id("kira_pep", "bd_results"))
+
+data_cap = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  collect()
+
+```
+
+# import and explore
+```{r}
+
+raw_microbiome = read_csv(here(Sys.getenv("data_dir"), "kira", "alpha_diversity_metadata_clean.csv"))
+
+setdiff(colnames(raw_microbiome), c(colnames(data_cap), colnames(db_bd)))
+```
+
+# push microbiome stats
+```{r}
+clean_microbiome = raw_microbiome %>%
+  rename(microbiome_swab_id = id) %>%
+  full_join(data_cap, by = "microbiome_swab_id") %>%
+  select(microbiome_swab_id,
+         shannon_entropy,
+         faith_pd,
+         pielou_evenness) %>%
+  filter(!is.na(microbiome_swab_id)) %>%
+  distinct()
+
+dbWriteTable(dbcon, Id("kira_pep", "microbiome_results"), clean_microbiome, overwrite = TRUE)
+
+```
