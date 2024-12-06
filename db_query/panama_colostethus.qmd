@@ -1,0 +1,120 @@
+---
+title: "panama colostethus"
+format: html
+editor: source
+---
+
+
+```{r}
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, RIBBiTR-BII/ribbitrrr, here)
+
+# connect to database
+dbcon = hopToDB(prefix = "ribbitr")
+
+dbres = hopToDB(prefix = "restore")
+
+```
+
+```{r}
+mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
+  collect()
+
+# pull relevant chain tables from DB
+db_aural = tbl(dbcon, Id("survey_data", "aural"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_ves = tbl(dbcon, Id("survey_data", "ves"))
+db_env = tbl(dbcon, Id("survey_data", "environmental"))
+
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+```
+
+```{r}
+
+# pull relevant chain tables from DB
+re_aural = tbl(dbres, Id("survey_data", "aural"))
+re_capture = tbl(dbres, Id("survey_data", "capture"))
+re_ves = tbl(dbres, Id("survey_data", "ves"))
+
+re_survey = tbl(dbres, Id("survey_data", "survey"))
+re_visit = tbl(dbres, Id("survey_data", "visit"))
+re_site = tbl(dbres, Id("survey_data", "site"))
+re_region = tbl(dbres, Id("survey_data", "region"))
+re_location = tbl(dbres, Id("survey_data", "location"))
+```
+
+## pull capture data of interest (db)
+```{r}
+data_capture = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  select(capture_id,
+         species_capture,
+         site,
+         date,
+         region,
+         country) %>%
+  filter(country == "panama") %>%
+  mutate(year = year(date)) %>%
+  collect()
+
+data_capture %>%
+  select(species_capture) %>%
+  distinct()
+
+data_capture %>%
+  filter(species_capture == "colostethus_panamensis") %>%
+  select(site) %>%
+  distinct() %>%
+  arrange(site)
+
+data_capture %>%
+  filter(species_capture == "colostethus_panamensis") %>%
+  select(site, year) %>%
+  distinct() %>%
+  arrange(site, year)
+
+```
+## pull capture data of interest (restore)
+```{r}
+restore_capture = re_capture %>%
+  left_join(re_survey, by = "survey_id") %>%
+  left_join(re_visit, by = "visit_id") %>%
+  left_join(re_site, by = "site_id") %>%
+  left_join(re_region, by = "region_id") %>%
+  left_join(re_location, by = "location_id") %>%
+  rename(country = location) %>%
+  select(capture_id,
+         species_capture,
+         site,
+         date,
+         region,
+         country) %>%
+  filter(country == "panama") %>%
+  mutate(year = year(date)) %>%
+  collect()
+
+restore_capture %>%
+  select(species_capture) %>%
+  distinct()
+
+data_capture %>%
+  filter(species_capture == "colostethus_panamensis") %>%
+  select(site) %>%
+  distinct() %>%
+  arrange(site)
+
+data_capture %>%
+  filter(species_capture == "colostethus_panamensis") %>%
+  select(site, year) %>%
+  distinct() %>%
+  arrange(year, site)
+
+```

@@ -244,15 +244,16 @@ duplicates_to_drop <- db_capture %>%
 
 ```
 
+
 # collect all bd_swab_ids and capture_ids
 ```{r}
-
 
 peace = db_capture %>%
   left_join(db_survey, by = "survey_id") %>%
   left_join(db_visit, by = "visit_id") %>%
   left_join(db_site, by = "site_id") %>%
   left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
   group_by(survey_id,
            species_capture,
            time_of_capture,
@@ -263,14 +264,13 @@ peace = db_capture %>%
            microhabitat_type,
            site,
            date,
-           region) %>%
-  mutate(bd_id_count = n_distinct(bd_swab_id)) %>%
+           region,
+           country_name) %>%
+  summarise(bd_id_count = n_distinct(bd_swab_id), .groups = 'drop') %>%
   filter(bd_id_count > 1,
          !is.na(time_of_capture)) %>%
   ungroup() %>%
   collect()
-
-summarise(value = paste(unique(value), collapse = ", "), .groups = "drop")
 
 train = db_capture %>%
   filter(survey_id == "01b5d9e9-ef7f-463d-b4a9-f8a1d64b9bbd") %>%
@@ -321,8 +321,11 @@ db_survey = db_survey %>%
 
 ```
 
-```{r}
 # move survey environmental columns to their own table
+
+## organize column names
+```{r}
+
 
 calc_duration = function(start_time, end_time) {
   duration = if_else(end_time < start_time,
@@ -386,7 +389,7 @@ setdiff(colnames(db_survey), env_cols)
 
 ```
 
-# scrape environmental surveys
+## scrape environmental surveys
 
 ```{r}
 
@@ -425,8 +428,10 @@ gelled_env = united_env %>%
          -end_time_temp)
 ```
 
+## subset and checks
+
 ```{r}
-# subset and checks
+
 
 repeated_env = gelled_env %>%
   group_by(visit_id) %>%
@@ -469,7 +474,7 @@ compare_env = compare_df_cols(db_survey %>% filter(FALSE) %>% collect(), subset_
 
 
 ```
-
+## commits
 ```{r}
 
 # commit
@@ -507,7 +512,7 @@ tryCatch(
 
 ```
 
-# Drop environmental columns from survey table
+## Drop environmental columns from survey table
 
 ```{r}
 
@@ -628,7 +633,7 @@ all_sn = sn_aural %>%
 
 ```
 
-calculate survey.duration_minutes
+# calculate survey.duration_minutes
 ```{r}
 # flip start and end time when durration in greater than 18 hours
 
@@ -652,7 +657,7 @@ db_survey = db_survey %>%
 
 ```
 
-recalculate duration for all surveys
+## recalculate duration for all surveys
 ```{r}
 dm_survey = db_survey %>%
   mutate(duration_minutes = sql("
@@ -668,7 +673,7 @@ db_survey = db_survey %>%
 
 ```
 
-calculate visit.time_of_day from min(survey.start_time)
+# calculate visit.time_of_day from min(survey.start_time)
 ```{r}
 #define time of day as: midpoint of earliest survey start and latest survey end falls:
 #   between 5:00 am and 18:59 pm -- day

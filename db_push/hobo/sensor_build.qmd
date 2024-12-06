@@ -1,0 +1,466 @@
+---
+title: "sensor build"
+format: html
+editor: source
+---
+
+## Setup
+
+```{r}
+librarian::shelf(tidyverse, dbplyr, here, janitor, dataPreparation, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr, ggplot2, plotly)
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+## Connect to DB
+dbcon <- hopToDB()
+
+```
+```{r}
+hobo_current = tbl(dbcon, Id("hobo", "hobo")) %>%
+  collect()
+
+
+```
+
+```{r}
+## Point to local data directory
+ddir = Sys.getenv("data_dir")  # data directory
+# Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
+wddir = here(ddir, "sensor", '2024-12-03') # working data directory
+```
+
+# import and manipulate each file for consistency
+```{r}
+
+# List all CSV files in the directory
+csv_files <- list.files(path = wddir, pattern = "*.csv", full.names = TRUE)
+
+# general survey table
+raw_brazil_1 <- read_csv(here(wddir, "Brazil_combined_Nov22-Feb23.csv"))
+raw_penn_1 <- read_csv(here(wddir, "PA_combined_Jan-May23.csv"))
+raw_penn_2 <- read_csv(here(wddir, "PA_combined_Jul-Dec22.csv"))
+raw_penn_3 <- read_csv(here(wddir, "PA_combined_Jun23-Oct23.csv"))
+raw_penn_4 <- read_csv(here(wddir, "PA_combined_May23–Jun23.csv"))
+raw_panama_1 <- read_csv(here(wddir, "Panama_combined_Aug23-Dec23.csv"))
+raw_panama_2 <- read_csv(here(wddir, "Panama_combined_Jul-Nov22.csv"))
+raw_panama_3 <- read_csv(here(wddir, "Panama_combined_Nov22-Aug23.csv"))
+raw_sierra_1 <- read_csv(here(wddir, "SierraNevada_combined_Aug-Oct22.csv"))
+raw_sierra_2 <- read_csv(here(wddir, "SierraNevada_combined_Jul23-Oct23.csv"))
+
+raw_tables = c(
+  "raw_brazil_1",
+  "raw_penn_1",
+  "raw_penn_2",
+  "raw_penn_3",
+  "raw_penn_4",
+  "raw_panama_1",
+  "raw_panama_2",
+  "raw_panama_3",
+  "raw_sierra_1",
+  "raw_sierra_2"
+)
+
+# import from db
+
+db_site = tbl(dbcon, Id("survey_data", "site")) %>%
+  select(site_id,
+         site,
+         region_id) %>%
+  collect()
+
+db_region = tbl(dbcon, Id("survey_data", "region")) %>%
+  select(region_id,
+         region,
+         country_id) %>%
+  collect()
+
+db_country = tbl(dbcon, Id("survey_data", "country")) %>%
+  select(country_id,
+         country) %>%
+  collect()
+```
+
+```{r}
+for (tab in raw_tables) {
+  tz = get(tab) %>%
+    select(TimeZone) %>%
+    filter(!is.na(TimeZone)) %>%
+    distinct()
+  
+  ti = get(tab) %>%
+    select(DateTime) %>%
+    head(1)
+  
+  cat(tab, ": \t", as.character(unlist(tz)), "\t", as.character(unlist(ti)), "\n")
+}
+
+clean_brazil_1 = raw_brazil_1 %>%
+  clean_names() %>%
+  mutate(time_zone = "Etc/GMT-2",
+         date_time = mdy_hm(date_time),
+         timestamptz = with_tz(date_time, tz = time_zone),
+         file = "BR1")
+
+clean_penn_1 = raw_penn_1 %>%
+  clean_names() %>%
+  mutate(time_zone = "Etc/GMT-5",
+         date_time = mdy_hm(date_time),
+         timestamptz = with_tz(date_time, tz = time_zone),
+         file = "PN1")
+
+clean_penn_2 = raw_penn_2 %>%
+  clean_names() %>%
+  mutate(time_zone = "Etc/GMT-4",
+         date_time = mdy_hm(date_time),
+         timestamptz = with_tz(date_time, tz = time_zone),
+         file = "PN2")
+
+clean_penn_3 = raw_penn_3 %>%
+  clean_names() %>%
+  mutate(time_zone = "Etc/GMT-4",
+         date_time = mdy_hm(date_time),
+         timestamptz = with_tz(date_time, tz = time_zone),
+         file = "PN3")
+
+clean_penn_4 = raw_penn_4 %>%
+  clean_names() %>%
+  mutate(time_zone = "Etc/GMT-4",
+         date_time = as_datetime(date_time),
+         timestamptz = with_tz(date_time, tz = time_zone),
+         file = "PN4")
+
+clean_panama_1 = raw_panama_1 %>%
+  clean_names() %>%
+  mutate(time_zone = "Etc/GMT-7",
+         date_time = as_datetime(date_time),
+         timestamptz = with_tz(date_time, tz = time_zone),
+         file = "PA1")
+
+clean_panama_2 = raw_panama_2 %>%
+  clean_names() %>%
+  mutate(time_zone = "Etc/GMT-5",
+         date_time = mdy_hm(date_time),
+         timestamptz = with_tz(date_time, tz = time_zone),
+         file = "PA2")
+
+clean_panama_3 = raw_panama_3 %>%
+  clean_names() %>%
+  mutate(time_zone = "Etc/GMT-5",
+         date_time = as_datetime(date_time),
+         timestamptz = with_tz(date_time, tz = time_zone),
+         file = "PA3")
+
+clean_sierra_1 = raw_sierra_1 %>%
+  clean_names() %>%
+  mutate(time_zone = "Etc/GMT-7",
+         date_time = mdy_hm(date_time),
+         timestamptz = with_tz(date_time, tz = time_zone),
+         site = as.character(site),
+         file = "SN1")
+
+clean_sierra_2 = raw_sierra_2 %>%
+  clean_names() %>%
+  mutate(time_zone = "Etc/GMT-8",
+         date_time = parse_date_time(date_time, 
+                                     orders = c("ymd HMS", "ymd HM"), 
+                                     quiet = TRUE),
+         timestamptz = with_tz(date_time, tz = time_zone),
+         file = "SN2")
+
+bound_obs = bind_rows(clean_brazil_1,
+                      clean_penn_1,
+                      clean_penn_2,
+                      clean_penn_3,
+                      clean_penn_4,
+                      clean_panama_1,
+                      clean_panama_2,
+                      clean_panama_3,
+                      clean_sierra_1,
+                      clean_sierra_2)
+
+colnames(bound_obs)
+
+clean_obs = bound_obs %>%
+  rename(site_hobo = site,
+         microhabitat = location,
+         relative_humidity_percent = rh,
+         temperature_c = temperature,
+         dew_point_c = dew_point,
+         height_cm = height) %>%
+  mutate(site = case_match(site_hobo,
+                           "Admin" ~ "admin_pond",
+                           "Phelps" ~ "phelps_pond",
+                           "RV" ~ "rv_pond",
+                           "Tuttle" ~ "tuttle_pond",
+                           "TW" ~ "tryon_weber",
+                           "Vorisek" ~ "vorisek_pond",
+                           "Wood" ~ "wood_lab_pond",
+                           "AltosdePiedra" ~ "altos_de_piedra",
+                           "Campestre" ~ "hotel_campestre",
+                           "CerroNegro" ~ "cerro_negro",
+                           "Rabbit" ~ "rabbit_stream",
+                           "RioBlanco" ~ "rio_blanco",
+                           "Tigrero" ~ "rio_tigrero",
+                           "SouthForkEastRockCk" ~ "east_rock_creek_s",
+                           "WestForkEastRockCk" ~ "east_rock_creek_w",
+                           c("50183",
+                             "50837",
+                             "52127",
+                             "54188",
+                             "70449",
+                             "70470",
+                             "70481",
+                             "70550",
+                             "70571",
+                             "72808",
+                             "72996",
+                             "10055",
+                             "10109") ~ site_hobo),
+         site = ifelse(is.na(site), site_hobo, site),
+         height_cm = as.numeric(str_remove(height_cm, "cm"))) %>%
+  select(-time_zone,
+         -date_time) %>%
+  pivot_longer(cols = c("temperature_c",
+                        "intensity_lux",
+                        "relative_humidity_percent",
+                        "dew_point_c"),
+               names_to = "sensor_type",
+               values_to = "value") %>%
+  filter(!is.na(value),
+         !is.na(timestamptz))
+
+colnames(clean_obs)
+(bound_obs %>%
+  select(site,
+         study_area) %>%
+  distinct())
+
+unique(bound_obs$location)
+
+```
+
+## split into tables
+```{r}
+# logger table
+gelled_obs = clean_obs %>%
+  group_by(site,
+           microhabitat) %>%
+  mutate(logger_id = UUIDgenerate()) %>%
+  ungroup() %>%
+  group_by(logger_id,
+           height_cm,
+           sensor_type) %>%
+  mutate(sensor_id = UUIDgenerate()) %>%
+  ungroup() %>%
+  distinct()
+
+subset_site = gelled_obs %>%
+  select(site_hobo, site) %>%
+  distinct()
+
+subset_logger = gelled_obs %>%
+  select(logger_id, microhabitat, site) %>%
+  left_join(db_site, by = "site") %>%
+  distinct()
+
+subset_sensor = gelled_obs %>%
+  select(sensor_id, sensor_type, height_cm, logger_id) %>%
+  distinct()
+
+subset_obs = gelled_obs %>%
+  select(timestamptz, value, sensor_id)
+```
+
+## checks
+```{r}
+peace = get_dupes(gelled_obs, sensor_id, timestamptz)
+
+peace_agg = peace %>%
+  group_by(sensor_id, sensor_type, height_cm, microhabitat, site) %>%
+  summarise(ncount = n(),
+            dt_min = min(timestamptz),
+            dt_max = max(timestamptz)) %>%
+  ungroup() %>%
+  mutate(timespan = dt_max - dt_min,
+         sample_rate = (3600 * ncount) / as.numeric(timespan))
+
+peace_inv  = peace %>%
+  filter(microhabitat == "sun",
+         site == "rio_blanco",
+         height_cm == 5)
+
+```
+
+## plot?
+```{r}
+
+# Assuming gelled_obs is already defined and contains the necessary columns
+gelled_obs$date <- as.Date(gelled_obs$timestamptz)
+
+# Step 1: Sort data by sensor_id and date
+gelled_obs <- gelled_obs %>%
+  arrange(sensor_id, date)
+
+# Step 2: Identify consecutive stretches of data for each sensor_id
+consecutive_data <- gelled_obs %>%
+  group_by(sensor_id) %>%
+  mutate(
+    # Create a grouping variable that increments when the date is not consecutive
+    group = cumsum(c(1, diff(date) != 1))
+  ) %>%
+  filter(!is.na(date)) %>% # Remove NA dates if any
+  group_by(sensor_id, group) %>%
+  summarise(
+    start_date = min(date),
+    end_date = max(date),
+    n_days = n(), # Count the number of days in the stretch
+    .groups = "drop"
+  )
+
+# Step 3: View the results
+print(consecutive_data)
+
+```
+
+## plot
+```{r}
+# Convert to date
+gelled_obs$date <- as.Date(gelled_obs$timestamptz)
+
+all_dates <- expand.grid(date = seq(min(gelled_obs$date), max(gelled_obs$date), by="day"),
+                         sensor_id = unique(gelled_obs$sensor_id))
+
+sample_counts <- gelled_obs %>%
+  group_by(date, sensor_id) %>%
+  summarise(samples_count = n(), .groups = "drop")
+
+# Join with all_dates to check for availability
+summary_data <- all_dates %>%
+  left_join(sample_counts, by = c("date", "sensor_id")) %>%
+  mutate(value_found = ifelse(is.na(samples_count), 0, 1)) %>%
+  left_join(subset_sensor, by = "sensor_id") %>%
+  left_join(subset_logger, by = "logger_id") %>%
+  left_join(db_site, by = "site") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(country == "panama")
+
+# Create the tile plot with conditional coloring
+ggplot(summary_data, aes(x = date, y = sensor_id)) +
+  geom_tile(aes(fill = ifelse(value_found == 1, sensor_type, NA)), color = "white") + # Fill based on sensor_type if data exists
+  scale_fill_brewer(palette = "Set3", name = "Sensor Type") + # Color palette for sensor types
+  labs(x = "Date", y = "Sensor ID") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  # Set tiles without data to white
+  geom_tile(data = summary_data %>% filter(value_found == 0), aes(fill = factor(0)), color = "white") +
+  scale_fill_manual(values = c("0" = "white"), 
+                    labels = c("No Data"), 
+                    name = "Data Availability", 
+                    guide = "none") # Hide legend for no data fill
+```
+
+## write tables
+```{r}
+
+dbBegin(dbcon)
+
+tryCatch(
+  {
+    dbWriteTable(dbcon, Id("sensore_data", "logger"), subset_logger, overwrite = TRUE)
+    dbWriteTable(dbcon, Id("sensor_data", "sensor"), subset_sensor, overwrite = TRUE)
+    dbWriteTable(dbcon, Id("sensor_data", "time_series"), subset_obs, overwrite = TRUE)
+    
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful!")
+    
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
+
+```
+
+
+# import and bind all data into one big dataframe
+```{r}
+# List all CSV files in the directory
+csv_files <- list.files(path = wddir, pattern = "*.csv", full.names = TRUE)
+
+# Function to convert GMT offset to Etc/GMT format
+convert_gmt_to_etc <- function(gmt_string) {
+  # Extract the sign and the hours and minutes
+  pattern <- "GMT([+-])(\\d{2}):(\\d{2})"
+  matches <- regmatches(gmt_string, regexec(pattern, gmt_string))
+  
+  if (length(matches) == 0) {
+    stop("Invalid GMT format")
+  }
+  
+  sign <- matches[[1]][2]     # "+" or "-"
+  hours <- as.integer(matches[[1]][3]) # Extract hours
+  # minutes <- as.integer(matches[[1]][4]) # Extract minutes (not used)
+
+  # Create the new Etc/GMT format
+  etc_timezone <- paste0("Etc/GMT", sign, hours)
+  
+  return(etc_timezone)
+}
+
+# Initialize an empty list to store data frames
+data_list <- list()
+
+# Read each CSV file into a separate data frame and manipulate as needed
+data_list <- lapply(csv_files, function(file) {
+  # Read the CSV file
+  data <- read_csv(file) %>%
+    clean_names()
+
+  return(data) # Return the manipulated data frame
+})
+
+data_list[[1]] = data_list[[1]] %>%
+  mutate(time_zone = "GMT-02:00")
+
+data_list[[7]] = data_list[[7]] %>%
+  mutate(time_zone = "GMT-05:00")
+
+data_list[[9]] = data_list[[9]] %>%
+  mutate(time_zone = "GMT-07:00")
+
+data_list[[10]] = data_list[[10]] %>%
+  mutate(time_zone = "GMT-08:00")
+
+# Read each CSV file into a separate data frame and manipulate as needed
+data_list <- lapply(data_list, function(df) {
+
+  # data = df %>%
+  #   mutate(time_zone = map_chr(time_zone, ~ convert_gmt_to_etc(.x)))
+  
+  data = df %>%
+    mutate(time_zone = convert_gmt_to_etc(time_zone),
+           date_time = mdy_hm(date_time),
+           timestamptz = with_tz(date_time, tz = time_zone))
+    
+
+  return(data) # Return the manipulated data frame
+})
+
+
+
+
+
+```
+
+## convert timezones
+
+```{r}
+
+
+# Example usage
+gmt_string <- "GMT-04:00"
+gmt_string <- "GMT+02:00"
+etc_timezone <- convert_gmt_to_etc(gmt_string)
+print(etc_timezone)  # Output: "Etc/GMT-4"
+```

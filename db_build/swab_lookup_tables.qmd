@@ -1,5 +1,5 @@
 ---
-title: "penn_append"
+title: "swab_lookup_restructure"
 format: html
 editor: source
 ---
@@ -11,33 +11,128 @@ librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr
 # librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 
 ## Connect to DB
-dbcon <- hopToDB("ribbitr")
+dbcon <- hopToDB()
 
-## Pull metadata from database
-mdc = tbl(dbcon, Id("public", "all_tables")) %>%
-  collect()
 ```
 
-## Pull bd_swab_ids
+## load table pointers
 
 ```{r}
-swab_id_capture = tbl(dbcon, Id("survey_data", "capture")) %>%
+mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
+  collect()
+
+# pull relevant chain tables from DB
+db_aural = tbl(dbcon, Id("survey_data", "aural"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_ves = tbl(dbcon, Id("survey_data", "ves"))
+db_env = tbl(dbcon, Id("survey_data", "environmental"))
+
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
+db_cmr = tbl(dbcon, Id("survey_data", "cmr"))
+db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+
+```
+
+## Pull all bd_swab_ids
+
+```{r}
+bd_swab_id_capture = db_capture %>%
   select(bd_swab_id) %>%
   filter(!is.na(bd_swab_id)) %>%
   collect()
 
-swab_id_results = tbl(dbcon, Id("survey_data", "bd_qpcr_results")) %>%
+bd_swab_id_results = db_bd %>%
   select(bd_swab_id) %>%
   filter(!is.na(bd_swab_id)) %>%
   collect()
 
-unique_swab_id = distinct(bind_rows(swab_id_capture, swab_id_results))
+unique_swab_id = distinct(bind_rows(bd_swab_id_capture, bd_swab_id_results))
+
+bd_captures = db_capture %>%
+  select(capture_id,
+         bd_swab_id) %>%
+  filter(!is.na(bd_swab_id)) %>%
+  collect()
+
+nrow(bd_swab_id_capture %>% distinct)
+capture_chain = tbl_chain("capture", mdc)
+capture_joined = tbl_left_join(dbcon, capture_chain) %>%
+  select(capture_id,
+         bd_swab_id,
+         species_capture,
+         time_of_capture,
+         sex,
+         comments_capture,
+         survey_id,
+         visit_id,
+         site,
+         date,
+         time_of_day,
+         region,
+         country_name) %>%
+  filter(!is.na(bd_swab_id)) %>%
+  collect()
+
+peace = get_dupes(capture_joined, bd_swab_id)
+
+renames = db_capture %>%
+  mutate(bd_swab_id = ifelse(bd_swab_id == "Pe_Bd00000", NA, bd_swab_id),
+         genetic_id = ifelse(genetic_id == "Pe_Toe00000", NA, genetic_id),
+         microbiome_swab_id = ifelse(microbiome_swab_id == "Pe_16S00000", NA, microbiome_swab_id),
+         amp_id = ifelse(genetic_id == "Pe_Toe00000", NA, genetic_id),
+         amp_id_2 = ifelse(genetic_id == "Pe_Toe00000", NA, genetic_id),
+         amp_id_2 = ifelse(genetic_id == "Pe_Toe00000", NA, genetic_id),
+         amp_id_2 = ifelse(genetic_id == "Pe_Toe00000", NA, genetic_id),
+         genetic_id = ifelse(genetic_id == "Pe_Toe00000", NA, genetic_id),
+         genetic_id = ifelse(genetic_id == "Pe_Toe00000", NA, genetic_id),
+         genetic_id = ifelse(genetic_id == "Pe_Toe00000", NA, genetic_id),
+         genetic_id = ifelse(genetic_id == "Pe_Toe00000", NA, genetic_id),
+         genetic_id = ifelse(genetic_id == "Pe_Toe00000", NA, genetic_id))
+  collect()
+
+
 ```
 
 ## Write to new table
 
 ```{r}
 # dbWriteTable(dbcon, Id("survey_data", "bd_swab_lookup"), unique_swab_id, overwrite = TRUE)
+```
+
+## pull capture_id and associated sample ids, write to new table, drop columns
+```{r}
+
+sample_lookup_gen <- function(table, id_col, sample_cols, sample_col_new, table_new) {
+  # unique sample ids
+  sample_lookup = table %>%
+    select(all_of(c(sample_cols,
+                  id_col))) %>%
+    pivot_longer(!all_of(id_col), names_to = "name", values_to = "value") %>%
+    filter(!is.na(value)) %>%
+    select(-name) %>%
+    rename(!!sample_col_new := "value") %>%
+    collect() %>%
+    select(all_of(c(sample_col_new,
+                    id_col)))
+  
+  # write lookup tabel
+  dbWriteTable(dbcon, Id("survey_data", table_new), sample_lookup, overwrite = TRUE)
+}
+
+sample_lookup_gen(db_capture, "capture_id", c("bd_swab_id"), "bd_swab_id", "sample_lookup_bd")
+sample_lookup_gen(db_capture, "capture_id", c("genetic_id"), "genetic_id", "sample_lookup_genetic")
+sample_lookup_gen(db_capture, "capture_id", c("microbiome_swab_id"), "microbiome_swab_id", "sample_lookup_microbiome")
+sample_lookup_gen(db_capture, "capture_id", c("amp_id", "amp_id_2", "amp_id_3", "amp_id_4"), "amp_id", "sample_lookup_amp")
+sample_lookup_gen(db_capture, "capture_id", c("mucosome_id"), "mucosome_id", "sample_lookup_mucosome")
+sample_lookup_gen(db_capture, "capture_id", c("bacterial_swab_id"), "bacterial_swab_id", "sample_lookup_bacterial")
+sample_lookup_gen(db_capture, "capture_id", c("antibody_id", "antibody_id_2", "antibody_id_3", "antibody_id_4"), "antibody_id", "sample_lookup_antibody")
+sample_lookup_gen(db_capture, "capture_id", c("crispr_id"), "crispr_id", "sample_lookup_crispr")
+
 ```
 
 ## Pull amp_swab_ids

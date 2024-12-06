@@ -1,0 +1,32 @@
+---
+title: "hobo inventory"
+format: html
+editor: source
+---
+
+## Setup
+
+```{r}
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+## Connect to DB
+dbcon <- hopToDB("ribbitr")
+
+```
+
+# load table objects
+
+```{r}
+
+db_hobo = tbl(dbcon, Id("hobo", "hobo"))
+db_site = tbl(dbcon, Id("hobo", "hobo_site"))
+db_region = tbl(dbcon, Id("hobo", "hobo_region"))
+db_location = tbl(dbcon, Id("hobo", "hobo_location"))
+
+
+```
+
+```{r}
+
+```

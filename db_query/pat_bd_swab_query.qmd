@@ -48,7 +48,7 @@ db_capture_chain = tbl_join(dbcon, capture_chain, tbl=db_capture) %>%
          !is.na(site)) # drop orphan swab data currently missing site
 
 # inner join capture and
-db_bd_capture = tbl(dbcon, Id("survey_data", "qpcr_bd_results")) %>%
+db_bd_capture = tbl(dbcon, Id("survey_data", "bd_qpcr_results")) %>%
   inner_join(db_capture_chain, by="bd_swab_id")
 
 # inspect query (informational only)
