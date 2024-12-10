@@ -38,66 +38,6 @@ db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
 
 ```
 
-## Pull all bd_swab_ids
-
-```{r}
-bd_swab_id_capture = db_capture %>%
-  select(bd_swab_id) %>%
-  filter(!is.na(bd_swab_id)) %>%
-  collect()
-
-bd_swab_id_results = db_bd %>%
-  select(bd_swab_id) %>%
-  filter(!is.na(bd_swab_id)) %>%
-  collect()
-
-unique_swab_id = distinct(bind_rows(bd_swab_id_capture, bd_swab_id_results))
-
-bd_captures = db_capture %>%
-  select(capture_id,
-         bd_swab_id) %>%
-  filter(!is.na(bd_swab_id)) %>%
-  collect()
-
-nrow(bd_swab_id_capture %>% distinct)
-capture_chain = tbl_chain("capture", mdc)
-capture_joined = tbl_left_join(dbcon, capture_chain) %>%
-  select(capture_id,
-         bd_swab_id,
-         species_capture,
-         time_of_capture,
-         sex,
-         comments_capture,
-         survey_id,
-         visit_id,
-         site,
-         date,
-         time_of_day,
-         region,
-         country_name) %>%
-  filter(!is.na(bd_swab_id)) %>%
-  collect()
-
-peace = get_dupes(capture_joined, bd_swab_id)
-
-renames = db_capture %>%
-  mutate(bd_swab_id = ifelse(bd_swab_id == "Pe_Bd00000", NA, bd_swab_id),
-         genetic_id = ifelse(genetic_id == "Pe_Toe00000", NA, genetic_id),
-         microbiome_swab_id = ifelse(microbiome_swab_id == "Pe_16S00000", NA, microbiome_swab_id),
-         amp_id = ifelse(genetic_id == "Pe_Toe00000", NA, genetic_id),
-         amp_id_2 = ifelse(genetic_id == "Pe_Toe00000", NA, genetic_id),
-         amp_id_2 = ifelse(genetic_id == "Pe_Toe00000", NA, genetic_id),
-         amp_id_2 = ifelse(genetic_id == "Pe_Toe00000", NA, genetic_id),
-         genetic_id = ifelse(genetic_id == "Pe_Toe00000", NA, genetic_id),
-         genetic_id = ifelse(genetic_id == "Pe_Toe00000", NA, genetic_id),
-         genetic_id = ifelse(genetic_id == "Pe_Toe00000", NA, genetic_id),
-         genetic_id = ifelse(genetic_id == "Pe_Toe00000", NA, genetic_id),
-         genetic_id = ifelse(genetic_id == "Pe_Toe00000", NA, genetic_id))
-  collect()
-
-
-```
-
 ## Write to new table
 
 ```{r}
@@ -107,33 +47,157 @@ renames = db_capture %>%
 ## pull capture_id and associated sample ids, write to new table, drop columns
 ```{r}
 
-sample_lookup_gen <- function(table, id_col, sample_cols, sample_col_new, table_new) {
+sample_lookup_gen <- function(table, id_col, sample_cols, sample_col_new, table_new, sample_type) {
   # unique sample ids
   sample_lookup = table %>%
     select(all_of(c(sample_cols,
                   id_col))) %>%
     pivot_longer(!all_of(id_col), names_to = "name", values_to = "value") %>%
-    filter(!is.na(value)) %>%
+    filter(!is.na(value),
+           value != "Pe_Bd00000",
+           value != "Pe_Toe00000",
+           value != "Pe_16S00000",
+           value != "Pe_AMP00000",
+           value != "Pe_Muc00000",
+           value != "Pe_Bac00000",
+           value != "Pe_IG00000") %>%
     select(-name) %>%
-    rename(!!sample_col_new := "value") %>%
+    mutate(!!sample_col_new := value) %>%
+    rename(sample_id = value) %>%
     collect() %>%
     select(all_of(c(sample_col_new,
-                    id_col)))
+                    id_col)),
+           sample_id) %>%
+    mutate(sample_type = "bd")
   
   # write lookup tabel
-  dbWriteTable(dbcon, Id("survey_data", table_new), sample_lookup, overwrite = TRUE)
+  # dbWriteTable(dbcon, Id("survey_data", table_new), sample_lookup, overwrite = TRUE)
+  
+  return(sample_lookup)
 }
 
-sample_lookup_gen(db_capture, "capture_id", c("bd_swab_id"), "bd_swab_id", "sample_lookup_bd")
-sample_lookup_gen(db_capture, "capture_id", c("genetic_id"), "genetic_id", "sample_lookup_genetic")
-sample_lookup_gen(db_capture, "capture_id", c("microbiome_swab_id"), "microbiome_swab_id", "sample_lookup_microbiome")
-sample_lookup_gen(db_capture, "capture_id", c("amp_id", "amp_id_2", "amp_id_3", "amp_id_4"), "amp_id", "sample_lookup_amp")
-sample_lookup_gen(db_capture, "capture_id", c("mucosome_id"), "mucosome_id", "sample_lookup_mucosome")
-sample_lookup_gen(db_capture, "capture_id", c("bacterial_swab_id"), "bacterial_swab_id", "sample_lookup_bacterial")
-sample_lookup_gen(db_capture, "capture_id", c("antibody_id", "antibody_id_2", "antibody_id_3", "antibody_id_4"), "antibody_id", "sample_lookup_antibody")
-sample_lookup_gen(db_capture, "capture_id", c("crispr_id"), "crispr_id", "sample_lookup_crispr")
+s1 = sample_lookup_gen(db_capture, "capture_id", c("bd_swab_id"), "bd_swab_id", "sample_lookup_bd", "bd")
+s2 = sample_lookup_gen(db_capture, "capture_id", c("genetic_id"), "genetic_id", "sample_lookup_genetic", "genetic")
+s3 = sample_lookup_gen(db_capture, "capture_id", c("microbiome_swab_id"), "microbiome_swab_id", "sample_lookup_microbiome", "microbiome")
+s4 = sample_lookup_gen(db_capture, "capture_id", c("amp_id", "amp_id_2", "amp_id_3", "amp_id_4"), "amp_id", "sample_lookup_amp", "amp")
+s5 = sample_lookup_gen(db_capture, "capture_id", c("mucosome_id"), "mucosome_id", "sample_lookup_mucosome", "mucosome")
+s6 = sample_lookup_gen(db_capture, "capture_id", c("bacterial_swab_id"), "bacterial_swab_id", "sample_lookup_bacterial", "bacterial")
+s7 = sample_lookup_gen(db_capture, "capture_id", c("antibody_id", "antibody_id_2", "antibody_id_3", "antibody_id_4"), "antibody_id", "sample_lookup_antibody", "antibody")
+s8 = sample_lookup_gen(db_capture, "capture_id", c("crispr_id"), "crispr_id", "sample_lookup_crispr", "crispr")
+
+data_samps = rbind(s1 %>%
+                     select(capture_id,
+                            sample_id,
+                            sample_type),
+                   s2 %>%
+                     select(capture_id,
+                            sample_id,
+                            sample_type),
+                   s3 %>%
+                     select(capture_id,
+                            sample_id,
+                            sample_type),
+                   s4 %>%
+                     select(capture_id,
+                            sample_id,
+                            sample_type),
+                   s5 %>%
+                     select(capture_id,
+                            sample_id,
+                            sample_type),
+                   s6 %>%
+                     select(capture_id,
+                            sample_id,
+                            sample_type),
+                   s7 %>%
+                     select(capture_id,
+                            sample_id,
+                            sample_type),
+                   s8 %>%
+                     select(capture_id,
+                            sample_id,
+                            sample_type))
 
 ```
+## load new table pointers
+
+```{r}
+db_bd = tbl(dbcon, Id("survey_data", "sample_lookup_bd")) %>% collect()
+db_genetic = tbl(dbcon, Id("survey_data", "sample_lookup_genetic")) %>% collect()
+db_microbiome = tbl(dbcon, Id("survey_data", "sample_lookup_microbiome")) %>% collect()
+db_amp = tbl(dbcon, Id("survey_data", "sample_lookup_amp")) %>% collect()
+db_mucosome = tbl(dbcon, Id("survey_data", "sample_lookup_mucosome")) %>% collect()
+db_bacterial = tbl(dbcon, Id("survey_data", "sample_lookup_bacterial")) %>% collect()
+db_antibody = tbl(dbcon, Id("survey_data", "sample_lookup_antibody")) %>% collect()
+db_crispr = tbl(dbcon, Id("survey_data", "sample_lookup_crispr")) %>% collect()
+
+```
+
+## parse for duplicates (same sample id, multiple capture ids)
+```{r}
+s1_dupes = get_dupes(s1, bd_swab_id)
+s2_dupes = get_dupes(s2, genetic_id)
+s3_dupes = get_dupes(s3, microbiome_swab_id)
+s4_dupes = get_dupes(s4, amp_id)
+s5_dupes = get_dupes(s5, mucosome_id)
+s6_dupes = get_dupes(s6, bacterial_swab_id)
+s7_dupes = get_dupes(s7, antibody_id)
+s8_dupes = get_dupes(s8, crispr_id)
+
+all_capture = db_capture %>% 
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  collect()
+
+true_dupes <- function(dupes, sample_id_col) {
+  true_dupes = dupes %>%
+    select(capture_id) %>%
+    left_join(all_capture, by = "capture_id") %>%
+    get_dupes(!!sym(sample_id_col), survey_id)
+}
+
+s1_true_dupes = true_dupes(s1_dupes, "bd_swab_id")
+s1_dirty_dupes = anti_join(s1_dupes, s1_true_dupes, by = "capture_id") %>%
+  left_join(all_capture, by = "capture_id")
+
+s2_true_dupes = true_dupes(s2_dupes, "genetic_id")
+s2_dirty_dupes = anti_join(s2_dupes, s2_true_dupes, by = "capture_id") %>%
+  left_join(all_capture, by = "capture_id")
+
+s3_true_dupes = true_dupes(s3_dupes, "microbiome_swab_id")
+s3_dirty_dupes = anti_join(s3_dupes, s3_true_dupes, by = "capture_id") %>%
+  left_join(all_capture, by = "capture_id")
+
+s4_true_dupes = true_dupes(s4_dupes, "amp_id")
+s4_dirty_dupes = anti_join(s4_dupes, s4_true_dupes, by = "capture_id") %>%
+  left_join(all_capture, by = "capture_id")
+
+s5_true_dupes = true_dupes(s5_dupes, "mucosome_id")
+s5_dirty_dupes = anti_join(s5_dupes, s5_true_dupes, by = "capture_id") %>%
+  left_join(all_capture, by = "capture_id")
+
+s6_true_dupes = true_dupes(s6_dupes, "bacterial_swab_id")
+s6_dirty_dupes = anti_join(s6_dupes, s6_true_dupes, by = "capture_id") %>%
+  left_join(all_capture, by = "capture_id")
+
+s7_true_dupes = true_dupes(s7_dupes, "antibody_id")
+s7_dirty_dupes = anti_join(s7_dupes, s7_true_dupes, by = "capture_id") %>%
+  left_join(all_capture, by = "capture_id")
+
+s8_true_dupes = true_dupes(s8_dupes, "crispr_id")
+s8_dirty_dupes = anti_join(s8_dupes, s8_true_dupes, by = "capture_id") %>%
+  left_join(all_capture, by = "capture_id")
+
+```
+
+```{r}
+
+
+```
+
 
 ## Pull amp_swab_ids
 

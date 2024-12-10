@@ -1,0 +1,258 @@
+---
+title: "bd qPCR push"
+format: html
+editor: source
+---
+
+## Setup
+
+```{r}
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, rio, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+## Connect to DB
+dbcon <- hopToDB()
+
+## Point to local data directory
+ddir = Sys.getenv("data_dir")  # data directory
+# Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
+wddir = here(ddir, "bd_swab_results") # working data directory
+
+```
+
+## load table pointers
+
+```{r}
+mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
+  collect()
+
+db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+
+```
+
+## load results from file
+
+```{r}
+# list.files(here(wddir, "penn", "2023", ""))
+
+# brasil
+## 2022
+raw_br_2022_01 = import_list(here(wddir, "brazil", "2022", "RIBBiTR_BrazilSwabs2022_10132023_Plate1_RERUN2_RESULTS.xlsx"))
+raw_br_2022_03 = import_list(here(wddir, "brazil", "2022", "RIBBiTR_BrazilSwabs2022_08172023_Plate3_RERUN_Results.xlsx"))
+raw_br_2022_04 = import_list(here(wddir, "brazil", "2022", "RIBBiTR_BrazilSwabs2022_10132023_Plate4_RESULTS.xlsx"))
+## 2023
+raw_br_2023_01 = import_list(here(wddir, "brazil", "2023", "RIBBiTR_BrazilSwabs2023_03252024_plate1_RERUN_results.xlsx"))
+raw_br_2023_02 = import_list(here(wddir, "brazil", "2023", "RIBBiTR_BrazilSwabs2023_03082024_plate2_Results.xlsx"))
+raw_br_2023_03 = import_list(here(wddir, "brazil", "2023", "RIBBiTR_BrazilSwabs2023_03112024_plate3_Results.xlsx"))
+raw_br_2023_04 = import_list(here(wddir, "brazil", "2023", "RIBBiTR_BrazilSwabs2023_03142024_plate4_Results.xlsx"))
+raw_br_2023_05 = import_list(here(wddir, "brazil", "2023", "RIBBiTR_BrazilSwabs2023_03142024_plate5_Results.xlsx"))
+raw_br_2023_06 = import_list(here(wddir, "brazil", "2023", "RIBBiTR_BrazilSwabs2023_03262024_plate6_Results.xlsx"))
+raw_br_2023_07 = import_list(here(wddir, "brazil", "2023", "RIBBiTR_BrazilSwabs2023_04122024_plate7_results.xlsx"))
+
+# panama
+## 2022
+raw_pa_2022_01 = import_list(here(wddir, "panama", "2022", "RIBBiTR_PanamaSwabs2022_10022023_Plate1_Results.xlsx"))
+raw_pa_2022_02 = import_list(here(wddir, "panama", "2022", "RIBBiTR_PanamaSwabs2022_10232023_Plate2_Results.xlsx"))
+raw_pa_2022_03 = import_list(here(wddir, "panama", "2022", "RIBBiTR_PanamaSwabs2022_11062023_Plate3_Results.xlsx"))
+raw_pa_2022_04 = import_list(here(wddir, "panama", "2022", "RIBBiTR_PanamaSwabs2022_01082024_Plate4_RERUN2_Results.xlsx"))
+raw_pa_2022_05 = import_list(here(wddir, "panama", "2022", "RIBBiTR_PanamaSwabs2022_01112024_Plate5_Results.xlsx"))
+## 2023
+raw_pa_2023_01 = import_list(here(wddir, "panama", "2023", "RIBBiTR_PanamaSwabs2023_05022024_plate1_results.xlsx"))
+raw_pa_2023_02 = import_list(here(wddir, "panama", "2023", "RIBBiTR_PanamaSwabs2023_05022024_plate2_results.xlsx"))
+raw_pa_2023_03 = import_list(here(wddir, "panama", "2023", "RIBBiTR_PanamaSwabs2023_05062024_plate3_results.xlsx"))
+raw_pa_2023_04 = import_list(here(wddir, "panama", "2023", "RIBBiTR_PanamaSwabs2023_05092024_plate4_results.xlsx"))
+raw_pa_2023_05 = import_list(here(wddir, "panama", "2023", "RIBBiTR_PanamaSwabs2023_05312024_plate5_results.xlsx"))
+raw_pa_2023_06 = import_list(here(wddir, "panama", "2023", "RIBBiTR_PanamaSwabs2023_07032024_plate6_results.xlsx"))
+raw_pa_2023_07 = import_list(here(wddir, "panama", "2023", "RIBBiTR_PanamaSwabs2023_06112024_plate7_results.xlsx"))
+raw_pa_2023_08 = import_list(here(wddir, "panama", "2023", "RIBBiTR_PanamaSwabs2023_07032024_plate8_results.xlsx"))
+raw_pa_2023_09 = import_list(here(wddir, "panama", "2023", "RIBBiTR_PanamaSwabs2023_07082024_plate9_results.xlsx"))
+raw_pa_2023_10 = import_list(here(wddir, "panama", "2023", "RIBBiTR_PanamaSwabs2023_07092024_plate10_results.xlsx"))
+raw_pa_2023_11 = import_list(here(wddir, "panama", "2023", "RIBBiTR_PanamaSwabs2023_07122024_plate11_results.xlsx"))
+raw_pa_2023_12 = import_list(here(wddir, "panama", "2023", "RIBBiTR_PanamaSwabs2023_07122024_plate12_results.xlsx"))
+raw_pa_2023_13 = import_list(here(wddir, "panama", "2023", "RIBBiTR_PanamaSwabs2023_07252024_plate13_results.xlsx"))
+raw_pa_2023_14 = import_list(here(wddir, "panama", "2023", "RIBBiTR_PanamaSwabs2023_07262024_plate14_results.xlsx"))
+raw_pa_2023_15 = import_list(here(wddir, "panama", "2023", "RIBBiTR_PanamaSwabs2023_08062024_plate15_results.xlsx"))
+
+# penn
+## 2022
+raw_pe_2022_01 = import_list(here(wddir, "penn", "2022", "PaBdSwabs2022_plate1RERUN_03212023_results!.xlsx"))
+raw_pe_2022_02 = import_list(here(wddir, "penn", "2022", "PaBdSwabs2022_04062023_Plate2_Results!.xlsx"))
+
+
+raw_pe_hmm = import_list(here(wddir, "penn", "2022", "PaBdSwabs2022_qPCR_03022023_Plate 1_RBV_RESULTS.xls"))
+## 2023
+raw_pe_2023_01 = import_list(here(wddir, "penn", "2023", "RIBBiTR_qPCR_Penn2023_17August2023_Plate1_RESULTS.xls"))
+raw_pe_2023_02 = import_list(here(wddir, "penn", "2023", "RIBBiTR_qPCR_Penn2023_17August2023_Plate2_RESULTS.xls"))
+raw_pe_2023_03 = import_list(here(wddir, "penn", "2023", "RIBBiTR_qPCR_Penn2023_18August2023_Plate3_Results.xlsx"))
+
+```
+## infer
+```{r}
+peace = data_bd %>%
+  filter(qpcr_lab == "rz_lab",
+         replicate == "singley",
+         qpcr_date > as.Date("2022-01-01"))
+```
+
+## scrape xls files
+```{r}
+
+scrape_qpcr_xls <- function(raw_xls) {
+  xls = clean_names(raw_xls)
+  
+  clean_xls = xls$working_results %>%
+    clean_names() %>%
+    mutate(q_pcr_plate = if_else("q_pcr_plate" %in% names(.), 
+                                 .data[["q_pcr_plate"]], 
+                                 rep(str_replace(xls$sample_setup[which(xls$sample_setup[,1] == "Experiment Name"),2], ".edt", ""), n())),
+           extraction_plate = if_else("extraction_plate" %in% names(.), 
+                                 extraction_plate,
+                                 NA),
+           plate_run = case_when(!str_detect(q_pcr_plate, "RERUN") ~ 1,
+                                  str_detect(q_pcr_plate, "RERUN$") ~ 2,
+                                  TRUE ~ as.numeric(str_extract(q_pcr_plate, "(?<=RERUN)\\d+")) + 1),
+           qpcr_date = parse_date_time(str_extract(q_pcr_plate, "\\d{8}"), orders = "mdY"),
+           extraction_date = parse_date_time(str_extract(extraction_plate, "\\d{8}"), orders = "mdY"),
+           master_mix = tolower(xls$sample_setup[which(xls$sample_setup[,1] == "Chemistry"),2]))
+}
+
+scrape_qpcr_xls <- function(raw_xls) {
+  xls <- clean_names(raw_xls)
+  
+  experiment_name <- str_replace(first(xls$sample_setup[which(xls$sample_setup[,1] == "Experiment Name"),2]), ".edt", "")
+  chemistry <- tolower(first(xls$sample_setup[which(xls$sample_setup[,1] == "Chemistry"),2]))
+  
+  clean_xls <- xls$working_results %>%
+    clean_names() %>%
+    mutate(
+      q_pcr_plate = ifelse("q_pcr_plate" %in% names(.), q_pcr_plate, experiment_name),
+      extraction_plate = ifelse("extraction_plate" %in% names(.), extraction_plate, NA_character_),
+      plate_run = case_when(
+        !str_detect(q_pcr_plate, "RERUN") ~ 1L,
+        str_detect(q_pcr_plate, "RERUN(?!\\d)") ~ 2L,
+        TRUE ~ as.integer(str_extract(q_pcr_plate, "RERUN(\\d+)") %>% str_replace("RERUN", "")) + 1L),
+      qpcr_date = parse_date_time(str_extract(q_pcr_plate, "\\d{8}"), orders = "mdY"),
+      extraction_date = parse_date_time(str_extract(extraction_plate, "\\d{8}"), orders = "mdY"),
+      master_mix = chemistry
+    )
+  
+  return(clean_xls)
+}
+
+clean_br_2022_01 = scrape_qpcr_xls(raw_br_2022_01)
+clean_br_2022_03 = scrape_qpcr_xls(raw_br_2022_03)
+clean_br_2022_04 = scrape_qpcr_xls(raw_br_2022_04)
+
+clean_br_2023_01 = scrape_qpcr_xls(raw_br_2023_01)
+clean_br_2023_02 = scrape_qpcr_xls(raw_br_2023_02)
+clean_br_2023_03 = scrape_qpcr_xls(raw_br_2023_03)
+clean_br_2023_04 = scrape_qpcr_xls(raw_br_2023_04)
+clean_br_2023_05 = scrape_qpcr_xls(raw_br_2023_05)
+clean_br_2023_06 = scrape_qpcr_xls(raw_br_2023_06)
+clean_br_2023_07 = scrape_qpcr_xls(raw_br_2023_07)
+
+clean_pa_2022_01 = scrape_qpcr_xls(raw_pa_2022_01)
+clean_pa_2022_02 = scrape_qpcr_xls(raw_pa_2022_02)
+clean_pa_2022_03 = scrape_qpcr_xls(raw_pa_2022_03)
+clean_pa_2022_04 = scrape_qpcr_xls(raw_pa_2022_04)
+clean_pa_2022_05 = scrape_qpcr_xls(raw_pa_2022_05)
+
+clean_pa_2023_01 = scrape_qpcr_xls(raw_pa_2023_01)
+clean_pa_2023_02 = scrape_qpcr_xls(raw_pa_2023_02)
+clean_pa_2023_03 = scrape_qpcr_xls(raw_pa_2023_03)
+clean_pa_2023_04 = scrape_qpcr_xls(raw_pa_2023_04)
+clean_pa_2023_05 = scrape_qpcr_xls(raw_pa_2023_05)
+clean_pa_2023_06 = scrape_qpcr_xls(raw_pa_2023_06)
+clean_pa_2023_07 = scrape_qpcr_xls(raw_pa_2023_07)
+clean_pa_2023_08 = scrape_qpcr_xls(raw_pa_2023_08)
+clean_pa_2023_09 = scrape_qpcr_xls(raw_pa_2023_09)
+clean_pa_2023_10 = scrape_qpcr_xls(raw_pa_2023_10)
+clean_pa_2023_11 = scrape_qpcr_xls(raw_pa_2023_11)
+clean_pa_2023_12 = scrape_qpcr_xls(raw_pa_2023_12)
+clean_pa_2023_13 = scrape_qpcr_xls(raw_pa_2023_13)
+clean_pa_2023_14 = scrape_qpcr_xls(raw_pa_2023_14)
+clean_pa_2023_15 = scrape_qpcr_xls(raw_pa_2023_15)
+
+clean_pe_2022_01 = scrape_qpcr_xls(raw_pe_2022_01)
+clean_pe_2022_02 = scrape_qpcr_xls(raw_pe_2022_02)
+
+clean_pe_2023_01 = scrape_qpcr_xls(raw_pe_2023_01)
+clean_pe_2023_02 = scrape_qpcr_xls(raw_pe_2023_02)
+clean_pe_2023_03 = scrape_qpcr_xls(raw_pe_2023_03)
+
+clean_pe_2022_02$bd_quantity_mean[clean_pe_2022_02$sample_name == "2022-05-18-admin-rapi18"] = 11603.6640625
+clean_pe_2022_02$bd_quantity_mean[clean_pe_2022_02$sample_name == "2022-05-18‚Äêadmin-rapi16"] = 11241.6748046875
+clean_pe_2022_02$sample_name[clean_pe_2022_02$sample_name == "2022-05-18‚Äêadmin-rapi16"] = "2022-05-18-admin-rapi16"
+clean_pe_2022_02$bd_quantity_mean[clean_pe_2022_02$sample_name == "POS 3.27.23"] = 1101634
+clean_pe_2022_02 = clean_pe_2022_02 %>%
+  mutate(bd_quantity_mean = as.numeric(bd_quantity_mean))
+
+
+bind_results = bind_rows(clean_br_2022_01,
+                         clean_br_2022_03,
+                         clean_br_2022_04,
+                         clean_br_2023_01,
+                         clean_br_2023_02,
+                         clean_br_2023_03,
+                         clean_br_2023_04,
+                         clean_br_2023_05,
+                         clean_pa_2022_01,
+                         clean_pa_2022_02,
+                         clean_pa_2022_03,
+                         clean_pa_2022_04,
+                         clean_pa_2022_05,
+                         clean_pa_2023_01,
+                         clean_pa_2023_02,
+                         clean_pa_2023_03,
+                         clean_pa_2023_04,
+                         clean_pa_2023_05,
+                         clean_pa_2023_06,
+                         clean_pa_2023_07,
+                         clean_pa_2023_08,
+                         clean_pa_2023_09,
+                         clean_pa_2023_10,
+                         clean_pa_2023_11,
+                         clean_pa_2023_12,
+                         clean_pa_2023_13,
+                         clean_pa_2023_14,
+                         clean_pa_2023_15,
+                         clean_pe_2022_01,
+                         clean_pe_2022_02,
+                         clean_pe_2023_01,
+                         clean_pe_2023_02,
+                         clean_pe_2023_03)
+
+clean_br_2022_01 = raw_br_2022_01$working_results %>%
+  clean_names() %>%
+  rename(bd_swab_id = sample_name,
+         average_ct = bd_ct_mean,
+         average_target_quant = bd_quantity_mean,
+         run_name = extraction_plate) %>%
+  mutate(run_number = 3,
+         qpcr_date = parse_date_time(raw_br_2022_01[[1]][which(raw_br_2022_01[[1]][,1] == "Experiment Run End Time"),2], orders = "YmdHMS", tz = "America/New_York"),
+         detected = case_when(bd_pos_neg == "Positive" ~ 1,
+                              bd_pos_neg == "Negative" ~ 0,
+                              TRUE ~ NA_real_),
+         result = ifelse(detected, "p", "n"),
+         replicate = "singley",
+         qpcr_lab = "rz_lab",
+         extract_lab = "rz_lab",
+         extraction_kit = "qiagen_dneasy",
+         standard = "plasmid-pisces",
+         standard_target_type = "ITS1",
+         master_mix = "bioline",
+         qpcr_machine = "quantstudio_3",
+         swab_type = "mw113",
+         total_qpcr_volume_uL = 200,
+         qpcr_dilution_factor = 1,
+         volume_template_dna_uL = 5,
+         extract_volume_uL = 200,
+         target_quant_per_swab = average_target_quant * extract_volume_uL/(volume_template_dna_uL * qpcr_dilution_factor))
+	
+
+```
+
+```{r}
+data_bd = db_bd %>% collect()
+
+```
