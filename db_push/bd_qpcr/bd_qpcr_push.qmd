@@ -86,35 +86,9 @@ raw_pe_2023_02 = import_list(here(wddir, "penn", "2023", "RIBBiTR_qPCR_Penn2023_
 raw_pe_2023_03 = import_list(here(wddir, "penn", "2023", "RIBBiTR_qPCR_Penn2023_18August2023_Plate3_Results.xlsx"))
 
 ```
-## infer
-```{r}
-peace = data_bd %>%
-  filter(qpcr_lab == "rz_lab",
-         replicate == "singley",
-         qpcr_date > as.Date("2022-01-01"))
-```
 
 ## scrape xls files
 ```{r}
-
-scrape_qpcr_xls <- function(raw_xls) {
-  xls = clean_names(raw_xls)
-  
-  clean_xls = xls$working_results %>%
-    clean_names() %>%
-    mutate(q_pcr_plate = if_else("q_pcr_plate" %in% names(.), 
-                                 .data[["q_pcr_plate"]], 
-                                 rep(str_replace(xls$sample_setup[which(xls$sample_setup[,1] == "Experiment Name"),2], ".edt", ""), n())),
-           extraction_plate = if_else("extraction_plate" %in% names(.), 
-                                 extraction_plate,
-                                 NA),
-           plate_run = case_when(!str_detect(q_pcr_plate, "RERUN") ~ 1,
-                                  str_detect(q_pcr_plate, "RERUN$") ~ 2,
-                                  TRUE ~ as.numeric(str_extract(q_pcr_plate, "(?<=RERUN)\\d+")) + 1),
-           qpcr_date = parse_date_time(str_extract(q_pcr_plate, "\\d{8}"), orders = "mdY"),
-           extraction_date = parse_date_time(str_extract(extraction_plate, "\\d{8}"), orders = "mdY"),
-           master_mix = tolower(xls$sample_setup[which(xls$sample_setup[,1] == "Chemistry"),2]))
-}
 
 scrape_qpcr_xls <- function(raw_xls) {
   xls <- clean_names(raw_xls)
@@ -135,6 +109,22 @@ scrape_qpcr_xls <- function(raw_xls) {
       extraction_date = parse_date_time(str_extract(extraction_plate, "\\d{8}"), orders = "mdY"),
       master_mix = chemistry
     )
+  
+  namelist = c("sample_name",
+               "bd_ct_mean",
+               "bd_quantity_mean",
+               "extraction_plate",
+               "q_pcr_plate",
+               "qpcr_date",
+               "extraction_date",
+               "master_mix",
+               "plate_run")
+  
+  cols_not_found = setdiff(namelist, names(clean_xls))
+  
+  # if (length(cols_not_found) != 0) {
+  #   stop(paste0("Required columns not found:", str(cols_not_found)))
+  # }
   
   return(clean_xls)
 }
@@ -174,19 +164,22 @@ clean_pa_2023_14 = scrape_qpcr_xls(raw_pa_2023_14)
 clean_pa_2023_15 = scrape_qpcr_xls(raw_pa_2023_15)
 
 clean_pe_2022_01 = scrape_qpcr_xls(raw_pe_2022_01)
-clean_pe_2022_02 = scrape_qpcr_xls(raw_pe_2022_02)
+clean_pe_2022_02 = scrape_qpcr_xls(raw_pe_2022_02) %>%
+  mutate(bd_quantity_mean = as.numeric(bd_quantity_mean))
 
-clean_pe_2023_01 = scrape_qpcr_xls(raw_pe_2023_01)
-clean_pe_2023_02 = scrape_qpcr_xls(raw_pe_2023_02)
+clean_pe_2023_01 = scrape_qpcr_xls(raw_pe_2023_01) %>%
+  rename(bd_ct_mean = ct_mean,
+         bd_quantity_mean = quantity_mean) 
+clean_pe_2023_02 = scrape_qpcr_xls(raw_pe_2023_02) %>%
+  rename(bd_ct_mean = ct_mean,
+         bd_quantity_mean = quantity_mean) %>%
+  mutate(bd_quantity_mean = as.numeric(bd_quantity_mean))
 clean_pe_2023_03 = scrape_qpcr_xls(raw_pe_2023_03)
 
 clean_pe_2022_02$bd_quantity_mean[clean_pe_2022_02$sample_name == "2022-05-18-admin-rapi18"] = 11603.6640625
 clean_pe_2022_02$bd_quantity_mean[clean_pe_2022_02$sample_name == "2022-05-18‚Äêadmin-rapi16"] = 11241.6748046875
 clean_pe_2022_02$sample_name[clean_pe_2022_02$sample_name == "2022-05-18‚Äêadmin-rapi16"] = "2022-05-18-admin-rapi16"
 clean_pe_2022_02$bd_quantity_mean[clean_pe_2022_02$sample_name == "POS 3.27.23"] = 1101634
-clean_pe_2022_02 = clean_pe_2022_02 %>%
-  mutate(bd_quantity_mean = as.numeric(bd_quantity_mean))
-
 
 bind_results = bind_rows(clean_br_2022_01,
                          clean_br_2022_03,
@@ -222,8 +215,7 @@ bind_results = bind_rows(clean_br_2022_01,
                          clean_pe_2023_02,
                          clean_pe_2023_03)
 
-clean_br_2022_01 = raw_br_2022_01$working_results %>%
-  clean_names() %>%
+clean_results = bind_results %>%
   rename(bd_swab_id = sample_name,
          average_ct = bd_ct_mean,
          average_target_quant = bd_quantity_mean,

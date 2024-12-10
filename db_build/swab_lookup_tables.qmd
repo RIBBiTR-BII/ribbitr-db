@@ -38,16 +38,10 @@ db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
 
 ```
 
-## Write to new table
-
-```{r}
-# dbWriteTable(dbcon, Id("survey_data", "bd_swab_lookup"), unique_swab_id, overwrite = TRUE)
-```
-
 ## pull capture_id and associated sample ids, write to new table, drop columns
 ```{r}
 
-sample_lookup_gen <- function(table, id_col, sample_cols, sample_col_new, table_new, sample_type) {
+sample_lookup_gen <- function(table, id_col, sample_cols, sample_type) {
   # unique sample ids
   sample_lookup = table %>%
     select(all_of(c(sample_cols,
@@ -61,88 +55,59 @@ sample_lookup_gen <- function(table, id_col, sample_cols, sample_col_new, table_
            value != "Pe_Muc00000",
            value != "Pe_Bac00000",
            value != "Pe_IG00000") %>%
-    select(-name) %>%
-    mutate(!!sample_col_new := value) %>%
-    rename(sample_id = value) %>%
+    rename(sample_name = value) %>%
+    mutate(sample_type = sample_type) %>%
+    select(sample_name,
+           sample_type,
+           !!id_col) %>%
     collect() %>%
-    select(all_of(c(sample_col_new,
-                    id_col)),
-           sample_id) %>%
-    mutate(sample_type = "bd")
-  
-  # write lookup tabel
-  # dbWriteTable(dbcon, Id("survey_data", table_new), sample_lookup, overwrite = TRUE)
   
   return(sample_lookup)
 }
 
-s1 = sample_lookup_gen(db_capture, "capture_id", c("bd_swab_id"), "bd_swab_id", "sample_lookup_bd", "bd")
-s2 = sample_lookup_gen(db_capture, "capture_id", c("genetic_id"), "genetic_id", "sample_lookup_genetic", "genetic")
-s3 = sample_lookup_gen(db_capture, "capture_id", c("microbiome_swab_id"), "microbiome_swab_id", "sample_lookup_microbiome", "microbiome")
-s4 = sample_lookup_gen(db_capture, "capture_id", c("amp_id", "amp_id_2", "amp_id_3", "amp_id_4"), "amp_id", "sample_lookup_amp", "amp")
-s5 = sample_lookup_gen(db_capture, "capture_id", c("mucosome_id"), "mucosome_id", "sample_lookup_mucosome", "mucosome")
-s6 = sample_lookup_gen(db_capture, "capture_id", c("bacterial_swab_id"), "bacterial_swab_id", "sample_lookup_bacterial", "bacterial")
-s7 = sample_lookup_gen(db_capture, "capture_id", c("antibody_id", "antibody_id_2", "antibody_id_3", "antibody_id_4"), "antibody_id", "sample_lookup_antibody", "antibody")
-s8 = sample_lookup_gen(db_capture, "capture_id", c("crispr_id"), "crispr_id", "sample_lookup_crispr", "crispr")
+s1 = sample_lookup_gen(db_capture, "capture_id", c("bd_swab_id"), "bd")
+s2 = sample_lookup_gen(db_capture, "capture_id", c("genetic_id"), "genetic")
+s3 = sample_lookup_gen(db_capture, "capture_id", c("microbiome_swab_id"), "microbiome")
+s4 = sample_lookup_gen(db_capture, "capture_id", c("amp_id", "amp_id_2", "amp_id_3", "amp_id_4"), "amp")
+s5 = sample_lookup_gen(db_capture, "capture_id", c("mucosome_id"), "mucosome")
+s6 = sample_lookup_gen(db_capture, "capture_id", c("bacterial_swab_id"), "bacterial")
+s7 = sample_lookup_gen(db_capture, "capture_id", c("antibody_id", "antibody_id_2", "antibody_id_3", "antibody_id_4"), "antibody")
+s8 = sample_lookup_gen(db_capture, "capture_id", c("crispr_id"), "crispr")
 
-data_samps = rbind(s1 %>%
-                     select(capture_id,
-                            sample_id,
-                            sample_type),
+select_cols = c("sample_name",
+                "sample_type",
+                "capture_id")
+
+all_samples = rbind(s1 %>%
+                     select(all_of(select_cols)),
                    s2 %>%
-                     select(capture_id,
-                            sample_id,
-                            sample_type),
+                     select(all_of(select_cols)),
                    s3 %>%
-                     select(capture_id,
-                            sample_id,
-                            sample_type),
+                     select(all_of(select_cols)),
                    s4 %>%
-                     select(capture_id,
-                            sample_id,
-                            sample_type),
+                     select(all_of(select_cols)),
                    s5 %>%
-                     select(capture_id,
-                            sample_id,
-                            sample_type),
+                     select(all_of(select_cols)),
                    s6 %>%
-                     select(capture_id,
-                            sample_id,
-                            sample_type),
+                     select(all_of(select_cols)),
                    s7 %>%
-                     select(capture_id,
-                            sample_id,
-                            sample_type),
+                     select(all_of(select_cols)),
                    s8 %>%
-                     select(capture_id,
-                            sample_id,
-                            sample_type))
+                     select(all_of(select_cols)))
 
 ```
 ## load new table pointers
 
-```{r}
-db_bd = tbl(dbcon, Id("survey_data", "sample_lookup_bd")) %>% collect()
-db_genetic = tbl(dbcon, Id("survey_data", "sample_lookup_genetic")) %>% collect()
-db_microbiome = tbl(dbcon, Id("survey_data", "sample_lookup_microbiome")) %>% collect()
-db_amp = tbl(dbcon, Id("survey_data", "sample_lookup_amp")) %>% collect()
-db_mucosome = tbl(dbcon, Id("survey_data", "sample_lookup_mucosome")) %>% collect()
-db_bacterial = tbl(dbcon, Id("survey_data", "sample_lookup_bacterial")) %>% collect()
-db_antibody = tbl(dbcon, Id("survey_data", "sample_lookup_antibody")) %>% collect()
-db_crispr = tbl(dbcon, Id("survey_data", "sample_lookup_crispr")) %>% collect()
-
-```
-
 ## parse for duplicates (same sample id, multiple capture ids)
 ```{r}
-s1_dupes = get_dupes(s1, bd_swab_id)
-s2_dupes = get_dupes(s2, genetic_id)
-s3_dupes = get_dupes(s3, microbiome_swab_id)
-s4_dupes = get_dupes(s4, amp_id)
-s5_dupes = get_dupes(s5, mucosome_id)
-s6_dupes = get_dupes(s6, bacterial_swab_id)
-s7_dupes = get_dupes(s7, antibody_id)
-s8_dupes = get_dupes(s8, crispr_id)
+s1_dupes = get_dupes(s1, sample_name)
+s2_dupes = get_dupes(s2, sample_name)
+s3_dupes = get_dupes(s3, sample_name)
+s4_dupes = get_dupes(s4, sample_name)
+s5_dupes = get_dupes(s5, sample_name)
+s6_dupes = get_dupes(s6, sample_name)
+s7_dupes = get_dupes(s7, sample_name)
+s8_dupes = get_dupes(s8, sample_name)
 
 all_capture = db_capture %>% 
   left_join(db_survey, by = "survey_id") %>%
@@ -152,53 +117,117 @@ all_capture = db_capture %>%
   left_join(db_country, by = "country_id") %>%
   collect()
 
-true_dupes <- function(dupes, sample_id_col) {
+true_dupes <- function(dupes) {
   true_dupes = dupes %>%
-    select(capture_id) %>%
+    select(capture_id, sample_name) %>%
     left_join(all_capture, by = "capture_id") %>%
-    get_dupes(!!sym(sample_id_col), survey_id)
+    get_dupes(sample_name, survey_id, species_capture, svl_mm)
 }
 
-s1_true_dupes = true_dupes(s1_dupes, "bd_swab_id")
-s1_dirty_dupes = anti_join(s1_dupes, s1_true_dupes, by = "capture_id") %>%
+# distinguish between:
+#   true dupes -- same sample_name & survey -- should be coalesced into a single capture
+#   dirty dupes -- same sample_name & survey -- should be split into two sample_names, where possible
+
+s1_dupes_true = true_dupes(s1_dupes)
+s1_dupes_dirty = anti_join(s1_dupes, s1_dupes_true, by = "capture_id") %>%
   left_join(all_capture, by = "capture_id")
 
-s2_true_dupes = true_dupes(s2_dupes, "genetic_id")
-s2_dirty_dupes = anti_join(s2_dupes, s2_true_dupes, by = "capture_id") %>%
+s2_dupes_true = true_dupes(s2_dupes)
+s2_dupes_dirty = anti_join(s2_dupes, s2_dupes_true, by = "capture_id") %>%
   left_join(all_capture, by = "capture_id")
 
-s3_true_dupes = true_dupes(s3_dupes, "microbiome_swab_id")
-s3_dirty_dupes = anti_join(s3_dupes, s3_true_dupes, by = "capture_id") %>%
+s3_dupes_true = true_dupes(s3_dupes)
+s3_dupes_dirty = anti_join(s3_dupes, s3_dupes_true, by = "capture_id") %>%
   left_join(all_capture, by = "capture_id")
 
-s4_true_dupes = true_dupes(s4_dupes, "amp_id")
-s4_dirty_dupes = anti_join(s4_dupes, s4_true_dupes, by = "capture_id") %>%
+s4_dupes_true = true_dupes(s4_dupes)
+s4_dupes_dirty = anti_join(s4_dupes, s4_dupes_true, by = "capture_id") %>%
   left_join(all_capture, by = "capture_id")
 
-s5_true_dupes = true_dupes(s5_dupes, "mucosome_id")
-s5_dirty_dupes = anti_join(s5_dupes, s5_true_dupes, by = "capture_id") %>%
+s5_dupes_true = true_dupes(s5_dupes)
+s5_dupes_dirty = anti_join(s5_dupes, s5_dupes_true, by = "capture_id") %>%
   left_join(all_capture, by = "capture_id")
 
-s6_true_dupes = true_dupes(s6_dupes, "bacterial_swab_id")
-s6_dirty_dupes = anti_join(s6_dupes, s6_true_dupes, by = "capture_id") %>%
+s6_dupes_true = true_dupes(s6_dupes)
+s6_dupes_dirty = anti_join(s6_dupes, s6_dupes_true, by = "capture_id") %>%
   left_join(all_capture, by = "capture_id")
 
-s7_true_dupes = true_dupes(s7_dupes, "antibody_id")
-s7_dirty_dupes = anti_join(s7_dupes, s7_true_dupes, by = "capture_id") %>%
+s7_dupes_true = true_dupes(s7_dupes)
+s7_dupes_dirty = anti_join(s7_dupes, s7_dupes_true, by = "capture_id") %>%
   left_join(all_capture, by = "capture_id")
 
-s8_true_dupes = true_dupes(s8_dupes, "crispr_id")
-s8_dirty_dupes = anti_join(s8_dupes, s8_true_dupes, by = "capture_id") %>%
+s8_dupes_true = true_dupes(s8_dupes)
+s8_dupes_dirty = anti_join(s8_dupes, s8_dupes_true, by = "capture_id") %>%
   left_join(all_capture, by = "capture_id")
 
 ```
 
+## coalesce true dupes
 ```{r}
 
+reconcile_true_dupes <- function(true_dupes) {
+  true_dupes_reconciled = true_dupes %>%
+  select(-dupe_count) %>%
+  group_by(sample_name, survey_id, species_capture, svl_mm) %>%
+  summarise(across(everything(), ~ first(na.omit(.)))) %>%
+  ungroup()
+}
+
+s1_dupes_true_reconciled = reconcile_true_dupes(s1_dupes_true)
+s1_dupes_true_drop = anti_join(s1_dupes_true, s1_dupes_true_reconciled, by = "capture_id")
+
+s2_dupes_true_reconciled = reconcile_true_dupes(s2_dupes_true)
+s2_dupes_true_drop = anti_join(s2_dupes_true, s2_dupes_true_reconciled, by = "capture_id")
+
+s3_dupes_true_reconciled = reconcile_true_dupes(s3_dupes_true)
+s3_dupes_true_drop = anti_join(s3_dupes_true, s3_dupes_true_reconciled, by = "capture_id")
+
+s4_dupes_true_reconciled = reconcile_true_dupes(s4_dupes_true)
+s4_dupes_true_drop = anti_join(s4_dupes_true, s4_dupes_true_reconciled, by = "capture_id")
+
+s5_dupes_true_reconciled = reconcile_true_dupes(s5_dupes_true)
+s5_dupes_true_drop = anti_join(s5_dupes_true, s5_dupes_true_reconciled, by = "capture_id")
+
+s6_dupes_true_reconciled = reconcile_true_dupes(s6_dupes_true)
+s6_dupes_true_drop = anti_join(s6_dupes_true, s6_dupes_true_reconciled, by = "capture_id")
+
+s7_dupes_true_reconciled = reconcile_true_dupes(s7_dupes_true)
+s7_dupes_true_drop = anti_join(s7_dupes_true, s7_dupes_true_reconciled, by = "capture_id")
+
+s8_dupes_true_reconciled = reconcile_true_dupes(s8_dupes_true)
+s8_dupes_true_drop = anti_join(s8_dupes_true, s8_dupes_true_reconciled, by = "capture_id")
 
 ```
 
+# split dirty dupes into team, to help understand cause
+```{r}
+all_dupes_dirty = bind_rows(s1_dupes_dirty,
+                            s2_dupes_dirty,
+                            s3_dupes_dirty,
+                            s4_dupes_dirty,
+                            s5_dupes_dirty,
+                            s6_dupes_dirty,
+                            s7_dupes_dirty,
+                            s8_dupes_dirty)
 
+all_dupes_dirty_penn = all_dupes_dirty %>%
+  filter(region == "pennsylvania")
+all_dupes_dirty_panama = all_dupes_dirty %>%
+  filter(country == "panama")
+all_dupes_dirty_sn = all_dupes_dirty %>%
+  filter(region == "california")
+all_dupes_dirty_brazil = all_dupes_dirty %>%
+  filter(country == "brazil")
+
+all_dupes_dirty_reconciled = all_dupes_dirty %>%
+  group_by(sample_name) %>%
+  mutate(sample_name = paste0(sample_name, "_DDC", row_number())) %>%
+  ungroup()
+
+# perhaps reassign sample_name with prefix? sample_name _DDC#
+#   this way they won't generate conflicts with the samples, and we can resolve them in their own timeline.
+
+```
 ## Pull amp_swab_ids
 
 ```{r}
