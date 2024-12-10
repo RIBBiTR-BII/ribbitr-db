@@ -119,7 +119,7 @@ all_capture = db_capture %>%
 
 true_dupes <- function(dupes) {
   true_dupes = dupes %>%
-    select(capture_id, sample_name) %>%
+    select(capture_id, sample_name, sample_type) %>%
     left_join(all_capture, by = "capture_id") %>%
     get_dupes(sample_name, survey_id, species_capture, svl_mm)
 }
@@ -164,43 +164,40 @@ s8_dupes_dirty = anti_join(s8_dupes, s8_dupes_true, by = "capture_id") %>%
 
 ## coalesce true dupes
 ```{r}
+all_dupes_true = bind_rows(s1_dupes_true,
+                           s2_dupes_true,
+                           s3_dupes_true,
+                           s4_dupes_true,
+                           s5_dupes_true,
+                           s6_dupes_true,
+                           s7_dupes_true,
+                           s8_dupes_true)
 
-reconcile_true_dupes <- function(true_dupes) {
-  true_dupes_reconciled = true_dupes %>%
+all_dupes_true_reconciled = all_dupes_true %>%
   select(-dupe_count) %>%
-  group_by(sample_name, survey_id, species_capture, svl_mm) %>%
+  group_by(sample_name, sample_type, survey_id, species_capture, svl_mm) %>%
   summarise(across(everything(), ~ first(na.omit(.)))) %>%
   ungroup()
-}
 
-s1_dupes_true_reconciled = reconcile_true_dupes(s1_dupes_true)
-s1_dupes_true_drop = anti_join(s1_dupes_true, s1_dupes_true_reconciled, by = "capture_id")
+all_dupes_true_drop = anti_join(all_dupes_true, all_dupes_true_reconciled, by = "capture_id")
 
-s2_dupes_true_reconciled = reconcile_true_dupes(s2_dupes_true)
-s2_dupes_true_drop = anti_join(s2_dupes_true, s2_dupes_true_reconciled, by = "capture_id")
+# update reconciled in capture table
+capture_update = all_dupes_true_reconciled %>%
+  select(any_of(colnames(db_capture)))
 
-s3_dupes_true_reconciled = reconcile_true_dupes(s3_dupes_true)
-s3_dupes_true_drop = anti_join(s3_dupes_true, s3_dupes_true_reconciled, by = "capture_id")
+# drop drops from capture table & all_samples
+capture_drop = all_dupes_true_drop %>%
+  select(any_of(colnames(db_capture)))
 
-s4_dupes_true_reconciled = reconcile_true_dupes(s4_dupes_true)
-s4_dupes_true_drop = anti_join(s4_dupes_true, s4_dupes_true_reconciled, by = "capture_id")
-
-s5_dupes_true_reconciled = reconcile_true_dupes(s5_dupes_true)
-s5_dupes_true_drop = anti_join(s5_dupes_true, s5_dupes_true_reconciled, by = "capture_id")
-
-s6_dupes_true_reconciled = reconcile_true_dupes(s6_dupes_true)
-s6_dupes_true_drop = anti_join(s6_dupes_true, s6_dupes_true_reconciled, by = "capture_id")
-
-s7_dupes_true_reconciled = reconcile_true_dupes(s7_dupes_true)
-s7_dupes_true_drop = anti_join(s7_dupes_true, s7_dupes_true_reconciled, by = "capture_id")
-
-s8_dupes_true_reconciled = reconcile_true_dupes(s8_dupes_true)
-s8_dupes_true_drop = anti_join(s8_dupes_true, s8_dupes_true_reconciled, by = "capture_id")
+all_samples_true_rec = all_samples %>%
+  anti_join(all_dupes_true, by = c("sample_name", "sample_type")) %>%
+  bind_rows(all_dupes_true_reconciled)
 
 ```
 
 # split dirty dupes into team, to help understand cause
 ```{r}
+
 all_dupes_dirty = bind_rows(s1_dupes_dirty,
                             s2_dupes_dirty,
                             s3_dupes_dirty,
@@ -212,47 +209,70 @@ all_dupes_dirty = bind_rows(s1_dupes_dirty,
 
 all_dupes_dirty_penn = all_dupes_dirty %>%
   filter(region == "pennsylvania")
+write_csv(all_dupes_dirty_penn, here("staging", "sample_dupes", "penn_sample_dupes_2024-12-10.csv"))
+
 all_dupes_dirty_panama = all_dupes_dirty %>%
   filter(country == "panama")
+write_csv(all_dupes_dirty_panama, here("staging", "sample_dupes", "panama_sample_dupes_2024-12-10.csv"))
+
 all_dupes_dirty_sn = all_dupes_dirty %>%
   filter(region == "california")
+write_csv(all_dupes_dirty_sn, here("staging", "sample_dupes", "sn_sample_dupes_2024-12-10.csv"))
+
 all_dupes_dirty_brazil = all_dupes_dirty %>%
   filter(country == "brazil")
+write_csv(all_dupes_dirty_brazil, here("staging", "sample_dupes", "brazil_sample_dupes_2024-12-10.csv"))
 
 all_dupes_dirty_reconciled = all_dupes_dirty %>%
   group_by(sample_name) %>%
   mutate(sample_name = paste0(sample_name, "_DDC", row_number())) %>%
   ungroup()
 
+# drop dirty dupes, add these ^ to all_samples
+all_samples_reconciled = all_samples_true_rec %>%
+  anti_join(all_dupes_dirty, by = c("sample_name", "sample_type")) %>%
+  bind_rows(all_dupes_dirty_reconciled)
+
 # perhaps reassign sample_name with prefix? sample_name _DDC#
 #   this way they won't generate conflicts with the samples, and we can resolve them in their own timeline.
 
 ```
-## Pull amp_swab_ids
 
+# assign sample_id
 ```{r}
-amp_id_capture = tbl(dbcon, Id("survey_data", "capture")) %>%
-  select(amp_id,
-         amp_id_2,
-         amp_id_3,
-         amp_id_4) %>%
-  pivot_longer(cols = starts_with("amp_id"),    # Select columns to pivot
-               names_to = "sample",             # Name of the new column for the old column names
-               values_to = "amp_id") %>%
-  select(amp_id) %>%
-  filter(!is.na(amp_id)) %>%
-  collect()
+all_samples_final = all_samples_reconciled %>%
+  mutate(sample_id = "",
+         sample_id = map_chr(sample_id, ~UUIDgenerate())) %>%
+  select(sample_id,
+         all_of(colnames(all_samples)))
 
-amp_id_results = tbl(dbcon, Id("survey_data", "amp_totals_gia")) %>%
-  select(amp_id) %>%
-  filter(!is.na(amp_id)) %>%
-  collect()
-
-unique_amp_id = distinct(bind_rows(amp_id_capture, amp_id_results))
 ```
 
-## Write to new table
-
+# lets build a new dataset!
 ```{r}
-# dbWriteTable(dbcon, Id("survey_data", "amp_lookup"), unique_amp_id, overwrite = TRUE)
+
+dbBegin(dbcon)
+
+tryCatch(
+  {
+    dbWriteTable(dbcon, Id("survey_data", "sample"), all_samples_final, overwrite = TRUE)
+    
+    temp_capture_drop = stage_to_temp(dbcon, db_capture, capture_drop)
+    pointer = tbl(dbcon, temp_capture_drop)
+    rows_delete(db_capture, pointer, by="capture_id", in_place=TRUE, unmatched = "ignore")
+    
+    temp_capture_update = stage_to_temp(dbcon, db_capture, capture_update)
+    pointer = tbl(dbcon, temp_capture_update)
+    rows_update(db_capture, pointer, by="capture_id", in_place=TRUE, unmatched = "ignore")
+    
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful!")
+    
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
+
 ```
