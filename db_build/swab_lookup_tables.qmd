@@ -35,6 +35,7 @@ db_country = tbl(dbcon, Id("survey_data", "country"))
 
 db_cmr = tbl(dbcon, Id("survey_data", "cmr"))
 db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
 
 ```
 
@@ -189,9 +190,22 @@ capture_update = all_dupes_true_reconciled %>%
 capture_drop = all_dupes_true_drop %>%
   select(any_of(colnames(db_capture)))
 
+cap_id_map = all_dupes_true_reconciled %>%
+  select(capture_id,
+         sample_name,
+         sample_type) %>%
+  left_join(all_dupes_true_drop %>%
+              select(capture_id,
+                     sample_name,
+                     sample_type) %>%
+              rename(capture_id_old = capture_id), by = c("sample_name", "sample_type"))
+
 all_samples_true_rec = all_samples %>%
-  anti_join(all_dupes_true, by = c("sample_name", "sample_type")) %>%
-  bind_rows(all_dupes_true_reconciled)
+  anti_join(all_dupes_true, by = c("capture_id", "sample_type")) %>%
+  bind_rows(all_dupes_true_reconciled) %>%
+  mutate(capture_id = if_else(capture_id %in% cap_id_map$capture_id_old,
+                               cap_id_map$capture_id[match(capture_id, cap_id_map$capture_id_old)],
+                               capture_id))
 
 ```
 
@@ -248,6 +262,20 @@ all_samples_final = all_samples_reconciled %>%
 
 ```
 
+# checks
+```{r}
+violations_pkey = get_dupes(all_samples_final, sample_id)
+
+violations_unique = get_dupes(all_samples_final, sample_name, sample_type)
+
+violations_fkey = all_samples_final %>%
+  anti_join(db_capture %>% 
+              collect() %>%
+              anti_join(capture_drop, by = "capture_id"), by = "capture_id")
+
+```
+
+
 # lets build a new dataset!
 ```{r}
 
@@ -274,5 +302,41 @@ tryCatch(
     dbRollback(dbcon)
     message("Transaction failed: ", e$message)
   })
+
+```
+
+## map or assign bd sample_id
+```{r}
+# find bd samples in bd results which map to an existing capture_id
+bd_mapped = db_bd %>%
+  select(-sample_id) %>%
+  inner_join(db_sample %>% 
+              filter(sample_type == "bd"), by = c("bd_swab_id" = "sample_name")) %>%
+  collect()
+
+
+bd_unmapped = db_bd %>%
+  anti_join(db_sample %>% 
+              filter(sample_type == "bd"), by = c("bd_swab_id" = "sample_name")) %>%
+  collect() %>%
+  mutate(sample_id = map_chr(sample_id, ~ UUIDgenerate()))
+
+sample_insert = bd_unmapped %>%
+  select(sample_id,
+         bd_swab_id) %>%
+  rename(sample_name = bd_swab_id) %>%
+  mutate(sample_type = "bd",
+         capture_id = NA)
+
+# find bd_samples in bd results which don't have a corresponding observation
+# generate sample id
+# add sample id to sample lookup, with no capture id
+
+```
+
+## address issues with db_bd
+```{r}
+violations_unique = get_dupes(db_bd %>% collect(), bd_swab_id)
+
 
 ```

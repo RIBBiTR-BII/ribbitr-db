@@ -27,6 +27,7 @@ mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
   collect()
 
 db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
 
 ```
 
@@ -77,9 +78,7 @@ raw_pa_2023_15 = import_list(here(wddir, "panama", "2023", "RIBBiTR_PanamaSwabs2
 ## 2022
 raw_pe_2022_01 = import_list(here(wddir, "penn", "2022", "PaBdSwabs2022_plate1RERUN_03212023_results!.xlsx"))
 raw_pe_2022_02 = import_list(here(wddir, "penn", "2022", "PaBdSwabs2022_04062023_Plate2_Results!.xlsx"))
-
-
-raw_pe_hmm = import_list(here(wddir, "penn", "2022", "PaBdSwabs2022_qPCR_03022023_Plate 1_RBV_RESULTS.xls"))
+# raw_pe_hmm = import_list(here(wddir, "penn", "2022", "PaBdSwabs2022_qPCR_03022023_Plate 1_RBV_RESULTS.xls"))
 ## 2023
 raw_pe_2023_01 = import_list(here(wddir, "penn", "2023", "RIBBiTR_qPCR_Penn2023_17August2023_Plate1_RESULTS.xls"))
 raw_pe_2023_02 = import_list(here(wddir, "penn", "2023", "RIBBiTR_qPCR_Penn2023_17August2023_Plate2_RESULTS.xls"))
@@ -216,12 +215,11 @@ bind_results = bind_rows(clean_br_2022_01,
                          clean_pe_2023_03)
 
 clean_results = bind_results %>%
-  rename(bd_swab_id = sample_name,
-         average_ct = bd_ct_mean,
+  rename(average_ct = bd_ct_mean,
          average_target_quant = bd_quantity_mean,
-         run_name = extraction_plate) %>%
-  mutate(run_number = 3,
-         qpcr_date = parse_date_time(raw_br_2022_01[[1]][which(raw_br_2022_01[[1]][,1] == "Experiment Run End Time"),2], orders = "YmdHMS", tz = "America/New_York"),
+         plate_name = q_pcr_plate,
+         sample_control = sample_type) %>%
+  mutate(sample_type = "bd",
          detected = case_when(bd_pos_neg == "Positive" ~ 1,
                               bd_pos_neg == "Negative" ~ 0,
                               TRUE ~ NA_real_),
@@ -232,19 +230,77 @@ clean_results = bind_results %>%
          extraction_kit = "qiagen_dneasy",
          standard = "plasmid-pisces",
          standard_target_type = "ITS1",
-         master_mix = "bioline",
          qpcr_machine = "quantstudio_3",
          swab_type = "mw113",
          total_qpcr_volume_uL = 200,
          qpcr_dilution_factor = 1,
          volume_template_dna_uL = 5,
          extract_volume_uL = 200,
-         target_quant_per_swab = average_target_quant * extract_volume_uL/(volume_template_dna_uL * qpcr_dilution_factor))
+         target_quant_per_swab = average_target_quant * extract_volume_uL/(volume_template_dna_uL * qpcr_dilution_factor),
+         sample_control = ifelse(sample_name %in% c("qPCR Negative", "Negative Swab", "Positive Swab", "POS EXTRACT CONTROL", "NEG EXTRACT CONTROL"), "Control", sample_control)) %>%
+  filter(!is.na(sample_name),
+         sample_control != "Control" | is.na(sample_control),
+         !str_detect(sample_name, "^Pisces"),
+         target_name == "Bd" | is.na(target_name),
+         ipc == "Pass")
 	
 
 ```
 
+# checks
 ```{r}
-data_bd = db_bd %>% collect()
+violations_unique = get_dupes(clean_results, sample_name)
+
+```
+
+## reconcile dupes
+```{r}
+violations_unique_resolved = violations_unique %>%
+  group_by(sample_name) %>%
+  mutate(sample_name = paste0(sample_name, "_DDR", row_number())) %>%
+  ungroup() %>%
+  select(-dupe_count)
+
+distinct_results = clean_results %>%
+  anti_join(violations_unique, by = "sample_name") %>%
+  bind_rows(violations_unique_resolved)
+
+```
+
+# gelled
+```{r}
+gelled_results = distinct_results %>%
+  left_join(db_sample %>% collect(), by = c("sample_name", "sample_type")) %>%
+  mutate(sample_id = map_chr(sample_id, ~ ifelse(is.na(.x), UUIDgenerate(), .x)))
+
+```
+
+# subset data
+```{r}
+subset_bd_samples = gelled_results %>%
+  select(any_of(colnames(db_sample))) %>%
+  distinct() %>%
+  filter(!is.na(sample_id))
+
+compare_bd_samples = compare_df_cols(db_sample %>%
+                                  filter(FALSE) %>%
+                                  collect(), subset_bd_samples)
+
+tray = compare_for_staging(db_sample %>% collect(), subset_bd_samples, "sample_id", return_all = TRUE, report = "sample")
+final_bd_samples = bind_rows(tray$insert,
+                       tray$update)
+
+subset_bd = gelled_results %>%
+  select(any_of(colnames(db_bd))) %>%
+  distinct() %>%
+  filter(!is.na(sample_id))
+
+compare_bd = compare_df_cols(db_bd %>%
+                               filter(FALSE) %>%
+                               collect(), subset_bd)
+
+tray = compare_for_staging(db_bd %>% collect(), subset_bd, "sample_id", return_all = TRUE, report = "bd")
+final_bd = bind_rows(tray$insert,
+                       tray$update)
 
 ```
