@@ -15,8 +15,8 @@ dbcon <- hopToDB()
 
 ```
 ```{r}
-hobo_current = tbl(dbcon, Id("hobo", "hobo")) %>%
-  collect()
+# hobo_current = tbl(dbcon, Id("hobo", "hobo")) %>%
+#   collect()
 
 
 ```
@@ -238,7 +238,7 @@ unique(bound_obs$location)
 
 ```
 
-## split into tables
+## gel
 ```{r}
 # logger table
 gelled_obs = clean_obs %>%
@@ -251,28 +251,44 @@ gelled_obs = clean_obs %>%
            sensor_type) %>%
   mutate(sensor_id = UUIDgenerate()) %>%
   ungroup() %>%
-  distinct()
+  arrange(sensor_id, timestamptz, file) %>%
+  mutate(temp_id = row_number())
 
-subset_site = gelled_obs %>%
+# dupes is much faster than group_by  %>% slice for this
+dupes_pre = get_dupes(gelled_obs, sensor_id, timestamptz)
+
+distinct_obs = gelled_obs %>%
+  group_by(sensor_id, timestamptz) %>%
+  slice(1) %>%
+  ungroup()
+
+dupes_post = get_dupes(distinct_obs, sensor_id, timestamptz)
+
+```
+
+## subset
+```{r}
+
+subset_site = distinct_obs %>%
   select(site_hobo, site) %>%
   distinct()
 
-subset_logger = gelled_obs %>%
+subset_logger = distinct_obs %>%
   select(logger_id, microhabitat, site) %>%
   left_join(db_site, by = "site") %>%
   distinct()
 
-subset_sensor = gelled_obs %>%
+subset_sensor = distinct_obs %>%
   select(sensor_id, sensor_type, height_cm, logger_id) %>%
   distinct()
 
-subset_obs = gelled_obs %>%
+subset_obs = distinct_obs %>%
   select(timestamptz, value, sensor_id)
 ```
 
 ## checks
 ```{r}
-peace = get_dupes(gelled_obs, sensor_id, timestamptz)
+
 
 peace_agg = peace %>%
   group_by(sensor_id, sensor_type, height_cm, microhabitat, site) %>%
@@ -366,9 +382,9 @@ dbBegin(dbcon)
 
 tryCatch(
   {
-    dbWriteTable(dbcon, Id("sensore_data", "logger"), subset_logger, overwrite = TRUE)
-    dbWriteTable(dbcon, Id("sensor_data", "sensor"), subset_sensor, overwrite = TRUE)
-    dbWriteTable(dbcon, Id("sensor_data", "time_series"), subset_obs, overwrite = TRUE)
+    dbWriteTable(dbcon, Id("microclimate_data", "logger"), subset_logger, overwrite = TRUE)
+    dbWriteTable(dbcon, Id("microclimate_data", "sensor"), subset_sensor, overwrite = TRUE)
+    dbWriteTable(dbcon, Id("microclimate_data", "time_series"), subset_obs, overwrite = TRUE)
     
     # Commit the transaction if successful
     dbCommit(dbcon)
