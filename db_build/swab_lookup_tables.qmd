@@ -313,8 +313,15 @@ bd_mapped = db_bd %>%
   inner_join(db_sample %>% 
               filter(sample_type == "bd"), by = c("sample_name_bd" = "sample_name")) %>%
   mutate(sample_name = sample_name_bd) %>%
+  select(any_of(colnames(db_bd))) %>%
   collect()
 
+compare_bd = compare_df_cols(db_bd %>%
+                               filter(FALSE) %>%
+                               collect(), bd_mapped)
+
+tray = compare_for_staging(db_bd %>% collect(), bd_mapped, key_columns = "result_id", return_all = TRUE, report = "samples")
+bd_update = tray$update
 
 bd_unmapped = db_bd %>%
   anti_join(db_sample %>% 
@@ -325,8 +332,6 @@ bd_unmapped = db_bd %>%
   mutate(sample_id = ifelse(is.na(sample_id), UUIDgenerate(), sample_id)) %>%
   ungroup()
 
-peace = get_dupes(bd_unmapped, sample_name)
-
 sample_insert = bd_unmapped %>%
   select(sample_id,
          sample_name) %>%
@@ -335,14 +340,17 @@ sample_insert = bd_unmapped %>%
   distinct()
 
 tray = compare_for_staging(db_sample %>% collect(), sample_insert, key_columns = "sample_id", return_all = TRUE, report = "sample")
-
 # commit to table
 
 dbBegin(dbcon)
 
 tryCatch(
   {
-
+    
+    temp_bd = stage_to_temp(dbcon, db_bd, bd_update)
+    pointer = tbl(dbcon, temp_bd)
+    rows_update(db_bd, pointer, by="result_id", in_place=TRUE, unmatched = "ignore")
+    
     temp_sample = stage_to_temp(dbcon, db_sample, sample_insert)
     pointer = tbl(dbcon, temp_sample)
     rows_insert(db_sample, pointer, by="sample_id", in_place=TRUE, conflict = "ignore")

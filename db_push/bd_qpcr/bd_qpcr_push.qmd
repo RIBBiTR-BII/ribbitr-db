@@ -98,14 +98,14 @@ scrape_qpcr_xls <- function(raw_xls) {
   clean_xls <- xls$working_results %>%
     clean_names() %>%
     mutate(
-      q_pcr_plate = ifelse("q_pcr_plate" %in% names(.), q_pcr_plate, experiment_name),
-      extraction_plate = ifelse("extraction_plate" %in% names(.), extraction_plate, NA_character_),
-      plate_run = case_when(
-        !str_detect(q_pcr_plate, "RERUN") ~ 1L,
-        str_detect(q_pcr_plate, "RERUN(?!\\d)") ~ 2L,
-        TRUE ~ as.integer(str_extract(q_pcr_plate, "RERUN(\\d+)") %>% str_replace("RERUN", "")) + 1L),
-      qpcr_date = parse_date_time(str_extract(q_pcr_plate, "\\d{8}"), orders = "mdY"),
-      extraction_date = parse_date_time(str_extract(extraction_plate, "\\d{8}"), orders = "mdY"),
+      qpcr_plate_name = ifelse("q_pcr_plate" %in% names(.), q_pcr_plate, experiment_name),
+      extraction_plate_name = ifelse("extraction_plate" %in% names(.), extraction_plate, NA_character_),
+      qpcr_plate_run = case_when(
+        !str_detect(qpcr_plate_name, "RERUN") ~ 1L,
+        str_detect(qpcr_plate_name, "RERUN(?!\\d)") ~ 2L,
+        TRUE ~ as.integer(str_extract(qpcr_plate_name, "RERUN(\\d+)") %>% str_replace("RERUN", "")) + 1L),
+      qpcr_date = parse_date_time(str_extract(qpcr_plate_name, "\\d{8}"), orders = "mdY"),
+      extraction_date = parse_date_time(str_extract(extraction_plate_name, "\\d{8}"), orders = "mdY"),
       master_mix = chemistry
     )
   
@@ -217,14 +217,16 @@ bind_results = bind_rows(clean_br_2022_01,
 clean_results = bind_results %>%
   rename(average_ct = bd_ct_mean,
          average_target_quant = bd_quantity_mean,
-         plate_name = q_pcr_plate,
-         sample_control = sample_type) %>%
+         sample_control = sample_type,
+         qpcr_well = well,
+         comments_qpcr = comments) %>%
   mutate(sample_type = "bd",
          detected = case_when(bd_pos_neg == "Positive" ~ 1,
                               bd_pos_neg == "Negative" ~ 0,
                               TRUE ~ NA_real_),
-         result = ifelse(detected, "p", "n"),
+         replicate_results = ifelse(detected, "p", "n"),
          replicate = "singley",
+         replicate_count = 1,
          qpcr_lab = "rz_lab",
          extract_lab = "rz_lab",
          extraction_kit = "qiagen_dneasy",
@@ -243,19 +245,6 @@ clean_results = bind_results %>%
          !str_detect(sample_name, "^Pisces"),
          target_name == "Bd" | is.na(target_name),
          ipc == "Pass")
-
-```
-
-## investigation
-```{r}
-peace = remaining %>%
-  select(bd_swab_id) %>%
-  rename(sample_name = bd_swab_id) %>%
-  inner_join(clean_results, by = "sample_name")
-
-hope = remaining %>%
-  rename(sample_name = bd_swab_id) %>%
-  anti_join(peace %>% select(sample_name), by = "sample_name")
 
 ```
 
@@ -288,8 +277,30 @@ gelled_results = clean_results %>%
   group_by(sample_name, sample_type) %>%
   mutate(sample_id = ifelse(is.na(sample_id), UUIDgenerate(), sample_id)) %>%
   ungroup() %>%
-  mutate(sample_name_bd = sample_name)
+  mutate(sample_name_bd = sample_name) %>%
+  left_join(db_bd %>% 
+              select(sample_name_bd,
+                     result_id) %>%
+              collect(), by = "sample_name_bd") %>%
+  group_by(sample_name_bd,
+           qpcr_plate_name,
+           qpcr_well) %>%
+  mutate(result_id = ifelse(is.na(result_id), UUIDgenerate(), result_id)) %>%
+  ungroup()
 
+```
+
+# investigation
+```{r}
+peace = db_bd %>%
+  collect() %>%
+  mutate(src = "db") %>%
+  inner_join(gelled_results %>%
+               mutate(src = "csv"), by = "sample_name_bd")
+
+issues = get_dupes(peace, sample_name_bd)
+
+# great, no dupes between sources in inner join. inherit result_id by sample_name_bd
 ```
 
 # subset data
@@ -316,13 +327,37 @@ compare_bd = compare_df_cols(db_bd %>%
                                filter(FALSE) %>%
                                collect(), subset_bd)
 
-tray = compare_for_staging(db_bd %>% collect(), subset_bd, c("extraction_date", "qpcr_date", "sample_name_bd", "plate_name", "average_target_quant", "average_ct"), return_all = TRUE, report = "bd")
+tray = compare_for_staging(db_bd %>% collect(), subset_bd, "result_id", return_all = TRUE, report = "bd")
 final_bd = bind_rows(tray$insert,
                        tray$update)
 
-peace = db_bd %>%
-  select(qpcr_date) %>%
-  distinct() %>%
-  collect()
+```
+
+# commit
+
+```{r}
+
+dbBegin(dbcon)
+
+tryCatch(
+  {
+    
+    temp_sample = stage_to_temp(dbcon, db_sample, final_bd_samples)
+    pointer = tbl(dbcon, temp_sample)
+    rows_upsert(db_sample, pointer, by="sample_id", in_place=TRUE)
+    
+    temp_bd = stage_to_temp(dbcon, db_bd, final_bd)
+    pointer = tbl(dbcon, temp_bd)
+    rows_upsert(db_bd, pointer, by="result_id", in_place=TRUE)
+    
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful!")
+    
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
 
 ```

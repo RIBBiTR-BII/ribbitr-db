@@ -1,0 +1,185 @@
+---
+title: "db_push"
+format: html
+editor: source
+---
+
+## Load Packages
+## connect to DB
+```{r}
+
+librarian::shelf(tidyverse, here, DBI, RPostgres, RIBBiTR-BII/ribbitrrr)
+
+dbcon = hopToDB()
+
+```
+
+## point to data
+```{r}
+
+
+## Point to local data directory
+ddir = Sys.getenv("data_dir")  # data directory
+# Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
+wddir = here(ddir, "bd_qpcr_results", 'legacy') # working data directory
+
+db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+
+```
+
+## compare... what is missing?
+```{r}
+
+qpcr_bd_results <- read_csv(here(wddir, "final_qpcr", "merged_qpcr.csv"))
+
+
+remaining = db_bd %>%
+  rename(bd_swab_id = sample_name_bd) %>%
+  collect() %>%
+  anti_join(qpcr_bd_results, by = "bd_swab_id")
+
+write_csv(remaining, here(wddir, "final_qpcr", "qpcr_backup_unaccounted.csv"))
+
+```
+
+## read all_qpcr table
+```{r}
+
+qpcr_bd_results <- read_csv(here(wddir, "final_qpcr", "merged_qpcr_w_plate.csv"))
+
+remaining <- read_csv(here(wddir, "final_qpcr", "qpcr_backup_unaccounted.csv"))
+
+qpcr_bd_results_clean = bind_rows(qpcr_bd_results,
+                            remaining) %>%
+  rename(sample_name_bd = bd_swab_id,
+         extraction_lab = extract_lab,
+         comments_qpcr = comments,
+         replicate_results = result) %>%
+  filter(!is.na(sample_name_bd),
+         sample_name_bd != "POS EXTRACT CONTROL",
+         sample_name_bd != "NEG EXTRACT CONTROL") %>%
+  mutate(result_id = "",
+         result_id = map_chr(result_id, ~UUIDgenerate()),
+         qpcr_well = as.numeric(NA),
+         replicate = case_match(replicate,
+                                "singley" ~ "singlet",
+                                "quadruplicates" ~ "quadruplicate",
+                                "quintuple" ~ "quintuplicate",
+                                .default = replicate),
+         replicate_count = case_match(replicate,
+                                      "singlet" ~ 1,
+                                      "duplicate" ~ 2,
+                                      "triplicate" ~ 3,
+                                      "quadruplicate" ~ 4,
+                                      "quintuplicate" ~ 5,
+                                      "sextuplicate" ~ 6,
+                                      .default = NA),
+         sample_id = as.character(NA)) %>%
+  select(result_id,
+         sample_id,
+         sample_name_bd,
+         detected,
+         replicate,
+         replicate_count,
+         replicate_results,
+         average_ct,
+         average_target_quant,
+         total_qpcr_volume_uL,
+         qpcr_dilution_factor,
+         volume_template_dna_uL,
+         extract_volume_uL,
+         target_quant_per_swab,
+         average_its1_copies_per_swab,
+         swab_type,
+         standard_target_type,
+         standard,
+         master_mix,
+         extraction_plate_name,
+         extraction_date,
+         extraction_kit,
+         extraction_lab,
+         qpcr_plate_name,
+         qpcr_well,
+         qpcr_plate_run,
+         qpcr_date,
+         qpcr_machine,
+         qpcr_lab,
+         comments_qpcr
+         )
+
+qpcr_bd_results_clean$replicate[qpcr_bd_results_clean$sample_name_bd == "RKS20245"] = "sextuplicate"
+qpcr_bd_results_clean$replicate_count[qpcr_bd_results_clean$sample_name_bd == "RKS20245"] = 6
+
+```
+
+## resolve duplicates, make distinct
+
+```{r}
+
+# assign well numbers as row numbers
+dupes_all = get_dupes(qpcr_bd_results_clean, sample_name_bd, qpcr_plate_name)
+
+# resolve another way
+dupes_incongruous = dupes_all %>%
+  filter(dupe_count != replicate_count) %>%
+  arrange(sample_name_bd)
+
+dupes_true = dupes_incongruous %>%
+  filter(dupe_count > replicate_count)
+
+one_off_a_reconciled = dupes_true %>%
+  filter(sample_name_bd == "191020-16-PA05-LICL") %>%
+  mutate(sample_name_bd = paste0(sample_name_bd, "-", row_number())) %>%
+  select(-dupe_count)
+
+one_off_b_reconciled = dupes_true %>%
+  filter(sample_name_bd == "160603_a09") %>%
+  mutate(sample_name_bd = paste0(sample_name_bd, "-", row_number())) %>%
+  select(-dupe_count)
+
+dupes_true_drop = dupes_true %>%
+  filter(!(result_id %in% one_off_a_reconciled$result_id),
+         !(result_id %in% one_off_b_reconciled$result_id)) %>%
+  arrange(sample_name_bd,
+          is.na(average_ct),
+          is.na(replicate_results)) %>%
+  group_by(sample_name_bd) %>%
+  slice(1) %>%
+  ungroup()
+
+qpcr_bd_results_distinct = qpcr_bd_results_clean %>%
+  filter(!(result_id %in% one_off_a_reconciled$result_id),
+         !(result_id %in% one_off_b_reconciled$result_id),
+         !(result_id %in% dupes_true_drop$result_id)) %>%
+  rbind(one_off_a_reconciled,
+        one_off_b_reconciled) %>%
+  group_by(sample_name_bd, qpcr_plate_name) %>%
+  mutate(qpcr_well = row_number()) %>%
+  ungroup() %>%
+  arrange(qpcr_date, sample_name_bd, qpcr_well)
+
+```
+
+# checks
+```{r}
+get_dupes(qpcr_bd_results_distinct, result_id)
+get_dupes(qpcr_bd_results_distinct, sample_name_bd, qpcr_plate_name, qpcr_well)
+
+colnames(qpcr_bd_results_distinct)
+
+compare_bd = compare_df_cols(db_bd %>%
+                               filter(FALSE) %>%
+                               collect(), qpcr_bd_results_distinct)
+
+unique(qpcr_bd_results_distinct$sample_id)
+
+```
+
+
+
+## Write table to DB
+```{r}
+
+dbWriteTable(dbcon, Id("survey_data", "bd_qpcr_results"), qpcr_bd_results_distinct, overwrite = TRUE)
+
+```
