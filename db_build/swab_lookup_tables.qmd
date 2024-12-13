@@ -311,26 +311,52 @@ tryCatch(
 bd_mapped = db_bd %>%
   select(-sample_id) %>%
   inner_join(db_sample %>% 
-              filter(sample_type == "bd"), by = c("bd_swab_id" = "sample_name")) %>%
+              filter(sample_type == "bd"), by = c("sample_name_bd" = "sample_name")) %>%
+  mutate(sample_name = sample_name_bd) %>%
   collect()
 
 
 bd_unmapped = db_bd %>%
   anti_join(db_sample %>% 
-              filter(sample_type == "bd"), by = c("bd_swab_id" = "sample_name")) %>%
+              filter(sample_type == "bd"), by = c("sample_name_bd" = "sample_name")) %>%
+  mutate(sample_name = sample_name_bd) %>%
   collect() %>%
-  mutate(sample_id = map_chr(sample_id, ~ UUIDgenerate()))
+  group_by(sample_name) %>%
+  mutate(sample_id = ifelse(is.na(sample_id), UUIDgenerate(), sample_id)) %>%
+  ungroup()
+
+peace = get_dupes(bd_unmapped, sample_name)
 
 sample_insert = bd_unmapped %>%
   select(sample_id,
-         bd_swab_id) %>%
-  rename(sample_name = bd_swab_id) %>%
+         sample_name) %>%
   mutate(sample_type = "bd",
-         capture_id = NA)
+         capture_id = NA) %>%
+  distinct()
 
-# find bd_samples in bd results which don't have a corresponding observation
-# generate sample id
-# add sample id to sample lookup, with no capture id
+tray = compare_for_staging(db_sample %>% collect(), sample_insert, key_columns = "sample_id", return_all = TRUE, report = "sample")
+
+# commit to table
+
+dbBegin(dbcon)
+
+tryCatch(
+  {
+
+    temp_sample = stage_to_temp(dbcon, db_sample, sample_insert)
+    pointer = tbl(dbcon, temp_sample)
+    rows_insert(db_sample, pointer, by="sample_id", in_place=TRUE, conflict = "ignore")
+    
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful!")
+    
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
+
 
 ```
 

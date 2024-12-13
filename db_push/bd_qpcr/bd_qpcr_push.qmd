@@ -16,7 +16,7 @@ dbcon <- hopToDB()
 ## Point to local data directory
 ddir = Sys.getenv("data_dir")  # data directory
 # Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
-wddir = here(ddir, "bd_swab_results") # working data directory
+wddir = here(ddir, "bd_qpcr_results") # working data directory
 
 ```
 
@@ -243,7 +243,19 @@ clean_results = bind_results %>%
          !str_detect(sample_name, "^Pisces"),
          target_name == "Bd" | is.na(target_name),
          ipc == "Pass")
-	
+
+```
+
+## investigation
+```{r}
+peace = remaining %>%
+  select(bd_swab_id) %>%
+  rename(sample_name = bd_swab_id) %>%
+  inner_join(clean_results, by = "sample_name")
+
+hope = remaining %>%
+  rename(sample_name = bd_swab_id) %>%
+  anti_join(peace %>% select(sample_name), by = "sample_name")
 
 ```
 
@@ -255,23 +267,28 @@ violations_unique = get_dupes(clean_results, sample_name)
 
 ## reconcile dupes
 ```{r}
-violations_unique_resolved = violations_unique %>%
-  group_by(sample_name) %>%
-  mutate(sample_name = paste0(sample_name, "_DDR", row_number())) %>%
-  ungroup() %>%
-  select(-dupe_count)
+# allowing duplicate samples, for now
 
-distinct_results = clean_results %>%
-  anti_join(violations_unique, by = "sample_name") %>%
-  bind_rows(violations_unique_resolved)
+# violations_unique_resolved = violations_unique %>%
+#   group_by(sample_name) %>%
+#   mutate(sample_name = paste0(sample_name, "_DDR", row_number())) %>%
+#   ungroup() %>%
+#   select(-dupe_count)
+# 
+# distinct_results = clean_results %>%
+#   anti_join(violations_unique, by = "sample_name") %>%
+#   bind_rows(violations_unique_resolved)
 
 ```
 
 # gelled
 ```{r}
-gelled_results = distinct_results %>%
+gelled_results = clean_results %>%
   left_join(db_sample %>% collect(), by = c("sample_name", "sample_type")) %>%
-  mutate(sample_id = map_chr(sample_id, ~ ifelse(is.na(.x), UUIDgenerate(), .x)))
+  group_by(sample_name, sample_type) %>%
+  mutate(sample_id = ifelse(is.na(sample_id), UUIDgenerate(), sample_id)) %>%
+  ungroup() %>%
+  mutate(sample_name_bd = sample_name)
 
 ```
 
@@ -299,8 +316,13 @@ compare_bd = compare_df_cols(db_bd %>%
                                filter(FALSE) %>%
                                collect(), subset_bd)
 
-tray = compare_for_staging(db_bd %>% collect(), subset_bd, "sample_id", return_all = TRUE, report = "bd")
+tray = compare_for_staging(db_bd %>% collect(), subset_bd, c("extraction_date", "qpcr_date", "sample_name_bd", "plate_name", "average_target_quant", "average_ct"), return_all = TRUE, report = "bd")
 final_bd = bind_rows(tray$insert,
                        tray$update)
+
+peace = db_bd %>%
+  select(qpcr_date) %>%
+  distinct() %>%
+  collect()
 
 ```

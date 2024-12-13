@@ -1,0 +1,136 @@
+---
+title: "Sierra qPCR Wrangling"
+format: html
+editor: source
+---
+
+## Load Packages
+
+```{r}
+
+if(!require(librarian)){
+  install.packages(librarian)
+  library(librarian)
+}
+
+shelf(tidyverse, here, DBI, RPostgres, janitor)
+
+```
+
+[Column Headers]{.underline}: bd_swab_id, extraction_plate_id, qpcr_plate_id, result, average_copy_number, average_ct, average_zoospores, comments, standard, master_mix, replicate, qpcr_machine, extraction_kit, extraction_date, qpcr_date, extract_lab,
+
+```{r}
+
+
+#| output: false
+tryCatch({
+    drv <- dbDriver("Postgres")
+    print("Connecting to Database…")
+    connection <- dbConnect(drv,
+                       dbname = Sys.getenv("sn_dbname"),
+                       host = Sys.getenv("sn_host"),
+                       port = Sys.getenv("sn_port"),
+                       user = Sys.getenv("sn_user"),
+                       password = Sys.getenv("sn_password"),
+                       timezone=NULL)
+    print("Database Connected!")
+    },
+    error=function(cond) {
+            print("Unable to connect to Database.")
+    })
+
+
+
+
+
+```
+## Pull in tables from fdw
+```{r}
+dbExecute(connection, "set search_path to qpcr_fdw")
+
+results <- dbGetQuery(connection, "select * from results;")
+
+results_ucsb <- dbGetQuery(connection, "select * from results_ucsb_import;") %>% 
+  rename(id = sample_id)
+
+#results_removed <- dbGetQuery(connection, "select * from samples_removed;")
+
+plates <- dbGetQuery(connection, "select * from plates;")
+
+dbExecute(connection, "set search_path = 'public';")
+
+bd_load <- dbGetQuery(connection, "select * from bd_load;")
+
+```
+
+## pull out quant cycle from results and results_ucsb
+```{r}
+
+result_quant_cycle <- results %>% 
+  select(sample_id, quant_cycle, plate_id, well_notes) %>% 
+  rename(average_ct = quant_cycle,
+         qpcr_plate_id = plate_id,
+         comments = well_notes) %>% 
+  filter(str_detect(sample_id, "RKS")) %>% 
+  group_by(sample_id) %>% 
+  reframe(average_ct = mean(average_ct, na.rm = T))
+
+ucsb_results_quant_cycle <- results_ucsb %>% 
+  select(id, quant_cycle) %>% 
+  rename(average_ct = quant_cycle,
+         sample_id = id) %>% 
+  filter(str_detect(sample_id, "RKS"))%>% 
+  group_by(sample_id) %>% 
+  reframe(average_ct = mean(average_ct, na.rm = T))
+
+quant_cycle <- plyr::rbind.fill(result_quant_cycle, ucsb_results_quant_cycle) %>% 
+  mutate(average_ct = if_else(is.nan(average_ct), NA, average_ct))
+  
+
+```
+
+# pisces standard always plasmid of genomic
+
+## Start by aligning `bd_load` tables
+```{r}
+
+ucsb_qpcr <- bd_load %>% 
+  #filter(str_detect(sample_id, "RKS")) %>% 
+  rename(bd_swab_id = sample_id,
+         standard = std_type, 
+         average_copy_number = start_quant, 
+         dilution_factor = dilution,
+         average_ITS1_copies_per_swab = bd_load) %>% 
+  mutate(extract_lab = "snarl",
+         qpcr_lab = "snarl",
+         swab_type = "mw113",
+         master_mix = "bioline", 
+         qpcr_machine = "biorad_cfx96", 
+         volume_template_dna_uL = "5",  
+         total_volume_uL = "25",
+         dilution_factor = paste("1:", dilution_factor, sep = ""),
+         extraction_kit = "prepman") %>% 
+  left_join(quant_cycle, by = c("bd_swab_id" = "sample_id")) %>% 
+  group_by(bd_swab_id) %>% 
+  mutate(result = if_else(average_copy_number > 0, "p", "n"),
+         #average_ITS1_copies_per_swab = mean(average_ITS1_copies_per_swab),
+         #average_ct = mean(average_ct),
+         #average_copy_number = mean(average_copy_number),
+         #average_ITS1_copies = mean(average_ITS1_copies),
+         #result = paste(result, result, sep = ","),
+         replicate = case_when(length(bd_swab_id) == 1 ~ "singley",
+                               length(bd_swab_id) == 2 ~ "duplicate",
+                               length(bd_swab_id) == 3 ~ "triplicate",
+                               length(bd_swab_id) == 4 ~ "quadruplicate",
+                               length(bd_swab_id) == 5 ~ "quintuple"),
+         result = paste(result, collapse = ',')) %>% 
+  #filter(!duplicated(bd_swab_id)) %>% 
+  filter(str_detect(bd_swab_id, "RKS")) %>% 
+  mutate(standard = if_else(standard == "plasmid", "plasmid-briggs", standard))
+
+
+write_csv(ucsb_qpcr, here("clean_qpcr", "ucsb_qpcr.csv"))
+
+
+```
+

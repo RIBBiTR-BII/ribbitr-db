@@ -1,0 +1,74 @@
+---
+title: "serdp_wrangling"
+format: html
+editor: source
+---
+
+## Load Packages
+
+```{r}
+
+if(!require(librarian)){
+  install.packages(librarian)
+  library(librarian)
+}
+
+shelf(tidyverse, here, DBI, RPostgres, janitor, parsedate)
+
+```
+
+## Read in raw data
+
+```{r}
+
+qpcr_2017 <- read_csv(here("data_csv", "qPCR_results_serdp", "SERDP qPCR results 2017_220721.csv")) %>% 
+  clean_names() %>% 
+  mutate(extract_date = parse_date(extract_date),
+         qpcr_date = parse_date(qpcr_date))
+
+qpcr_2018 <- read_csv(here("data_csv","qPCR_results_serdp", "SERDP qPCR results 2018_191129.csv")) %>% 
+  clean_names()%>% 
+  mutate(extract_date = parse_date(extract_date),
+         qpcr_date = parse_date(qpcr_date))
+
+qpcr_2019 <- read_csv(here("data_csv", "qPCR_results_serdp","SERDP qPCR results 2019_220721.csv")) %>% 
+  clean_names()%>% 
+  mutate(extract_date = parse_date(extract_date),
+         qpcr_date = parse_date(qpcr_date))
+
+all_qpcr <- plyr::rbind.fill(qpcr_2017, qpcr_2018, qpcr_2019) 
+
+```
+
+## Clean and Align
+
+```{r}
+clean_qpcr <- all_qpcr %>% 
+  select(sample_id, extract_plate_id, extract_date, qpcr_plate_id, qpcr_date, sample_bd_ct, 
+         sample_bd_qty, sample_bd_swab_qty, extract_lab, qpcr_lab) %>% 
+  rename(bd_swab_id = sample_id,
+         average_ct = sample_bd_ct,
+         average_zoospores = sample_bd_swab_qty,
+         average_copy_number = sample_bd_qty,
+         extraction_date = extract_date,
+         extraction_plate_id = extract_plate_id) %>% 
+  mutate(standard = "pisces",
+         master_mix = "bioline",
+         qpcr_machine = "quantstudio_3",
+         extraction_kit = "qiagen_dneasy",
+         replicate = "singley",
+         extract_lab = if_else(str_detect(extract_lab, "RZ"), "rz_lab", extract_lab),
+         extract_lab = if_else(extract_lab == "Woodhams", "woodhams_lab", extract_lab),
+         qpcr_lab = if_else(str_detect(qpcr_lab, "lab"), "rz_lab", qpcr_lab),
+         result = if_else(is.na(average_copy_number), "n", "p"),
+         qpcr_lab = if_else(str_detect(qpcr_lab, "Lab"), "rz_lab", qpcr_lab),
+         qpcr_lab = if_else(qpcr_lab == "unk", NA, qpcr_lab),
+         extract_lab = if_else(extract_lab == "unk", NA, extract_lab),
+         swab_type = "mw113",
+         total_volume_uL = 200,  
+         dillution_factor = "1:1",
+         volume_template_dna_uL = 5)
+
+write_csv(clean_qpcr, here("clean_qpcr", "serdp_qpcr.csv"))
+
+```

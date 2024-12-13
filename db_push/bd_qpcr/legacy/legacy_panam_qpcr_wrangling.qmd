@@ -1,0 +1,365 @@
+---
+title: "legacy_panama_qpcr_wrangling"
+format: html
+editor: source
+---
+
+## Load Packages
+
+```{r}
+
+if(!require(librarian)){
+  install.packages(librarian)
+  library(librarian)
+}
+
+shelf(tidyverse, here, DBI, RPostgres, janitor, readxl, parsedate)
+
+```
+
+## Read in all .xlxs files
+
+```{r}
+
+file_list <- gsub("\\.xlsx$","", list.files(here("panama_data")))
+
+
+for (i in file_list){
+  
+  assign(i, read_excel(here("data", paste(i, ".xlsx", sep=""))))
+  
+}
+
+
+```
+
+Columns: swab_id, field_protocol, qPCR_protocol, qPCR_instrument, standard, ITS1_region_replicates, extraction_chemistry, replicate, negative_control, zoospore_eq/average_zoospores, ITS1_copies
+
+## Atelopus
+
+```{r}
+
+clean_atelopus <- atelopus %>% 
+  clean_names() %>% 
+  select(!c(sample_type, site, species, home_base, preservative, notes_7, status, 
+            location_of_sample)) %>% 
+  rename(comments = notes_19,
+         bd_swab_id = frog_id,
+         average_zoospores = swab_result,
+         average_copy_number = quantity) %>% 
+  mutate(extraction_kit = str_to_lower(str_replace_all(extraction_kit, " ", "_")),
+         extraction_kit = str_replace(extraction_kit, "-", "_"),
+         ct = if_else(is.na(ct), 0, ct),
+         average_copy_number = if_else(is.na(average_copy_number), 0, average_copy_number),
+         average_zoospores = if_else(is.na(average_zoospores), 0, average_zoospores),
+         bd_swab_id = str_to_lower(str_replace_all(bd_swab_id, "-", "_")),
+         standard = "pisces",
+         master_mix = "bioline",
+         result = if_else(result == "positive", "p", result),
+         result = if_else(result == "negative", "n", result),
+         replicate = "singley",
+         qpcr_machine = "quantstudio_3")
+
+
+```
+
+## fall_2012 - extraction kit?
+
+```{r}
+
+clean_fall_2012 <- fall_2012 %>% 
+  clean_names() %>% 
+  select(!c(site, species)) %>% 
+  rename(comments = notes,
+         bd_swab_id = swab,
+         extraction_plate_id = extraction_plate,
+         pcr_plate_id = pcr_plate) %>% 
+  mutate(bd_swab_id = str_replace_all(bd_swab_id, "-", "_"),
+         average_zoospores = if_else(is.na(average_zoospores), 0, average_zoospores),
+         bd_swab_id = str_remove_all(bd_swab_id, "\\*"),
+         standard = "pisces",
+         master_mix = "taqman",
+         replicate = "triplicate",
+         qpcr_machine = "applied_biosystems_7500",
+         extraction_kit = "qiagen_dneasy")
+  
+
+```
+
+## qpcr_2014
+
+```{r}
+
+clean_2014 <- qpcr_2014 %>% 
+  clean_names() %>% 
+  select(!c(site, species)) %>% 
+  rename(bd_swab_id = id,
+         average_zoospores = swab_result,
+         comments = additional_notes,
+         pcr_plate_id = pcr_plate,
+         extraction_plate_id = extraction_plate,
+         ct = ct_vlues) %>% 
+  mutate(result = if_else(result == "0", "n,n,n", result),
+         bd_swab_id = str_to_lower(str_replace_all(bd_swab_id, "-", "_")),
+         ct = if_else(is.na(ct), 0, ct),
+         average_copy_number = if_else(is.na(average_copy_number), 0, average_copy_number),
+         average_zoospores = if_else(is.na(average_zoospores), 0, average_zoospores),
+         standard = "pisces",
+         master_mix = "taqman",
+         replicate = "triplicate",
+         qpcr_machine = "abi_7500",
+         extraction_kit = "qiagen_dneasy")
+
+```
+
+## winter_2013
+
+```{r}
+
+clean_winter_2013 <- winter_2013 %>% 
+  clean_names() %>% 
+  select(!c(site, species)) %>% 
+  rename(bd_swab_id = swab,
+         average_zoospores = swab_result,
+         comments = additional_notes,
+         pcr_plate_id = pcr_plate,
+         extraction_plate_id = extraction_plate,
+         ct = ct_vlues) %>% 
+  mutate(ct = if_else(is.na(ct), 0, ct),
+         average_copy_number = if_else(is.na(average_copy_number), 0, average_copy_number),
+         average_zoospores = if_else(is.na(average_zoospores), 0, average_zoospores),
+          bd_swab_id = str_to_lower(str_replace_all(bd_swab_id, "-", "_")),
+         standard = "pisces",
+         master_mix = "taqman",
+         replicate = "triplicate",
+         qpcr_machine = "abi_7500",
+         extraction_kit = "qiagen_dneasy")
+
+```
+
+## summer_2013
+
+```{r}
+
+clean_summer_2013 <- summer_2013 %>% 
+  clean_names() %>% 
+  select(!c(site, species, location)) %>% 
+  rename(bd_swab_id = swab,
+         average_zoospores = swab_result,
+         comments = additional_notes,
+         pcr_plate_id = pcr_plate,
+         extraction_plate_id = extraction_plate,
+         ct = ct_number) %>% 
+  mutate(ct = if_else(is.na(ct), 0, ct),
+         average_copy_number = if_else(is.na(average_copy_number), 0, average_copy_number),
+         average_zoospores = if_else(is.na(average_zoospores), 0, average_zoospores),
+          bd_swab_id = str_to_lower(str_replace_all(bd_swab_id, "-", "_")),
+         standard = "pisces",
+         master_mix = "taqman",
+         replicate = "triplicate",
+         qpcr_machine = "abi_7500",
+         extraction_kit = "qiagen_dneasy")
+
+```
+
+## qpcr_2015
+
+```{r}
+
+clean_2015 <- qpcr_2015 %>% 
+  clean_names() %>% 
+  select(!c(site, species)) %>% 
+  rename(bd_swab_id = frog_id,
+         average_zoospores = swab_result,
+         comments = additional_notes,
+         ct = mean_ct_value,
+         average_copy_number = mean_copy_number) %>% 
+  mutate(ct = if_else(is.na(ct), 0, ct),
+         average_copy_number = if_else(is.na(average_copy_number), 0, average_copy_number),
+         average_zoospores = if_else(is.na(average_zoospores), 0, average_zoospores),
+         result = if_else(result == "0", "n,n,n", result),
+         bd_swab_id = str_to_lower(str_replace_all(bd_swab_id, "-", "_")),
+         standard = "pisces",
+         master_mix = "taqman",
+         replicate = "triplicate",
+         qpcr_machine = "quantstudio_3",
+         extraction_kit = "qiagen_dneasy")
+  
+
+```
+
+## qpcr_2016
+
+```{r}
+
+clean_2016 <- qpcr_2016 %>% 
+  clean_names() %>% 
+  select(!c(site, species)) %>% 
+  rename(bd_swab_id = frog_id,
+         average_zoospores = swab_result,
+         comments = additional_notes,
+         ct = mean_ct_value,
+         average_copy_number = mean_copy_number)%>% 
+  mutate(ct = if_else(is.na(ct), 0, ct),
+         average_copy_number = if_else(is.na(average_copy_number), 0, average_copy_number),
+         average_zoospores = if_else(is.na(average_zoospores), 0, average_zoospores),
+         result = if_else(result == "0", "n,n,n", result),
+         bd_swab_id = str_to_lower(str_replace_all(bd_swab_id, "-", "_")),
+         standard = "pisces",
+         master_mix = "bioline",
+         replicate = "triplicate",
+         qpcr_machine = "quantstudio_3",
+         extraction_kit = "qiagen_dneasy")
+
+
+```
+
+## js086-88 missing IDs - NEED to calculate out average zoospore
+
+```{r}
+
+js86 <- js086 %>% 
+  slice(c(7:199)) %>% 
+  row_to_names(row_number = 1) %>% 
+  clean_names()
+
+js87 <- js087 %>% 
+  slice(c(7:103)) %>% 
+  row_to_names(row_number = 1) %>% 
+  clean_names()
+
+js88 <- js088 %>% 
+  slice(c(7:103)) %>% 
+  row_to_names(row_number = 1) %>% 
+  clean_names()
+
+js_samps <- plyr::rbind.fill(js86, js87, js88) %>% 
+  select(sample_name, ct_mean, quantity_mean, comments) %>% 
+  filter(!str_detect(sample_name, "Pisces"),
+         !str_detect(sample_name, "NEG"),
+         !str_detect(sample_name, "POS")) %>% 
+  mutate(sample_name = str_replace_all(str_to_lower(sample_name), "-", "_"),
+         ct_mean = as.numeric(ct_mean),
+         quantity_mean = as.numeric(quantity_mean),
+         ct_mean = round(if_else(is.na(ct_mean), 0, ct_mean), 2),
+         quantity_mean = round(if_else(is.na(quantity_mean), 0, quantity_mean), 2)) %>% 
+  rename(bd_swab_id = sample_name,
+         ct = ct_mean,
+         quantity = quantity_mean) %>% 
+  mutate(result = if_else(!ct == 0, "p", "n")) %>% 
+  group_by(bd_swab_id) %>% 
+  reframe(ct = mean(ct),
+          average_copy_number = mean(quantity),
+          result = aggregate(result ~ bd_swab_id, FUN = paste, collapse = ",")) %>% 
+  unnest() %>% 
+  select(!c(bd_swab_id1)) %>% 
+  mutate(standard = "pisces",
+         master_mix = "taqman",
+         replicate = "quadruplicates",
+         qpcr_machine = "abi_7500",
+         extraction_kit = "qiagen_dneasy",
+         pcr_plate_id = "js086-088",
+         average_zoospores = (average_copy_number * 400),
+         comments = "CAUTION average_zoospores values calculated estimate of a 400 dillution factor - CZ")
+
+```
+
+## 2019_qpcr
+
+```{r}
+
+clean_2019 <- qpcr_2019 %>% 
+  clean_names() %>% 
+  select(!c(well, well_position, site, region_code, site_code, species, ipc, bd_pos_neg, extraction_tech, extraction_lab, q_pcr_tech, q_pcr_lab, ext_pos_quality, ext_neg_quality, sample_type, rerun)) %>% 
+  rename(bd_swab_id = sample_name,
+         ct = bd_ct_mean,
+         average_copy_number = bd_quantity_mean,
+         extraction_plate_id = extraction_plate,
+         pcr_plate_id = q_pcr_plate) %>% 
+  mutate(standard = "pisces",
+         master_mix = "bioline",
+         replicate = "triplicate",
+         qpcr_machine = "quantstudio_3",
+         extraction_kit = "qiagen_dneasy",
+         ct = if_else(is.na(ct), 0, ct),
+         average_copy_number = if_else(is.na(average_copy_number), 0, average_copy_number),
+         average_zoospores = (40*average_copy_number))
+  
+
+```
+
+## read in qpcr_lab and clean
+
+```{r}
+
+labs <- read_csv(here("data_csv", "2012_2017_bdswab_search_clz.csv"))
+
+clean_labs <- labs %>% 
+  select(bd_swab_id, `Who did the qPCR?`) %>% 
+  rename(qpcr_lab = `Who did the qPCR?`) %>% 
+  mutate(qpcr_lab = if_else(qpcr_lab == "Cori's lab - Pitt", "rz_lab", qpcr_lab),
+         qpcr_lab = if_else(qpcr_lab == "Jamie's lab", "jv_lab", qpcr_lab),
+         qpcr_lab = if_else(qpcr_lab == "??", NA, qpcr_lab),
+         qpcr_lab = if_else(qpcr_lab == "Matt Robak - Tulane", "rz_lab", qpcr_lab),
+         qpcr_lab = if_else(qpcr_lab == "Julia Sonn - Tulane", "rz_lab", qpcr_lab),
+         extract_lab = qpcr_lab)
+
+```
+
+## Bind all tables together
+
+```{r}
+
+panama_qpcr <- plyr::rbind.fill(clean_2014, clean_2015, clean_2016, clean_atelopus, clean_fall_2012, clean_winter_2013, clean_summer_2013, 
+                                js_samps, clean_2019) %>% 
+  rename(average_ct = ct,
+         qpcr_plate_id = pcr_plate_id,
+         qpcr_date = q_pcr_date) %>% 
+  mutate(average_zoospores = round(average_zoospores, 2),
+         average_copy_number = round(average_copy_number, 2),
+         average_ct = round(average_ct, 2),
+         across(c(c(bd_swab_id:qpcr_plate_id), c(comments:extraction_kit)), str_to_lower),
+         average_copy_number = if_else(average_copy_number == 0, NA, average_copy_number),
+         average_ct = if_else(average_ct == 0, NA, average_ct),
+         average_zoospores = if_else(average_zoospores == 0, NA, average_zoospores)) %>% 
+  left_join(clean_labs, by = c("bd_swab_id")) %>% 
+  mutate(qpcr_lab = if_else(str_detect(bd_swab_id, "^18"), "rz_lab", qpcr_lab),
+         qpcr_lab = if_else(str_detect(bd_swab_id, "^19"), "rz_lab", qpcr_lab),
+         extract_lab = if_else(str_detect(bd_swab_id, "^19"), "rz_lab", extract_lab),
+         extract_lab = if_else(str_detect(bd_swab_id, "^18"), "rz_lab", extract_lab),
+         qpcr_lab = if_else(is.na(qpcr_lab), "rz_lab", qpcr_lab),
+         extract_lab = if_else(is.na(extract_lab), "rz_lab", extract_lab),
+         swab_type = "mw113",
+         total_volume_uL = if_else(master_mix == "taqman", 50, 200),
+         dillution_factor = if_else(row_number() > 2942, "1:1", "1:10"), # very dangerous line of code. Make sure nothin above changes
+         volume_template_dna_uL = 5)
+
+# missing_labs <- panama_qpcr %>% 
+#   filter(is.na(extract_lab)) %>% 
+#   write_csv(here("missing_labs.csv"))
+
+write_csv(panama_qpcr, here("clean_qpcr", "panama_qpcr.csv"))
+
+```
+
+## find missing IDs still
+
+```{r}
+
+# all_ids <- read_csv(here("data_csv", "2012_2017_bdswab_search_clz.csv"))
+# 
+# missing_ids <-  all_ids %>%
+#   anti_join(panama_qpcr, by = c("bd_swab_id"))
+# 
+# missing_ids <- missing_ids[-(90:187),]
+# 
+# write_csv(missing_ids, here("data_csv", "remaining_missing_ids.csv"))
+# 
+# 
+# 
+# plates <- panama_qpcr %>%
+#   select(bd_swab_id, extraction_plate_id, pcr_plate_id) %>%
+#   write_csv(here("data_csv", "extraction_ids.csv"))
+  
+
+```

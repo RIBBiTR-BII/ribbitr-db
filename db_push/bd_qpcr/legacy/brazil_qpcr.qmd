@@ -1,0 +1,151 @@
+---
+title: "brazil_qpcr_wrangling"
+format: html
+editor: source
+---
+
+## Load Packages
+
+```{r}
+
+if(!require(librarian)){
+  install.packages(librarian)
+  library(librarian)
+}
+
+shelf(tidyverse, here, DBI, RPostgres, janitor, readxl, parsedate)
+
+```
+
+[Column Headers]{.underline}: bd_swab_id, extraction_plate_id, qpcr_plate_id, result, average_copy_number, average_ct, average_zoospores, comments, standard, master_mix, replicate, qpcr_machine, extraction_kit, extraction_date, qpcr_date, extract_lab,
+
+standard: pisces 
+extraction_kit: ibi_spin_column_blood_tissue_kit 
+dillution: 100 uml 
+master_mix: tachman 
+replicate: ipc, 7 standards 
+qpcr_machine: quant studio 3 
+extract_lab: becker_lab
+
+(1) the factor by which the extracted DNA was diluted before it went into the qPCR well (we sometimes didn't dilute at all and sometimes diluted 1:10 with water), (2) the total volume of the DNA extraction (for us it is usually 200 uL, for Taqman folks I think it is more like 50 uL), and (3) the amount of template DNA that went into the well.
+
+# CT values - climate data
+
+```{r}
+
+climate_ct <- read_excel(here("data", "climate_ct.xlsx")) %>% 
+  clean_names() %>% 
+  select(id, extraction_date, qpcr_date, plate_name, ct_8) %>% 
+  rename(bd_swab_id = id) %>% 
+  rename(qpcr_plate_id = plate_name) %>% 
+  rename(average_ct = ct_8) %>% 
+  slice(31:3947) %>% 
+  mutate(bd_swab_id = str_replace_all(bd_swab_id, " ", ""),
+         bd_swab_id = str_replace_all(bd_swab_id, "RM", ""),
+         average_ct = if_else(average_ct == "Undetermined", NA, average_ct))
+
+```
+
+# Climate Change Data
+
+## Read in Data
+
+```{r}
+
+clim_change <- read_excel(here("data", "FINAL_DATASET_PCE_qPCRs_RIBBiTR.xlsx"))
+
+
+```
+
+## Clean Data
+
+-   100 = its copies
+
+```{r}
+
+climate_qpcr_data <- clim_change %>% 
+  select(SWAB, zoo.load..100) %>% 
+  rename(bd_swab_id = SWAB) %>% 
+  filter(!bd_swab_id == ".") %>% 
+  mutate(extraction_kit = "ibi_spin_column_blood_tissue_kit",
+         master_mix = "taqman",
+         replicate = "singley",
+         qpcr_machine = "quantstudio_3",
+         extract_lab = "becker_lab",
+         qpcr_lab = "becker_lab",
+         standard = "pisces") %>% 
+  rename(average_copy_number = zoo.load..100) %>% 
+  left_join(climate_ct, by = c("bd_swab_id")) %>% 
+  mutate(result = if_else(average_copy_number > 0, "p", "n"),
+         extraction_date = parse_date(extraction_date),
+         qpcr_date = parse_date(qpcr_date)) %>% 
+  mutate(average_copy_number = if_else(average_copy_number == 0, NA, average_copy_number),
+         swab_type = "mw113",
+         total_volume_uL = 25,  #if_else(master_mix == "tagman", 50, 200),
+         dillution_factor = "1:1",
+         volume_template_dna_uL = 5) %>% 
+  mutate(bd_swab_id = if_else(bd_swab_id == "1", "01", bd_swab_id),
+         bd_swab_id = if_else(bd_swab_id == "2", "02", bd_swab_id),
+         bd_swab_id = if_else(bd_swab_id == "3", "03", bd_swab_id),
+         bd_swab_id = if_else(bd_swab_id == "4", "04", bd_swab_id),
+         bd_swab_id = if_else(bd_swab_id == "5", "05", bd_swab_id),
+         bd_swab_id = if_else(bd_swab_id == "6", "06", bd_swab_id),
+         bd_swab_id = if_else(bd_swab_id == "7", "07", bd_swab_id),
+         bd_swab_id = if_else(bd_swab_id == "8", "08", bd_swab_id),
+         bd_swab_id = if_else(bd_swab_id == "9", "09", bd_swab_id))
+
+
+
+
+#write_csv(climate_qpcr_data, here("clean_qpcr", "climate.csv"))
+
+```
+
+# Landscape Data
+
+## Read in Data
+
+```{r}
+
+landscape <- read_excel(here("data", "Landscapes_RoL_Becker.xlsx")) %>% 
+  clean_names()
+
+```
+
+## Clean data
+
+```{r}
+
+landscape_qpcr_data <- landscape %>% 
+  select(sample_id, c(quantity_1:quantity_average)) %>% 
+  mutate(extraction_kit = "ibi_spin_column_blood_tissue_kit",
+         master_mix = "taqman",
+         replicate = "duplicate", 
+         qpcr_machine = "quantstudio_3",
+         extract_lab = "becker_lab",
+         qpcr_lab = "becker_lab",
+         standard = "pisces") %>% 
+  rename(average_copy_number = quantity_average) %>% 
+  rename(bd_swab_id = sample_id) %>% 
+  mutate(result_1 = if_else(quantity_1 > 0, "p", "n"),
+         result_2 = if_else(quantity_2 > 0, "p", "n")) %>% 
+  unite(result, c("result_1", "result_2"), sep = ",", na.rm = T) %>% 
+  select(!c(quantity_1, quantity_2)) %>% 
+  mutate(average_copy_number = if_else(average_copy_number == 0, NA, average_copy_number),
+         total_volume_uL = "",
+         dillution_factor = "1:1",
+         volume_template_dna_uL = 4)
+
+#write_csv(landscape_qpcr_data, here("clean_qpcr", "landscape.csv"))
+```
+
+## Bind Tables together
+
+```{r}
+
+clean_brazil_qpcr <- plyr::rbind.fill(landscape_qpcr_data, climate_qpcr_data) %>% 
+  mutate(swab_type = "mw113")
+
+write_csv(clean_brazil_qpcr, here("clean_qpcr", "brazil_qpcr.csv"))
+
+```
