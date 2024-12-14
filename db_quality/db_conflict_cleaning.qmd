@@ -607,32 +607,6 @@ db_survey = db_survey %>%
 
 ```
 
-# build taxa table
-```{r}
-sn_aural = db_aural %>%
-  select(species_aural) %>%
-  rename(scientific_name = species_aural) %>%
-  distinct()
-sn_capture = db_capture %>%
-  select(species_capture) %>%
-  rename(scientific_name = species_capture) %>%
-  distinct()
-sn_ves = db_ves %>%
-  select(species_ves) %>%
-  rename(scientific_name = species_ves) %>%
-  distinct()
-
-all_sn = sn_aural %>%
-  full_join(sn_capture, by = "scientific_name") %>%
-  full_join(sn_ves, by = "scientific_name") %>%
-  filter(!is.na(scientific_name)) %>%
-  arrange(scientific_name) %>%
-  collect()
-
-# try to link up with taxa database!
-
-```
-
 # calculate survey.duration_minutes
 ```{r}
 # flip start and end time when durration in greater than 18 hours

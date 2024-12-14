@@ -1,0 +1,105 @@
+---
+title: "taxa_table_build"
+format: html
+editor: source
+---
+
+```{r}
+
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+# connect to database
+dbcon = hopToDB("ribbitr")
+
+```
+
+Pull metadata and tables
+
+```{r}
+mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
+  collect()
+
+# pull relevant chain tables from DB
+db_aural = tbl(dbcon, Id("survey_data", "aural"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_ves = tbl(dbcon, Id("survey_data", "ves"))
+db_env = tbl(dbcon, Id("survey_data", "environmental"))
+
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
+db_cmr = tbl(dbcon, Id("survey_data", "cmr"))
+db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+
+```
+
+# build taxa table
+```{r}
+sn_aural = db_aural %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  select(species_aural, region, country) %>%
+  rename(scientific_name = species_aural) %>%
+  distinct() %>%
+  collect()
+
+sn_capture = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  select(species_capture, region, country) %>%
+  rename(scientific_name = species_capture) %>%
+  distinct() %>%
+  collect()
+
+sn_ves = db_ves %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  select(species_ves, region, country) %>%
+  rename(scientific_name = species_ves) %>%
+  distinct() %>%
+  collect()
+
+all_sn = bind_rows(sn_aural,
+                   sn_capture,
+                   sn_ves) %>%
+  distinct() %>%
+  filter(!is.na(scientific_name)) %>%
+  arrange(scientific_name)
+
+sn_br = all_sn %>%
+  filter(country == "brazil") %>%
+  select(scientific_name) %>%
+  distinct()
+
+sn_ca = all_sn %>%
+  filter(region == "california") %>%
+  select(scientific_name) %>%
+  distinct()
+
+sn_pa = all_sn %>%
+  filter(country == "panama") %>%
+  select(scientific_name) %>%
+  distinct()
+
+sn_pe = all_sn %>%
+  filter(region == "pennsylvania") %>%
+  select(scientific_name) %>%
+  distinct()
+
+# try to link up with taxa database!
+
+```

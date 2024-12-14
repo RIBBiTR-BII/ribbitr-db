@@ -15,19 +15,20 @@ if (!require(librarian)){
 librarian::shelf(tidyverse, dbplyr, DBI, RPostgres, here, RIBBiTR-BII/ribbitrrr)
 
 ## Connect to DB
-dbcon <- hopToDB(prefix = "ribbitr")
+dbcon <- hopToDB()
 
 ```
 
 ## Pull Schemas
 
 ```{r}
-schemas <- dbGetQuery(con, "SELECT schema_name FROM information_schema.schemata
+schemas <- dbGetQuery(dbcon, "SELECT schema_name FROM information_schema.schemata
                       WHERE schema_name NOT LIKE 'pg_temp_%'
                       AND schema_name NOT LIKE 'pg_toast_temp_%'
                       AND schema_name != 'pg_catalog'
                       AND schema_name != 'information_schema'
                       AND schema_name != 'public';")$schema_name
+
 ```
 
 ## Define functions to pull table and column metadata
@@ -223,7 +224,7 @@ for (schema in schemas) {
 
 ```{r}
 
-dbBegin(con)
+dbBegin(dbcon)
 
 tryCatch(
   {
