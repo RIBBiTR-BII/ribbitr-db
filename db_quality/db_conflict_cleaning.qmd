@@ -34,6 +34,8 @@ db_region = tbl(dbcon, Id("survey_data", "region"))
 db_country = tbl(dbcon, Id("survey_data", "country"))
 
 db_cmr = tbl(dbcon, Id("survey_data", "cmr"))
+
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
 db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
 
 ```
@@ -828,4 +830,78 @@ tryCatch(
 
 ```
 
+```{r}
+db_logger = tbl(dbcon, Id("microclimate_data", "logger"))
+db_sensor = tbl(dbcon, Id("microclimate_data", "sensor"))
+db_time_series = tbl(dbcon, Id("microclimate_data", "time_series"))
 
+db_sensor %>%
+  pull(sensor_type) %>%
+  unique()
+
+sensor_units = db_sensor %>%
+  mutate(units = case_match(sensor_type,
+                            "intensity_lux" ~ "lux_lx",
+                            "temperature_c" ~ "degrees_celsius_c",
+                            "relative_humidity_percent" ~ "percent",
+                            "dew_point_c" ~ "degrees_celsius_c")) %>%
+  collect()
+
+dbBegin(dbcon)
+
+tryCatch(
+  {
+    temp_sensor = stage_to_temp(dbcon, db_sensor, sensor_units)
+    pointer = tbl(dbcon, temp_sensor)
+    rows_update(db_sensor, pointer, by = "sensor_id", in_place=TRUE, unmatched = "ignore")
+    
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful!")
+    
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
+
+```
+
+```{r}
+peace = db_logger %>%
+  left_join(db_sensor, by = "logger_id") %>%
+  filter(sensor_id == "32a14024-bd66-43da-a3d5-d35622af1121") %>%
+  left_join(db_time_series, by = "sensor_id") %>%
+  collect()
+
+```
+
+# clean up detection types
+```{r}
+other_survey = db_survey %>%
+  filter(detection_type == "other") %>%
+  collect()
+
+clean_survey = db_survey %>%
+  filter(detection_type == "ves") %>%
+  mutate(detection_type = "visual") %>%
+  collect()
+
+dbBegin(dbcon)
+
+tryCatch(
+  {
+    temp_survey = stage_to_temp(dbcon, db_survey, clean_survey)
+    pointer = tbl(dbcon, temp_survey)
+    rows_update(db_survey, pointer, by = "survey_id", in_place=TRUE, unmatched = "ignore")
+    
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful!")
+    
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
+```
