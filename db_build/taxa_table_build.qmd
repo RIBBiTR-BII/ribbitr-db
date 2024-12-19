@@ -7,12 +7,14 @@ editor: source
 ```{r}
 
 # librarian downloads, if not already downloaded, and reads in needed packages
-librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, uuid, RIBBiTR-BII/ribbitrrr, EML, ropensci/bold, ropensci/taxize, EDIorg/taxonomyCleanr)
+
 # librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+# librarian::shelf(roxygen2, devtools)
 
 # connect to database
 dbcon = hopToDB("ribbitr")
-
 ```
 
 Pull metadata and tables
@@ -35,7 +37,6 @@ db_country = tbl(dbcon, Id("survey_data", "country"))
 
 db_cmr = tbl(dbcon, Id("survey_data", "cmr"))
 db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
-
 ```
 
 # build taxa table
@@ -48,7 +49,6 @@ sn_aural = db_aural %>%
   left_join(db_country, by = "country_id") %>%
   select(species_aural, region, country) %>%
   rename(scientific_name = species_aural) %>%
-  distinct() %>%
   collect()
 
 sn_capture = db_capture %>%
@@ -59,7 +59,6 @@ sn_capture = db_capture %>%
   left_join(db_country, by = "country_id") %>%
   select(species_capture, region, country) %>%
   rename(scientific_name = species_capture) %>%
-  distinct() %>%
   collect()
 
 sn_ves = db_ves %>%
@@ -70,36 +69,141 @@ sn_ves = db_ves %>%
   left_join(db_country, by = "country_id") %>%
   select(species_ves, region, country) %>%
   rename(scientific_name = species_ves) %>%
-  distinct() %>%
   collect()
 
-all_sn = bind_rows(sn_aural,
+sn_cmr = db_cmr %>%
+  left_join(db_site, by = c("site_id_tagged" = "site_id")) %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  select(species_cmr, region, country) %>%
+  rename(scientific_name = species_cmr) %>%
+  collect()
+
+sn_all = bind_rows(sn_aural,
                    sn_capture,
-                   sn_ves) %>%
-  distinct() %>%
+                   sn_ves,
+                   sn_cmr) %>%
   filter(!is.na(scientific_name)) %>%
   arrange(scientific_name)
 
-sn_br = all_sn %>%
+sn_br = sn_all %>%
   filter(country == "brazil") %>%
   select(scientific_name) %>%
   distinct()
 
-sn_ca = all_sn %>%
+sn_ca = sn_all %>%
   filter(region == "california") %>%
   select(scientific_name) %>%
   distinct()
 
-sn_pa = all_sn %>%
+sn_pa = sn_all %>%
   filter(country == "panama") %>%
   select(scientific_name) %>%
   distinct()
 
-sn_pe = all_sn %>%
+sn_pe = sn_all %>%
   filter(region == "pennsylvania") %>%
   select(scientific_name) %>%
   distinct()
 
-# try to link up with taxa database!
+
+sn_unique_df = sn_all %>%
+  select(scientific_name) %>%
+  group_by(scientific_name) %>%
+  summarise(count = n()) %>%
+  arrange(scientific_name) %>%
+  collect()
+
+sn_unique_str = sn_all %>%
+  # mutate(sn = str_replace(scientific_name, "_", " ")) %>%
+  pull(scientific_name) %>%
+  unique()
 
 ```
+
+# taxonomy clean
+```{r}
+
+taxa_map_path = here("staging", "taxa_mapping")
+# taxa_map = create_taxa_map(path = taxa_map_path, x = sn_unique_df, col = 'scientific_name')
+# taxa_trim = trim_taxa(path = taxa_map_path)
+# 
+# # remove taxa
+# rm_list = c(
+#   "control",
+#   "see_notes",
+#   "tadpole_species_1",
+#   "tad_spp_2",
+#   "unknown",
+#   "unknown_species"
+# )
+# 
+# taxa_rm = map(rm_list, ~ remove_taxa(.x, path = taxa_map_path))
+# 
+# # replace taxa
+# taxa_rp = replace_taxa("chiasmocleis_cf._atlantica", "chiasmocleis", path = taxa_map_path)
+# taxa_rp = replace_taxa("Desmognathaus_sp.", "desmognathus", path = taxa_map_path)
+# taxa_rp = replace_taxa("desmognathus_so", "desmognathus", path = taxa_map_path)
+# taxa_rp = replace_taxa("desmog_spp", "desmognathus", path = taxa_map_path)
+# taxa_rp = replace_taxa("desmog_spp.", "desmognathus", path = taxa_map_path)
+# taxa_rp = replace_taxa("ischnocnema_sp._02_(aff._lactea)", "ischnocnema", path = taxa_map_path)
+# taxa_rp = replace_taxa("larval_salamander_sp.", "urodela", path = taxa_map_path)
+# taxa_rp = replace_taxa("ololygon_aff._brieni", "ololygon", path = taxa_map_path)
+# taxa_rp = replace_taxa("ololygon_aff._littoralis", "ololygon", path = taxa_map_path)
+# taxa_rp = replace_taxa("ololygon_cf_litoralis", "ololygon", path = taxa_map_path)
+# taxa_rp = replace_taxa("pristimantis_sp._potential_new_sp", "pristimantis", path = taxa_map_path)
+# taxa_rp = replace_taxa("Rana_catesbeiana_x_Rana_clamitans_(possibly)", "rana", path = taxa_map_path)
+# taxa_rp = replace_taxa("red_backed_salamander", "plethodon cinereus", path = taxa_map_path)
+# taxa_rp = replace_taxa("toad_sp.", "bufonidae", path = taxa_map_path)
+
+taxa_map = read_taxa_map(taxa_map_path) %>%
+  mutate(taxa_trimmed = na_if(taxa_trimmed, ''),
+         taxa_replacement = na_if(taxa_replacement, ''),
+         taxa_search = case_when(
+           !is.na(taxa_replacement) ~ taxa_replacement,
+           !is.na(taxa_trimmed) ~ taxa_trimmed,
+           TRUE ~ NA
+         ),
+         taxa_parent = word(taxa_search, 1))
+
+q_aw = scrape_amphibiaweb(as.character(taxa_map$taxa_search))
+q_gna = gna_verifier(as.character(na.omit(taxa_map$taxa_search)), data_sources = 118, capitalize = TRUE)
+
+
+taxa_resolved = resolve_sci_taxa(path = taxa_map_path, data.sources = 118)
+taxa_resolved = resolve_sci_taxa(x = taxa_map, data.sources = 118)
+
+taxa_clean = revise_taxa(taxa_map_path, sn_unique_df, "scientific_name", ",")
+
+
+
+
+
+view_taxa_authorities()
+
+taxa_resolved_3 = resolve_sci_taxa(x = "rana muscosa", data.sources = 3)
+taxa_resolved_11 = resolve_sci_taxa(x = "rana muscosa", data.sources = 11)
+taxa_resolved_118 = resolve_sci_taxa(x = "rana muscosa", data.sources = 118)
+
+taxa_resolved_3 = resolve_sci_taxa(x = "Rana catesbeiana", data.sources = 3)
+taxa_resolved_11 = resolve_sci_taxa(x = "Rana catesbeiana", data.sources = 11)
+taxa_resolved_118 = resolve_sci_taxa(x = "Rana catesbeiana", data.sources = 118)
+
+revise_taxa()
+
+
+ds = gnr_datasources()
+
+emp = gnr_resolve(c("rana muscosa", "rana pipiens"), data_source_ids = 118, fields = "all")
+
+emp = gna_search("Rana muscosa")
+emp = gna_parse("Rana muscosa")
+
+
+emp_2 = gnr_resolve(c("rana muscosa", "rana pipiens"), data_source_ids = 118, fields = "all")
+
+speciesList = classification(c("rana muscosa", "rana pipiens"), db = "itis")
+
+peace = gna_parse(sn_unique)
+```
+
