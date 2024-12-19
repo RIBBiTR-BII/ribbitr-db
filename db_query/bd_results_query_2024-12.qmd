@@ -1,0 +1,95 @@
+---
+title: "database query"
+format: html
+editor: source
+---
+
+
+```{r}
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, RIBBiTR-BII/ribbitrrr, here)
+
+# connect to database
+dbcon = hopToDB("ribbitr")
+
+```
+
+## Query Bd/capture data
+
+```{r}
+# load column metadata for survey_data (data exploration). Use to see what columns exist.
+mdc = tbl(dbcon, Id("public", "all_columns")) %>%
+  filter(table_schema == "survey_data") %>%
+  collect()
+
+# pointers for tables of interest
+db_bdqpcr = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+  
+# inner join capture and bd samples
+# left join supporting tables
+data_bd_capture = db_bdqpcr %>%
+  inner_join(db_sample, by = "sample_id") %>%
+  inner_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id")
+  
+# fetch additional sample_names (optional)
+data_samples_wide = db_sample %>%
+  filter(sample_type %in% c("microbiome",
+                            "bacterial")) %>%
+  pivot_wider(id_cols = c("sample_id", "capture_id"),
+              names_from = sample_type,
+              names_prefix = "sample_name_",
+              values_from = sample_name) %>%
+  select(capture_id)
+
+# join with capture data
+data_bd_capture_samples = data_bd_capture %>%
+  left_join(data_samples_wide, by = "capture_id")
+
+# inspect available columns (informational only)
+colnames(data_bd_capture_samples)
+
+# inspect query (informational only)
+sql_render(data_bd_capture_samples)
+
+# pull data from database
+data_final = data_bd_capture_samples %>%
+  # filter to dates of interest
+  filter(date >= "2020-01-01") %>%
+  # select columns of interest
+  select(capture_id,
+         species_capture,
+         life_stage,
+         svl_mm,
+         body_mass_g,
+         survey_id,
+         cmr_id,
+         sample_id,
+         sample_name_bd,
+         detected,
+         average_ct,
+         average_target_quant,
+         target_quant_per_swab,
+         comments_capture,
+         comments_qpcr,
+         date,
+         site,
+         region,
+         country) %>%
+  collect()
+
+# write to 
+write_csv(data_final, here("staging", paste0("bd_capture_query_", today(), ".csv")))
+
+```
