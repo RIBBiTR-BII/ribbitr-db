@@ -324,7 +324,7 @@ clean_ves = raw_ves%>%
   clean_names() %>%
   mutate(species_ves = coalesce(vis_species, vis_species_other),
          species_ves = str_to_lower(str_replace_all(species_ves, " ", "_")),
-         detection_type = "ves",
+         detection_type = "visual",
          is_numeric = !is.na(as.numeric(count_ves)) & !str_detect(count_ves, "[a-zA-Z]"),
          comments_ves = ifelse(!is_numeric, paste(comments_ves, count_ves, sep = ", "), comments_ves),
          count_ves = ifelse(is_numeric, as.numeric(count_ves), NA),
