@@ -147,7 +147,7 @@ taxa_map_path = here("staging", "taxa_mapping")
 # taxa_rp = replace_taxa("desmog_spp", "desmognathus", path = taxa_map_path)
 # taxa_rp = replace_taxa("desmog_spp.", "desmognathus", path = taxa_map_path)
 # taxa_rp = replace_taxa("ischnocnema_sp._02_(aff._lactea)", "ischnocnema", path = taxa_map_path)
-# taxa_rp = replace_taxa("larval_salamander_sp.", "urodela", path = taxa_map_path)
+# taxa_rp = replace_taxa("larval_salamander_sp.", "caudata", path = taxa_map_path)
 # taxa_rp = replace_taxa("ololygon_aff._brieni", "ololygon", path = taxa_map_path)
 # taxa_rp = replace_taxa("ololygon_aff._littoralis", "ololygon", path = taxa_map_path)
 # taxa_rp = replace_taxa("ololygon_cf_litoralis", "ololygon", path = taxa_map_path)
@@ -155,15 +155,48 @@ taxa_map_path = here("staging", "taxa_mapping")
 # taxa_rp = replace_taxa("Rana_catesbeiana_x_Rana_clamitans_(possibly)", "rana", path = taxa_map_path)
 # taxa_rp = replace_taxa("red_backed_salamander", "plethodon cinereus", path = taxa_map_path)
 # taxa_rp = replace_taxa("toad_sp.", "bufonidae", path = taxa_map_path)
-
-taxa_rp = replace_taxa("esparadana prosoblepon", "espadarana prosoblepon", path = taxa_map_path)
-taxa_rp = replace_taxa("desmongnathus", "desmognathus", path = taxa_map_path)
-taxa_rp = replace_taxa("desmoganthus", "desmognathus", path = taxa_map_path)
-
+# taxa_rp = replace_taxa("esparadana_prosoblepon", "espadarana prosoblepon", path = taxa_map_path)
+# taxa_rp = replace_taxa("desmongnathus_sp", "desmognathus", path = taxa_map_path)
+# taxa_rp = replace_taxa("desmoganthus_sp.", "desmognathus", path = taxa_map_path)
+# taxa_rp = replace_taxa("bufo_americanus", "Anaxyrus americanus", path = taxa_map_path)
+# taxa_rp = replace_taxa("colostethus_panamensis", "Colostethus panamansis", path = taxa_map_path)
+# taxa_rp = replace_taxa("hyliola_regilla", "Pseudacris regilla", path = taxa_map_path)
+# taxa_rp = replace_taxa("leptodactylus_marmoratus", "Adenomera marmorata", path = taxa_map_path)
 
 
 taxa_map = read_taxa_map(taxa_map_path)
 
+sn_replace_region = sn_all %>%
+  group_by(scientific_name, region, country) %>%
+  summarise(count = n()) %>%
+  arrange(scientific_name) %>%
+  collect() %>%
+  left_join(taxa_map, by = c("scientific_name" = "taxa_raw")) %>%
+  filter(taxa_replacement != "")
+
+sn_replace_br = sn_replace_region %>%
+  filter(country == "brazil") %>%
+  select(scientific_name:taxa_replacement)
+
+sn_replace_ca = sn_replace_region %>%
+  filter(region == "california") %>%
+  select(scientific_name:taxa_replacement)
+
+sn_replace_pa = sn_replace_region %>%
+  filter(country == "panama") %>%
+  group_by(scientific_name) %>%
+  summarise(count = sum(count),
+            taxa_replacement = first(taxa_replacement)) %>%
+  select(scientific_name:taxa_replacement)
+
+sn_replace_pe = sn_replace_region %>%
+  filter(region == "pennsylvania") %>%
+  select(scientific_name:taxa_replacement)
+
+```
+
+# scrape taxa details
+```{r}
 taxa_detail = function(tm) {
   taxa_map = tm %>%
     mutate(taxa_trimmed = na_if(taxa_trimmed, ''),
@@ -240,16 +273,26 @@ taxa_detail = function(tm) {
   # df_p_itis = strip_df(p_itis)
   # df_p_ncbi = strip_df(p_ncbi)
   
+  h_itis = itis_hierarchy(df_t_itis$currentRecordId, "up")
+  
   taxa_map_out = taxa_map %>%
     left_join(t_aw %>%
                 mutate(taxa_search = name_submitted,
                        amphibiaweb_id_matched = amphib_id,
-                       amphibiaweb_canonical_matched = scientific_name,
+                       amphibiaweb_order = ordr,
+                       amphibiaweb_family = family,
+                       amphibiaweb_subfamily = subfamily,
+                       amphibiaweb_canonical_matched = paste(genus, species),
+                       amphibiaweb_common = common_name,
                        amphibiaweb_url = url) %>%
                 filter(!is.na(amphib_id)) %>%
                 select(taxa_search,
                        amphibiaweb_id_matched,
+                       amphibiaweb_order,
+                       amphibiaweb_family,
+                       amphibiaweb_subfamily,
                        amphibiaweb_canonical_matched,
+                       amphibiaweb_common,
                        amphibiaweb_url), by = "taxa_search") %>%
   left_join(df_t_itis %>%
               mutate(taxa_search = submittedName,
@@ -293,6 +336,9 @@ taxa_map_detail = taxa_detail(taxa_map)
 
 taxa_map_detail_count = taxa_map_detail %>%
   left_join(sn_unique_df, by = c( "taxa_raw" = "scientific_name"))
+
+itis_synonym = taxa_map_detail_count %>%
+  filter(itis_status_matched == "Synonym")
 
 q_aw = scrape_amphibiaweb(as.character(taxa_map$taxa_search))
 q_gna = gna_verifier("Helianthus annuus", data_sources = 118)
