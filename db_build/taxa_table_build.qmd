@@ -156,6 +156,12 @@ taxa_map_path = here("staging", "taxa_mapping")
 # taxa_rp = replace_taxa("red_backed_salamander", "plethodon cinereus", path = taxa_map_path)
 # taxa_rp = replace_taxa("toad_sp.", "bufonidae", path = taxa_map_path)
 
+taxa_rp = replace_taxa("esparadana prosoblepon", "espadarana prosoblepon", path = taxa_map_path)
+taxa_rp = replace_taxa("desmongnathus", "desmognathus", path = taxa_map_path)
+taxa_rp = replace_taxa("desmoganthus", "desmognathus", path = taxa_map_path)
+
+
+
 taxa_map = read_taxa_map(taxa_map_path)
 
 taxa_detail = function(tm) {
@@ -186,7 +192,7 @@ taxa_detail = function(tm) {
   cat("searching taxa in IUCN\n")
   t_iucn = map(unique_taxa, ~ safe_gna_verifier(.x, data_sources = 163, capitalize = TRUE))
   
-  t_iucn = map(unique_taxa, ~ iucn_summary(.x))
+  # t_iucn_s = map(unique_taxa, ~ iucn_summary(.x))
   
   # cat("searching parent taxa in ITIS\n")
   # p_itis = map(unique_parent, ~ safe_gna_verifier(.x, data_sources = 3, capitalize = TRUE))
@@ -231,8 +237,8 @@ taxa_detail = function(tm) {
   df_t_itis = strip_df(t_itis)
   df_t_ncbi = strip_df(t_ncbi)
   df_t_iucn = strip_df(t_iucn)
-  df_p_itis = strip_df(p_itis)
-  df_p_ncbi = strip_df(p_ncbi)
+  # df_p_itis = strip_df(p_itis)
+  # df_p_ncbi = strip_df(p_ncbi)
   
   taxa_map_out = taxa_map %>%
     left_join(t_aw %>%
@@ -279,9 +285,15 @@ taxa_detail = function(tm) {
                        iucn_tsn_current,
                        iucn_canonical_current), by = "taxa_search")
 
-    
+  return(taxa_map_out)
   
 }
+
+taxa_map_detail = taxa_detail(taxa_map)
+
+taxa_map_detail_count = taxa_map_detail %>%
+  left_join(sn_unique_df, by = c( "taxa_raw" = "scientific_name"))
+
 q_aw = scrape_amphibiaweb(as.character(taxa_map$taxa_search))
 q_gna = gna_verifier("Helianthus annuus", data_sources = 118)
 gna_verifier(c("Helianthus annuus", "Homo saapiens"))
