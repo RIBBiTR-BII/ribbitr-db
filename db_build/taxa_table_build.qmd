@@ -368,3 +368,195 @@ speciesList = classification(c("rana muscosa", "rana pipiens"), db = "itis")
 peace = gna_parse(sn_unique)
 ```
 
+# taxa details 1-by-1
+```{r}
+
+map_rank = function(rank) {
+  rmap = c("kingdom" = 1,
+           "subkingdom" = 2,
+           "infrakingdom" = 3,
+           "phylum" = 4,
+           "subphylum" = 5,
+           "infraphylum" = 6,
+           "superclass" = 7,
+           "class" = 8,
+           "order" = 9,
+           "family" = 10,
+           "subfamily" = 11,
+           "genus" = 12,
+           "species" = 13)
+  
+  return(as.integer(rmap[rank]))
+}
+
+taxa_lookup = function(taxa) {
+  cat(taxa, ": ", sep = "")
+  cat("AmphibiaWeb")
+  taxa_aw = scrape_amphibiaweb(taxa)
+  cat(", ITIS")
+  taxa_itis = gna_verifier(taxa, data_sources = 3, capitalize = TRUE)
+  cat(", NCBI")
+  taxa_ncbi = gna_verifier(taxa, data_sources = 4, capitalize = TRUE)
+  cat(", IUCN")
+  taxa_iucn = gna_verifier(taxa, data_sources = 163, capitalize = TRUE)
+  
+  ranknum_itis = map_rank(tolower(itis_taxrank(taxa_itis$currentRecordId)))
+  
+  hierarchy_itis = itis_hierarchy(taxa_itis$currentRecordId, "full") %>%
+    mutate(ranknum = map_int(rankname, ~ map_rank(.x))) %>%
+    filter(ranknum >= 9,
+           ranknum <= ranknum_itis) %>%
+    select(rankname,
+           taxonname) %>%
+    pivot_wider(names_from = rankname,
+                values_from = taxonname)
+  
+ taxa_out = tibble(
+   taxa_search = taxa,
+   amphibiaweb_id_matched = taxa_aw$amphib_id,
+   amphibiaweb_order = taxa_aw$ordr,
+   amphibiaweb_family = taxa_aw$family,
+   amphibiaweb_subfamily = taxa_aw$subfamily,
+   amphibiaweb_genus = taxa_aw$genus,
+   amphibiaweb_species = taxa_aw$species,
+   amphibiaweb_common = taxa_aw$common_name,
+   amphibiaweb_url = taxa_aw$url
+ )
+  
+}
+
+taxa_detail = function(tm) {
+  taxa_map = tm %>%
+    mutate(taxa_trimmed = na_if(taxa_trimmed, ''),
+           taxa_replacement = na_if(taxa_replacement, ''),
+           taxa_search = case_when(
+             taxa_removed ~ NA,
+             !is.na(taxa_replacement) ~ taxa_replacement,
+             !is.na(taxa_trimmed) ~ taxa_trimmed,
+             TRUE ~ NA
+           ),
+           taxa_parent = word(taxa_search, 1))
+  
+  unique_taxa = unique(as.character(na.omit(taxa_map$taxa_search)))
+  unique_parent = unique(as.character(na.omit(taxa_map$taxa_parent)))
+  
+  cat("searching taxa in AmphibiaWeb\n")
+  t_aw = scrape_amphibiaweb(as.character(unique_taxa))
+  
+  safe_gna_verifier <- safely(gna_verifier)
+  safe_gnr_resolve <- safely(gnr_resolve)
+  
+  cat("searching taxa in ITIS\n")
+  t_itis = map(unique_taxa, ~ safe_gna_verifier(.x, data_sources = 3, capitalize = TRUE))
+  cat("searching taxa in NCBI\n")
+  t_ncbi = map(unique_taxa, ~ safe_gna_verifier(.x, data_sources = 4, capitalize = TRUE))
+  cat("searching taxa in IUCN\n")
+  t_iucn = map(unique_taxa, ~ safe_gna_verifier(.x, data_sources = 163, capitalize = TRUE))
+  
+  # t_iucn_s = map(unique_taxa, ~ iucn_summary(.x))
+  
+  # cat("searching parent taxa in ITIS\n")
+  # p_itis = map(unique_parent, ~ safe_gna_verifier(.x, data_sources = 3, capitalize = TRUE))
+  # cat("searching parent taxa in NCBI\n")
+  # p_ncbi = map(unique_parent, ~ safe_gna_verifier(.x, data_sources = 4, capitalize = TRUE))
+  
+  strip_df <- function(map_out) {
+    # Filter out elements with errors
+    valid_elements <- keep(map_out, ~ is.null(.$error))
+    
+    # Use map_df to efficiently combine all valid results
+    tbl_out <- map_df(valid_elements, "result")
+    
+    # If the result is empty, return an empty tibble
+    if (nrow(tbl_out) == 0) {
+      return(tibble())
+    }
+    
+    # Determine column types dynamically
+    col_types <- map_chr(tbl_out, class)
+    
+    # Define type conversion functions
+    type_converters <- list(
+      "character" = as.character,
+      "numeric" = as.numeric,
+      "integer" = as.integer,
+      "logical" = as.logical,
+      "factor" = as.factor,
+      "Date" = as.Date,
+      "POSIXct" = as.POSIXct
+    )
+    
+    # Convert columns to their appropriate types
+    tbl_out <- tbl_out %>%
+      mutate(across(everything(), 
+                    ~ type_converters[[col_types[cur_column()]]](.x)))
+    
+    # Ensure the result is a tibble
+    as_tibble(tbl_out)
+  }
+  
+  df_t_itis = strip_df(t_itis)
+  df_t_ncbi = strip_df(t_ncbi)
+  df_t_iucn = strip_df(t_iucn)
+  # df_p_itis = strip_df(p_itis)
+  # df_p_ncbi = strip_df(p_ncbi)
+  
+  h_itis = itis_hierarchy(df_t_itis$currentRecordId, "up")
+  
+  taxa_map_out = taxa_map %>%
+    left_join(t_aw %>%
+                mutate(taxa_search = name_submitted,
+                       amphibiaweb_id_matched = amphib_id,
+                       amphibiaweb_order = ordr,
+                       amphibiaweb_family = family,
+                       amphibiaweb_subfamily = subfamily,
+                       amphibiaweb_canonical_matched = paste(genus, species),
+                       amphibiaweb_common = common_name,
+                       amphibiaweb_url = url) %>%
+                filter(!is.na(amphib_id)) %>%
+                select(taxa_search,
+                       amphibiaweb_id_matched,
+                       amphibiaweb_order,
+                       amphibiaweb_family,
+                       amphibiaweb_subfamily,
+                       amphibiaweb_canonical_matched,
+                       amphibiaweb_common,
+                       amphibiaweb_url), by = "taxa_search") %>%
+  left_join(df_t_itis %>%
+              mutate(taxa_search = submittedName,
+                     itis_tsn_matched = recordId,
+                     itis_canonical_matched = matchedCanonicalSimple,
+                     itis_status_matched = taxonomicStatus,
+                     itis_tsn_current = currentRecordId,
+                     itis_canonical_current = currentCanonicalSimple) %>%
+              select(taxa_search,
+                     itis_tsn_matched,
+                     itis_canonical_matched,
+                     itis_status_matched,
+                     itis_tsn_current,
+                     itis_canonical_current), by = "taxa_search") %>%
+    left_join(df_t_ncbi %>%
+                mutate(taxa_search = submittedName,
+                       ncbi_id_matched = recordId,
+                       ncbi_canonical_matched = matchedCanonicalSimple) %>%
+                select(taxa_search,
+                       ncbi_id_matched,
+                       ncbi_canonical_matched), by = "taxa_search") %>%
+    left_join(df_t_iucn %>%
+                mutate(taxa_search = submittedName,
+                       iucn_tsn_matched = recordId,
+                       iucn_canonical_matched = matchedCanonicalSimple,
+                       iucn_status_matched = taxonomicStatus,
+                       iucn_tsn_current = currentRecordId,
+                       iucn_canonical_current = currentCanonicalSimple) %>%
+                select(taxa_search,
+                       iucn_tsn_matched,
+                       iucn_canonical_matched,
+                       iucn_status_matched,
+                       iucn_tsn_current,
+                       iucn_canonical_current), by = "taxa_search")
+
+  return(taxa_map_out)
+  
+
+```
