@@ -123,48 +123,48 @@ sn_unique_str = sn_all %>%
 ```{r}
 
 taxa_map_path = here("staging", "taxa_mapping")
-# taxa_map = create_taxa_map(path = taxa_map_path, x = sn_unique_df, col = 'scientific_name')
-# taxa_trim = trim_taxa(path = taxa_map_path)
-# 
-# # remove taxa
-# rm_list = c(
-#   "control",
-#   "see_notes",
-#   "tadpole_species_1",
-#   "tad_spp_2",
-#   "unknown",
-#   "unknown_species"
-# )
-# 
-# taxa_rm = map(rm_list, ~ remove_taxa(.x, path = taxa_map_path))
-# 
-# # replace taxa
-# taxa_rp = replace_taxa("chiasmocleis_cf._atlantica", "chiasmocleis", path = taxa_map_path)
-# taxa_rp = replace_taxa("Desmognathaus_sp.", "desmognathus", path = taxa_map_path)
-# taxa_rp = replace_taxa("desmognathus_so", "desmognathus", path = taxa_map_path)
-# taxa_rp = replace_taxa("desmog_spp", "desmognathus", path = taxa_map_path)
-# taxa_rp = replace_taxa("desmog_spp.", "desmognathus", path = taxa_map_path)
-# taxa_rp = replace_taxa("ischnocnema_sp._02_(aff._lactea)", "ischnocnema", path = taxa_map_path)
-# taxa_rp = replace_taxa("larval_salamander_sp.", "caudata", path = taxa_map_path)
-# taxa_rp = replace_taxa("ololygon_aff._brieni", "ololygon", path = taxa_map_path)
-# taxa_rp = replace_taxa("ololygon_aff._littoralis", "ololygon", path = taxa_map_path)
-# taxa_rp = replace_taxa("ololygon_cf_litoralis", "ololygon", path = taxa_map_path)
-# taxa_rp = replace_taxa("pristimantis_sp._potential_new_sp", "pristimantis", path = taxa_map_path)
-# taxa_rp = replace_taxa("Rana_catesbeiana_x_Rana_clamitans_(possibly)", "rana", path = taxa_map_path)
-# taxa_rp = replace_taxa("red_backed_salamander", "plethodon cinereus", path = taxa_map_path)
-# taxa_rp = replace_taxa("toad_sp.", "bufonidae", path = taxa_map_path)
-# taxa_rp = replace_taxa("esparadana_prosoblepon", "espadarana prosoblepon", path = taxa_map_path)
-# taxa_rp = replace_taxa("desmongnathus_sp", "desmognathus", path = taxa_map_path)
-# taxa_rp = replace_taxa("desmoganthus_sp.", "desmognathus", path = taxa_map_path)
-# taxa_rp = replace_taxa("bufo_americanus", "Anaxyrus americanus", path = taxa_map_path)
-# taxa_rp = replace_taxa("colostethus_panamensis", "Colostethus panamansis", path = taxa_map_path)
-# taxa_rp = replace_taxa("hyliola_regilla", "Pseudacris regilla", path = taxa_map_path)
-# taxa_rp = replace_taxa("leptodactylus_marmoratus", "Adenomera marmorata", path = taxa_map_path)
-# taxa_rp = replace_taxa("boana_bandeirante", "boana bandeirantes", path = taxa_map_path)
-# taxa_rp = replace_taxa("eurycea_bislaneata", "eurycea bislineata", path = taxa_map_path)
-# taxa_rp = replace_taxa("hyalinobatrachium_fleishmanni", "hyalinobatrachium fleischmanni", path = taxa_map_path)
-# taxa_rp = replace_taxa("lithobates_sylvaticus", "rana sylvatica", path = taxa_map_path)
-# taxa_rp = replace_taxa("plethodon_glutinosis", "plethodon glutinosus", path = taxa_map_path)
+taxa_map = create_taxa_map(path = taxa_map_path, x = sn_unique_df, col = 'scientific_name')
+taxa_trim = trim_taxa(path = taxa_map_path)
+
+# remove taxa
+rm_list = c(
+  "control",
+  "see_notes",
+  "tadpole_species_1",
+  "tad_spp_2",
+  "unknown",
+  "unknown_species"
+)
+
+taxa_rm = map(rm_list, ~ remove_taxa(.x, path = taxa_map_path))
+
+# replace taxa
+taxa_rp = replace_taxa("chiasmocleis_cf._atlantica", "chiasmocleis", path = taxa_map_path)
+taxa_rp = replace_taxa("Desmognathaus_sp.", "desmognathus", path = taxa_map_path)
+taxa_rp = replace_taxa("desmognathus_so", "desmognathus", path = taxa_map_path)
+taxa_rp = replace_taxa("desmog_spp", "desmognathus", path = taxa_map_path)
+taxa_rp = replace_taxa("desmog_spp.", "desmognathus", path = taxa_map_path)
+taxa_rp = replace_taxa("ischnocnema_sp._02_(aff._lactea)", "ischnocnema", path = taxa_map_path)
+taxa_rp = replace_taxa("larval_salamander_sp.", "caudata", path = taxa_map_path)
+taxa_rp = replace_taxa("ololygon_aff._brieni", "ololygon", path = taxa_map_path)
+taxa_rp = replace_taxa("ololygon_aff._littoralis", "ololygon", path = taxa_map_path)
+taxa_rp = replace_taxa("ololygon_cf_litoralis", "ololygon", path = taxa_map_path)
+taxa_rp = replace_taxa("pristimantis_sp._potential_new_sp", "pristimantis", path = taxa_map_path)
+taxa_rp = replace_taxa("Rana_catesbeiana_x_Rana_clamitans_(possibly)", "rana", path = taxa_map_path)
+taxa_rp = replace_taxa("red_backed_salamander", "plethodon cinereus", path = taxa_map_path)
+taxa_rp = replace_taxa("toad_sp.", "bufonidae", path = taxa_map_path)
+taxa_rp = replace_taxa("esparadana_prosoblepon", "espadarana prosoblepon", path = taxa_map_path)
+taxa_rp = replace_taxa("desmongnathus_sp", "desmognathus", path = taxa_map_path)
+taxa_rp = replace_taxa("desmoganthus_sp.", "desmognathus", path = taxa_map_path)
+taxa_rp = replace_taxa("bufo_americanus", "anaxyrus americanus", path = taxa_map_path)
+taxa_rp = replace_taxa("colostethus_panamensis", "colostethus panamansis", path = taxa_map_path)
+taxa_rp = replace_taxa("hyliola_regilla", "pseudacris regilla", path = taxa_map_path)
+taxa_rp = replace_taxa("leptodactylus_marmoratus", "adenomera marmorata", path = taxa_map_path)
+taxa_rp = replace_taxa("boana_bandeirante", "boana bandeirantes", path = taxa_map_path)
+taxa_rp = replace_taxa("eurycea_bislaneata", "eurycea bislineata", path = taxa_map_path)
+taxa_rp = replace_taxa("hyalinobatrachium_fleishmanni", "hyalinobatrachium fleischmanni", path = taxa_map_path)
+taxa_rp = replace_taxa("lithobates_sylvaticus", "rana sylvatica", path = taxa_map_path)
+taxa_rp = replace_taxa("plethodon_glutinosis", "plethodon glutinosus", path = taxa_map_path)
 
 
 
@@ -199,7 +199,7 @@ sn_replace_pe = sn_replace_region %>%
 
 ```
 
-# taxa details 1-by-1
+# taxa lookup functions
 ```{r}
 
 map_rank = function(rank) {
@@ -264,7 +264,8 @@ taxa_lookup = function(taxa) {
   taxa_iucn = safely_gna_verifier(taxa, data_sources = 163, capitalize = TRUE)
   
   taxa_out = taxa_aw %>%
-    rename_with(~ paste0("aw_", .))
+    rename_with(~ paste0("aw_", .)) %>%
+    mutate(taxa_search = taxa)
   
   if (is.null(taxa_itis$error)) {
     taxa_out = taxa_out %>%
@@ -293,60 +294,63 @@ taxa_lookup = function(taxa) {
   return(taxa_out)
 }
 
+taxa_list = c("rana muscosa",
+              "rana",
+              "bogus")
+
 taxa_lookup_map = function(taxa_list) {
   taxa_lm = map_df(taxa_list, ~ taxa_lookup(.x))
   
   taxa_lm_clean = taxa_lm %>%
-    rename(taxa_search = aw_name_submitted,
-           amphibiaweb_id_matched = aw_amphib_id,
-           amphibiaweb_order = aw_order,
-           amphibiaweb_family = aw_family,
-           amphibiaweb_subfamily = aw_subfamily,
-           amphibiaweb_genus = aw_genus,
-           amphibiaweb_species = aw_species,
-           amphibiaweb_common = aw_common_name,
-           amphibiaweb_url = aw_url,
-           itis_tsn_matched = itis_recordId,
-           itis_canonical_matched = itis_matchedCanonicalSimple,
-           itis_status_matched = itis_taxonomicStatus,
-           itis_match_type = itis_matchType,
-           itis_tsn_current = itis_currentRecordId,
-           itis_canonical_current = itis_currentCanonicalSimple,
-           itis_rank_current = itis_rankname,
-           ncbi_id_matched = ncbi_recordId,
-           ncbi_canonical_matched = ncbi_matchedCanonicalSimple,
-           iucn_tsn_matched = iucn_recordId,
-           iucn_canonical_matched = iucn_matchedCanonicalSimple,
-           iucn_status_matched = iucn_taxonomicStatus,
-           iucn_tsn_current = iucn_currentRecordId,
-           iucn_canonical_current = iucn_currentCanonicalSimple) %>%
-    select(any_of(c(taxa_search,
-                    amphibiaweb_id_matched,
-                    amphibiaweb_order,
-                    amphibiaweb_family,
-                    amphibiaweb_subfamily,
-                    amphibiaweb_genus,
-                    amphibiaweb_species,
-                    amphibiaweb_common,
-                    amphibiaweb_url,
-                    itis_tsn_matched,
-                    itis_canonical_matched,
-                    itis_status_matched,
-                    itis_match_type,
-                    itis_tsn_current,
-                    itis_canonical_current,
-                    itis_rank_current,
-                    itis_order,
-                    itis_family,
-                    itis_genus,
-                    itis_species,
-                    ncbi_id_matched,
-                    ncbi_canonical_matched,
-                    iucn_tsn_matched,
-                    iucn_canonical_matched,
-                    iucn_status_matched,
-                    iucn_tsn_current,
-                    iucn_canonical_current)))
+    mutate("amphibiaweb_species" = ifelse(is.na(aw_species), NA, paste(aw_order, aw_species))) %>%
+    rename("amphibiaweb_id_matched" = "aw_amphib_id",
+           "amphibiaweb_order" = "aw_order",
+           "amphibiaweb_family" = "aw_family",
+           "amphibiaweb_subfamily" = "aw_subfamily",
+           "amphibiaweb_genus" = "aw_genus",
+           "amphibiaweb_common" = "aw_common_name",
+           "amphibiaweb_url" = "aw_url",
+           "itis_tsn_matched" = "itis_recordId",
+           "itis_canonical_matched" = "itis_matchedCanonicalSimple",
+           "itis_status_matched" = "itis_taxonomicStatus",
+           "itis_match_type" = "itis_matchType",
+           "itis_tsn_current" = "itis_currentRecordId",
+           "itis_canonical_current" = "itis_currentCanonicalSimple",
+           "itis_rank_current" = "itis_rankname",
+           "ncbi_id_matched" = "ncbi_recordId",
+           "ncbi_canonical_matched" = "ncbi_matchedCanonicalSimple",
+           "iucn_tsn_matched" = "iucn_recordId",
+           "iucn_canonical_matched" = "iucn_matchedCanonicalSimple",
+           "iucn_status_matched" = "iucn_taxonomicStatus",
+           "iucn_tsn_current" = "iucn_currentRecordId",
+           "iucn_canonical_current" = "iucn_currentCanonicalSimple") %>%
+    select(any_of(c("taxa_search",
+                    "amphibiaweb_id_matched",
+                    "amphibiaweb_order",
+                    "amphibiaweb_family",
+                    "amphibiaweb_subfamily",
+                    "amphibiaweb_genus",
+                    "amphibiaweb_species",
+                    "amphibiaweb_common",
+                    "amphibiaweb_url",
+                    "itis_tsn_matched",
+                    "itis_canonical_matched",
+                    "itis_status_matched",
+                    "itis_match_type",
+                    "itis_tsn_current",
+                    "itis_canonical_current",
+                    "itis_rank_current",
+                    "itis_order",
+                    "itis_family",
+                    "itis_genus",
+                    "itis_species",
+                    "ncbi_id_matched",
+                    "ncbi_canonical_matched",
+                    "iucn_tsn_matched",
+                    "iucn_canonical_matched",
+                    "iucn_status_matched",
+                    "iucn_tsn_current",
+                    "iucn_canonical_current")))
   
   return(list(taxa_lm,
               taxa_lm_clean))
@@ -356,24 +360,22 @@ taxa_lookup_map = function(taxa_list) {
 
 # run taxa lookup
 ```{r}
-taxa_map_clean = tm %>%
+taxa_map_clean = read_taxa_map(taxa_map_path) %>%
   mutate(taxa_trimmed = na_if(taxa_trimmed, ''),
          taxa_replacement = na_if(taxa_replacement, ''),
          taxa_search = case_when(
            taxa_removed ~ NA,
-           !is.na(taxa_replacement) ~ taxa_replacement,
-           !is.na(taxa_trimmed) ~ taxa_trimmed,
+           !is.na(taxa_replacement) ~ tolower(taxa_replacement),
+           !is.na(taxa_trimmed) ~ tolower(taxa_trimmed),
            TRUE ~ NA
          ))
 
 taxa_unique = unique(as.character(na.omit(taxa_map_clean$taxa_search)))
 
-taxa_lookup = taxa_lookup_map(taxa_unique)
+taxa_lookup_res = taxa_lookup_map(taxa_unique)
 
-taxa_lookup_all = taxa_lookup[[1]]
-taxa_lookup_clean = taxa_lookup[[2]]
-  
-taxa_dupes = get_dupes(taxa_lookup_clean, itis_canonical_current)
+taxa_lookup_all = taxa_lookup_res[[1]]
+taxa_lookup_clean = taxa_lookup_res[[2]]
 
 # collect all unique, unsearched parent taxa
 parent_cols = c("itis_order",
@@ -383,6 +385,24 @@ parent_cols = c("itis_order",
 add_parent_taxa = tolower(unique(na.omit(unlist(taxa_lookup_clean[parent_cols])))) %>%
   setdiff(taxa_unique)
 
-add_parent_lookup = taxa_lookup_map(add_parent_taxa)
+parent_lookup_res = taxa_lookup_map(add_parent_taxa)
+
+parent_lookup_all = parent_lookup_res[[1]]
+parent_lookup_clean = parent_lookup_res[[2]]
+
+taxa_lookup_final = bind_rows(taxa_lookup_clean,
+                              parent_lookup_clean)
+
+```
+
+# checks
+```{r}
+taxa_dupes = get_dupes(taxa_lookup_final, itis_canonical_current)
+itis_na = taxa_lookup_final %>%
+  filter(is.na(itis_tsn_matched))
+itis_partial = taxa_lookup_final %>%
+  filter(itis_match_type == "PartialExact")
+itis_synonym = taxa_lookup_final %>%
+  filter(itis_status_matched == "Synonym")
 
 ```
