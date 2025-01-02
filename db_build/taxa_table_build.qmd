@@ -396,6 +396,7 @@ taxa_map = read_taxa_map(taxa_map_path)
 
 sn_replace_region = sn_all %>%
   group_by(scientific_name, country) %>%
+  arrange(country, region) %>%
   summarise(count = n(),
          regions = paste(unique(region), collapse = ", "),
         .groups = 'drop') %>%
@@ -410,7 +411,10 @@ sn_replace_region = sn_all %>%
               select(taxon,
                      amphibiaweb_species,
                      itis_canonical_current), by = c("taxa_search" = "taxon")) %>%
-  filter(taxa_trimmed != tolower(amphibiaweb_species) | taxa_trimmed != tolower(itis_canonical_current) | amphibiaweb_species != itis_canonical_current)
+  filter(taxa_trimmed != tolower(amphibiaweb_species) | taxa_trimmed != tolower(itis_canonical_current) | amphibiaweb_species != itis_canonical_current) %>%
+  arrange(country)
+
+write_csv(sn_replace_region, here("staging", "taxa_report.csv"))
 
 sn_replace_br = sn_replace_region %>%
   filter(country == "brazil") %>%
