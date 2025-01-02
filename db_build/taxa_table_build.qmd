@@ -46,6 +46,7 @@ sn_aural = db_aural %>%
   left_join(db_region, by = "region_id") %>%
   left_join(db_country, by = "country_id") %>%
   select(species_aural, region, country) %>%
+  mutate(detection_type = "aural") %>%
   rename(scientific_name = species_aural) %>%
   collect()
 
@@ -56,6 +57,7 @@ sn_capture = db_capture %>%
   left_join(db_region, by = "region_id") %>%
   left_join(db_country, by = "country_id") %>%
   select(species_capture, region, country) %>%
+  mutate(detection_type = "capture") %>%
   rename(scientific_name = species_capture) %>%
   collect()
 
@@ -66,6 +68,7 @@ sn_ves = db_ves %>%
   left_join(db_region, by = "region_id") %>%
   left_join(db_country, by = "country_id") %>%
   select(species_ves, region, country) %>%
+  mutate(detection_type = "visual") %>%
   rename(scientific_name = species_ves) %>%
   collect()
 
@@ -74,6 +77,7 @@ sn_cmr = db_cmr %>%
   left_join(db_region, by = "region_id") %>%
   left_join(db_country, by = "country_id") %>%
   select(species_cmr, region, country) %>%
+  mutate(detection_type = "cmr") %>%
   rename(scientific_name = species_cmr) %>%
   collect()
 
@@ -126,18 +130,6 @@ taxa_map_path = here("staging", "taxa_mapping")
 taxa_map = create_taxa_map(path = taxa_map_path, x = sn_unique_df, col = 'scientific_name')
 taxa_trim = trim_taxa(path = taxa_map_path)
 
-# remove taxa
-rm_list = c(
-  "control",
-  "see_notes",
-  "tadpole_species_1",
-  "tad_spp_2",
-  "unknown",
-  "unknown_species"
-)
-
-taxa_rm = map(rm_list, ~ remove_taxa(.x, path = taxa_map_path))
-
 # replace taxa
 taxa_rp = replace_taxa("chiasmocleis_cf._atlantica", "chiasmocleis", path = taxa_map_path)
 taxa_rp = replace_taxa("Desmognathaus_sp.", "desmognathus", path = taxa_map_path)
@@ -165,37 +157,17 @@ taxa_rp = replace_taxa("eurycea_bislaneata", "eurycea bislineata", path = taxa_m
 taxa_rp = replace_taxa("hyalinobatrachium_fleishmanni", "hyalinobatrachium fleischmanni", path = taxa_map_path)
 taxa_rp = replace_taxa("lithobates_sylvaticus", "rana sylvatica", path = taxa_map_path)
 taxa_rp = replace_taxa("plethodon_glutinosis", "plethodon glutinosus", path = taxa_map_path)
+taxa_rp = replace_taxa("boana_platenera", "boana platanera", path = taxa_map_path)
 
+# to NA
+taxa_rp = replace_taxa("see_notes", NA, path = taxa_map_path)
+taxa_rp = replace_taxa("tadpole_species_1", NA, path = taxa_map_path)
+taxa_rp = replace_taxa("tad_spp_2", NA, path = taxa_map_path)
+taxa_rp = replace_taxa("unknown", NA, path = taxa_map_path)
+taxa_rp = replace_taxa("unknown_species", NA, path = taxa_map_path)
 
 
 taxa_map = read_taxa_map(taxa_map_path)
-
-sn_replace_region = sn_all %>%
-  group_by(scientific_name, region, country) %>%
-  summarise(count = n()) %>%
-  arrange(scientific_name) %>%
-  collect() %>%
-  left_join(taxa_map, by = c("scientific_name" = "taxa_raw")) %>%
-  filter(taxa_replacement != "")
-
-sn_replace_br = sn_replace_region %>%
-  filter(country == "brazil") %>%
-  select(scientific_name:taxa_replacement)
-
-sn_replace_ca = sn_replace_region %>%
-  filter(region == "california") %>%
-  select(scientific_name:taxa_replacement)
-
-sn_replace_pa = sn_replace_region %>%
-  filter(country == "panama") %>%
-  group_by(scientific_name) %>%
-  summarise(count = sum(count),
-            taxa_replacement = first(taxa_replacement)) %>%
-  select(scientific_name:taxa_replacement)
-
-sn_replace_pe = sn_replace_region %>%
-  filter(region == "pennsylvania") %>%
-  select(scientific_name:taxa_replacement)
 
 ```
 
@@ -230,9 +202,13 @@ taxa_lookup = function(taxa) {
   taxa_aw = scrape_amphibiaweb(taxa, quietly = TRUE)
   cat(", ITIS", sep = "")
   taxa_itis = safely_gna_verifier(taxa, data_sources = 3, capitalize = TRUE)
+
   
   if (is.null(taxa_itis$error)){
-    if (!is.na(taxa_itis$result$currentRecordId)){
+    if (taxa_itis$result$matchType == "PartialExact") {
+      taxa_itis$error$message = "PartialExact"
+      itis_pos = FALSE
+    } else if (!is.na(taxa_itis$result$currentRecordId)){
       itis_pos = TRUE
     } else {
       itis_pos = FALSE
@@ -260,6 +236,10 @@ taxa_lookup = function(taxa) {
   
   cat(", NCBI", sep = "")
   taxa_ncbi = safely_gna_verifier(taxa, data_sources = 4, capitalize = TRUE)
+  if (taxa_ncbi$result$matchType == "PartialExact") {
+    taxa_ncbi$error$message = "PartialExact"
+  }
+  
   cat(", IUCN\n", sep = "")
   taxa_iucn = safely_gna_verifier(taxa, data_sources = 163, capitalize = TRUE)
   
@@ -302,8 +282,9 @@ taxa_lookup_map = function(taxa_list) {
   taxa_lm = map_df(taxa_list, ~ taxa_lookup(.x))
   
   taxa_lm_clean = taxa_lm %>%
-    mutate("amphibiaweb_species" = ifelse(is.na(aw_species), NA, paste(aw_order, aw_species))) %>%
-    rename("amphibiaweb_id_matched" = "aw_amphib_id",
+    mutate("amphibiaweb_species" = ifelse(is.na(aw_species), NA, paste(aw_genus, aw_species))) %>%
+    rename("taxon" = "taxa_search",
+           "amphibiaweb_id" = "aw_amphib_id",
            "amphibiaweb_order" = "aw_order",
            "amphibiaweb_family" = "aw_family",
            "amphibiaweb_subfamily" = "aw_subfamily",
@@ -324,8 +305,8 @@ taxa_lookup_map = function(taxa_list) {
            "iucn_status_matched" = "iucn_taxonomicStatus",
            "iucn_tsn_current" = "iucn_currentRecordId",
            "iucn_canonical_current" = "iucn_currentCanonicalSimple") %>%
-    select(any_of(c("taxa_search",
-                    "amphibiaweb_id_matched",
+    select(any_of(c("taxon",
+                    "amphibiaweb_id",
                     "amphibiaweb_order",
                     "amphibiaweb_family",
                     "amphibiaweb_subfamily",
@@ -391,7 +372,8 @@ parent_lookup_all = parent_lookup_res[[1]]
 parent_lookup_clean = parent_lookup_res[[2]]
 
 taxa_lookup_final = bind_rows(taxa_lookup_clean,
-                              parent_lookup_clean)
+                              parent_lookup_clean) %>%
+  mutate(is_species = (!is.na(amphibiaweb_id) | itis_rank_current == "species"))
 
 ```
 
@@ -400,9 +382,57 @@ taxa_lookup_final = bind_rows(taxa_lookup_clean,
 taxa_dupes = get_dupes(taxa_lookup_final, itis_canonical_current)
 itis_na = taxa_lookup_final %>%
   filter(is.na(itis_tsn_matched))
-itis_partial = taxa_lookup_final %>%
-  filter(itis_match_type == "PartialExact")
 itis_synonym = taxa_lookup_final %>%
   filter(itis_status_matched == "Synonym")
 
+aw_itis_discrep = taxa_lookup_final %>%
+  filter(amphibiaweb_species != itis_canonical_current)
+
 ```
+
+# reporting
+```{r}
+taxa_map = read_taxa_map(taxa_map_path)
+
+sn_replace_region = sn_all %>%
+  group_by(scientific_name, country) %>%
+  summarise(count = n(),
+         regions = paste(unique(region), collapse = ", "),
+        .groups = 'drop') %>%
+  arrange(scientific_name) %>%
+  collect() %>%
+  left_join(taxa_map_clean %>%
+              select(taxa_raw,
+                     taxa_trimmed,
+                     taxa_replacement,
+                     taxa_search), by = c("scientific_name" = "taxa_raw")) %>%
+  left_join(taxa_lookup_final %>%
+              select(taxon,
+                     amphibiaweb_species,
+                     itis_canonical_current), by = c("taxa_search" = "taxon")) %>%
+  filter(taxa_trimmed != tolower(amphibiaweb_species) | taxa_trimmed != tolower(itis_canonical_current) | amphibiaweb_species != itis_canonical_current)
+
+sn_replace_br = sn_replace_region %>%
+  filter(country == "brazil") %>%
+  select(scientific_name:taxa_replacement)
+
+sn_replace_ca = sn_replace_region %>%
+  filter(region == "california") %>%
+  select(scientific_name:taxa_replacement)
+
+sn_replace_pa = sn_replace_region %>%
+  filter(country == "panama") %>%
+  bind_rows(sn_all %>%
+              filter(scientific_name == "uptidactylus_sarajay")) %>%
+    group_by(scientific_name) %>%
+  summarise(count = sum(count),
+            taxa_replacement = first(taxa_replacement)) %>%
+  select(scientific_name:taxa_replacement)
+
+sn_replace_pe = sn_replace_region %>%
+  filter(region == "pennsylvania") %>%
+  select(scientific_name:taxa_replacement)
+
+
+```
+

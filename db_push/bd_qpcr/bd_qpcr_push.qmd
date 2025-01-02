@@ -234,10 +234,10 @@ clean_results = bind_results %>%
          standard_target_type = "ITS1",
          qpcr_machine = "quantstudio_3",
          swab_type = "mw113",
-         total_qpcr_volume_uL = 200,
          qpcr_dilution_factor = 1,
          volume_template_dna_uL = 5,
-         extract_volume_uL = 200,
+         extract_volume_uL = 20,
+         total_qpcr_volume_uL = 25,
          target_quant_per_swab = average_target_quant * extract_volume_uL/(volume_template_dna_uL * qpcr_dilution_factor),
          sample_control = ifelse(sample_name %in% c("qPCR Negative", "Negative Swab", "Positive Swab", "POS EXTRACT CONTROL", "NEG EXTRACT CONTROL"), "Control", sample_control)) %>%
   filter(!is.na(sample_name),
@@ -280,27 +280,18 @@ gelled_results = clean_results %>%
   mutate(sample_name_bd = sample_name) %>%
   left_join(db_bd %>% 
               select(sample_name_bd,
+                     qpcr_plate_run,
+                     qpcr_well,
                      result_id) %>%
-              collect(), by = "sample_name_bd") %>%
+              collect(), by = c("sample_name_bd",
+                                "qpcr_plate_run",
+                                "qpcr_well")) %>%
   group_by(sample_name_bd,
            qpcr_plate_name,
            qpcr_well) %>%
   mutate(result_id = ifelse(is.na(result_id), UUIDgenerate(), result_id)) %>%
   ungroup()
 
-```
-
-# investigation
-```{r}
-peace = db_bd %>%
-  collect() %>%
-  mutate(src = "db") %>%
-  inner_join(gelled_results %>%
-               mutate(src = "csv"), by = "sample_name_bd")
-
-issues = get_dupes(peace, sample_name_bd)
-
-# great, no dupes between sources in inner join. inherit result_id by sample_name_bd
 ```
 
 # subset data
@@ -360,4 +351,8 @@ tryCatch(
     message("Transaction failed: ", e$message)
   })
 
+```
+
+```{r}
+dbDisconnect(dbcon)
 ```
