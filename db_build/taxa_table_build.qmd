@@ -12,7 +12,7 @@ librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr
 # librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 
 # connect to database
-dbcon = hopToDB("ribbitr")
+dbcon = hopToDB()
 ```
 
 Pull metadata and tables
@@ -130,41 +130,41 @@ taxa_map_path = here("staging", "taxa_mapping")
 taxa_map = create_taxa_map(path = taxa_map_path, x = sn_unique_df, col = 'scientific_name')
 taxa_trim = trim_taxa(path = taxa_map_path)
 
-# replace taxa
-taxa_rp = replace_taxa("chiasmocleis_cf._atlantica", "chiasmocleis", path = taxa_map_path)
+# # replace taxa
+# taxa_rp = replace_taxa("chiasmocleis_cf._atlantica", "chiasmocleis", path = taxa_map_path)
 taxa_rp = replace_taxa("Desmognathaus_sp.", "desmognathus", path = taxa_map_path)
 taxa_rp = replace_taxa("desmognathus_so", "desmognathus", path = taxa_map_path)
 taxa_rp = replace_taxa("desmog_spp", "desmognathus", path = taxa_map_path)
 taxa_rp = replace_taxa("desmog_spp.", "desmognathus", path = taxa_map_path)
-taxa_rp = replace_taxa("ischnocnema_sp._02_(aff._lactea)", "ischnocnema", path = taxa_map_path)
+# taxa_rp = replace_taxa("ischnocnema_sp._02_(aff._lactea)", "ischnocnema", path = taxa_map_path)
 taxa_rp = replace_taxa("larval_salamander_sp.", "caudata", path = taxa_map_path)
-taxa_rp = replace_taxa("ololygon_aff._brieni", "ololygon", path = taxa_map_path)
-taxa_rp = replace_taxa("ololygon_aff._littoralis", "ololygon", path = taxa_map_path)
-taxa_rp = replace_taxa("ololygon_cf_litoralis", "ololygon", path = taxa_map_path)
-taxa_rp = replace_taxa("pristimantis_sp._potential_new_sp", "pristimantis", path = taxa_map_path)
-taxa_rp = replace_taxa("Rana_catesbeiana_x_Rana_clamitans_(possibly)", "rana", path = taxa_map_path)
+# taxa_rp = replace_taxa("ololygon_aff._brieni", "ololygon", path = taxa_map_path)
+# taxa_rp = replace_taxa("ololygon_aff._littoralis", "ololygon", path = taxa_map_path)
+# taxa_rp = replace_taxa("ololygon_cf_litoralis", "ololygon", path = taxa_map_path)
+# taxa_rp = replace_taxa("pristimantis_sp._potential_new_sp", "pristimantis", path = taxa_map_path)
+# taxa_rp = replace_taxa("Rana_catesbeiana_x_Rana_clamitans_(possibly)", "rana", path = taxa_map_path)
 taxa_rp = replace_taxa("red_backed_salamander", "plethodon cinereus", path = taxa_map_path)
-taxa_rp = replace_taxa("toad_sp.", "bufonidae", path = taxa_map_path)
-taxa_rp = replace_taxa("esparadana_prosoblepon", "espadarana prosoblepon", path = taxa_map_path)
+# taxa_rp = replace_taxa("toad_sp.", "bufonidae", path = taxa_map_path)
+# taxa_rp = replace_taxa("esparadana_prosoblepon", "espadarana prosoblepon", path = taxa_map_path)
 taxa_rp = replace_taxa("desmongnathus_sp", "desmognathus", path = taxa_map_path)
 taxa_rp = replace_taxa("desmoganthus_sp.", "desmognathus", path = taxa_map_path)
-taxa_rp = replace_taxa("bufo_americanus", "anaxyrus americanus", path = taxa_map_path)
-taxa_rp = replace_taxa("colostethus_panamensis", "colostethus panamansis", path = taxa_map_path)
-taxa_rp = replace_taxa("hyliola_regilla", "pseudacris regilla", path = taxa_map_path)
-taxa_rp = replace_taxa("leptodactylus_marmoratus", "adenomera marmorata", path = taxa_map_path)
-taxa_rp = replace_taxa("boana_bandeirante", "boana bandeirantes", path = taxa_map_path)
-taxa_rp = replace_taxa("eurycea_bislaneata", "eurycea bislineata", path = taxa_map_path)
-taxa_rp = replace_taxa("hyalinobatrachium_fleishmanni", "hyalinobatrachium fleischmanni", path = taxa_map_path)
-taxa_rp = replace_taxa("lithobates_sylvaticus", "rana sylvatica", path = taxa_map_path)
-taxa_rp = replace_taxa("plethodon_glutinosis", "plethodon glutinosus", path = taxa_map_path)
-taxa_rp = replace_taxa("boana_platenera", "boana platanera", path = taxa_map_path)
-taxa_rp = replace_taxa("tadpole_species_1", "anura", path = taxa_map_path)
-taxa_rp = replace_taxa("tad_spp_2", "anura", path = taxa_map_path)
-
-# to NA
-taxa_rp = replace_taxa("see_notes", NA, path = taxa_map_path)
-taxa_rp = replace_taxa("unknown", NA, path = taxa_map_path)
-taxa_rp = replace_taxa("unknown_species", NA, path = taxa_map_path)
+# taxa_rp = replace_taxa("bufo_americanus", "anaxyrus americanus", path = taxa_map_path)
+# taxa_rp = replace_taxa("colostethus_panamensis", "colostethus panamansis", path = taxa_map_path)
+# taxa_rp = replace_taxa("hyliola_regilla", "pseudacris regilla", path = taxa_map_path)
+# taxa_rp = replace_taxa("leptodactylus_marmoratus", "adenomera marmorata", path = taxa_map_path)
+# taxa_rp = replace_taxa("boana_bandeirante", "boana bandeirantes", path = taxa_map_path)
+# taxa_rp = replace_taxa("eurycea_bislaneata", "eurycea bislineata", path = taxa_map_path)
+# taxa_rp = replace_taxa("hyalinobatrachium_fleishmanni", "hyalinobatrachium fleischmanni", path = taxa_map_path)
+# taxa_rp = replace_taxa("lithobates_sylvaticus", "rana sylvatica", path = taxa_map_path)
+# taxa_rp = replace_taxa("plethodon_glutinosis", "plethodon glutinosus", path = taxa_map_path)
+# taxa_rp = replace_taxa("boana_platenera", "boana platanera", path = taxa_map_path)
+# taxa_rp = replace_taxa("tadpole_species_1", "anura", path = taxa_map_path)
+# taxa_rp = replace_taxa("tad_spp_2", "anura", path = taxa_map_path)
+# 
+# # to NA
+# taxa_rp = replace_taxa("see_notes", NA, path = taxa_map_path)
+# taxa_rp = replace_taxa("unknown", NA, path = taxa_map_path)
+# taxa_rp = replace_taxa("unknown_species", NA, path = taxa_map_path)
 
 
 taxa_map = read_taxa_map(taxa_map_path)
@@ -281,16 +281,13 @@ taxa_lookup = function(taxa) {
   return(taxa_out)
 }
 
-taxa_list = c("rana muscosa",
-              "rana",
-              "bogus")
-
 taxa_lookup_map = function(taxa_list) {
   taxa_lm = map_df(taxa_list, ~ taxa_lookup(.x))
   
   taxa_lm_clean = taxa_lm %>%
     mutate("amphibiaweb_species" = ifelse(is.na(aw_species), NA, paste(aw_genus, aw_species)),
-           "amphibiaweb_class" = ifelse(is.na(aw_species), NA, "Amphibia")) %>%
+           "amphibiaweb_class" = ifelse(is.na(aw_species), NA, "Amphibia"),
+           "aw_url" = gsub("_ws\\?", "_query?", aw_url)) %>%
     rename("taxon" = "taxa_search",
            "amphibiaweb_id" = "aw_amphib_id",
            "amphibiaweb_order" = "aw_order",
@@ -308,6 +305,9 @@ taxa_lookup_map = function(taxa_list) {
            "itis_rank_current" = "itis_rankname",
            "ncbi_id_matched" = "ncbi_recordId",
            "ncbi_canonical_matched" = "ncbi_matchedCanonicalSimple",
+           "ncbi_status_matched" = "ncbi_taxonomicStatus",
+           "ncbi_id_current" = "ncbi_currentRecordId",
+           "ncbi_canonical_current" = "ncbi_currentCanonicalSimple",
            "iucn_tsn_matched" = "iucn_recordId",
            "iucn_canonical_matched" = "iucn_matchedCanonicalSimple",
            "iucn_status_matched" = "iucn_taxonomicStatus",
@@ -337,6 +337,9 @@ taxa_lookup_map = function(taxa_list) {
                     "itis_species",
                     "ncbi_id_matched",
                     "ncbi_canonical_matched",
+                    "ncbi_status_matched",
+                    "ncbi_id_current",
+                    "ncbi_canonical_current",
                     "iucn_tsn_matched",
                     "iucn_canonical_matched",
                     "iucn_status_matched",
@@ -347,6 +350,13 @@ taxa_lookup_map = function(taxa_list) {
               taxa_lm_clean))
 }
 
+# # test
+# taxa_list = c("rana muscosa",
+#               "rana",
+#               "fritziana ohausi",
+#               "bogus")
+# 
+# peace = taxa_lookup_map(taxa_list)
 ```
 
 # run taxa lookup
@@ -426,27 +436,50 @@ sn_replace_region = sn_all %>%
 
 write_csv(sn_replace_region, here("staging", "taxa_report.csv"))
 
-sn_replace_br = sn_replace_region %>%
-  filter(country == "brazil") %>%
-  select(scientific_name:taxa_replacement)
-
-sn_replace_ca = sn_replace_region %>%
-  filter(region == "california") %>%
-  select(scientific_name:taxa_replacement)
-
-sn_replace_pa = sn_replace_region %>%
-  filter(country == "panama") %>%
-  bind_rows(sn_all %>%
-              filter(scientific_name == "uptidactylus_sarajay")) %>%
-    group_by(scientific_name) %>%
-  summarise(count = sum(count),
-            taxa_replacement = first(taxa_replacement)) %>%
-  select(scientific_name:taxa_replacement)
-
-sn_replace_pe = sn_replace_region %>%
-  filter(region == "pennsylvania") %>%
-  select(scientific_name:taxa_replacement)
-
 
 ```
+# write taxa table to db
+```{r}
+taxa_lookup_clean = taxa_lookup_final %>%
+  rename("itis_tsn" = "itis_tsn_current",
+         "itis_taxon" = "itis_canonical_current",
+         "itis_rank" = "itis_rank_current",
+         "ncbi_id" = "ncbi_id_matched",
+         "ncbi_taxon" = "ncbi_canonical_matched",
+         "iucn_tsn" = "iucn_tsn_current",
+         "iucn_taxon" = "iucn_canonical_current",
+         "amphibiaweb_common_name" = "amphibiaweb_common") %>%
+  select(all_of(c("taxon",
+                    "amphibiaweb_id",
+                    "amphibiaweb_class",
+                    "amphibiaweb_order",
+                    "amphibiaweb_family",
+                    "amphibiaweb_genus",
+                    "amphibiaweb_species",
+                    "amphibiaweb_common_name",
+                    "amphibiaweb_url",
+                    "itis_tsn",
+                    "itis_rank",
+                    "itis_class",
+                    "itis_order",
+                    "itis_family",
+                    "itis_genus",
+                    "itis_species",
+                    "ncbi_id",
+                    "ncbi_taxon",
+                    "iucn_tsn",
+                    "iucn_taxon")))
 
+taxa_lookup_gelled = taxa_map_clean %>%
+  select(taxa_raw,
+         taxa_search) %>%
+  rename("taxon_id" = "taxa_raw",
+         "taxon" = "taxa_search") %>%
+  full_join(taxa_lookup_clean, by = "taxon") %>%
+  mutate(taxon_id = ifelse(is.na(taxon_id), tolower(gsub(" ", "_", taxon)), taxon_id))
+  
+```
+
+```{r}
+dbWriteTable(dbcon, Id("survey_data", "taxonomy"), taxa_lookup_gelled, overwrite = TRUE)
+```
