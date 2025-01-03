@@ -20,81 +20,106 @@ drop_columns = "DROP VIEW IF EXISTS public.all_columns;"
 dbExecute(dbcon, drop_columns)
 ```
 
+# specify schemas in view
+```{r}
+schema_list <- c("survey_data",
+                 "microclimate_data")
+```
+
 # build public views of all tables and columns
 ```{r}
+# Function to properly format the schema list for SQL
+format_schema_list <- function(schemas) {
+  paste0("ARRAY[", paste0("'", schemas, "'", collapse = ","), "]")
+}
 
-tables_sql = "DO $$
+tables_sql <- "
+DO $$
 DECLARE
+    schema_list text[] := ?schema_list?;
     sql text := 'CREATE OR REPLACE VIEW public.all_tables AS ';
     first boolean := true;
-    rec record;  -- Declare a record variable
+    rec record;
 BEGIN
     FOR rec IN
         SELECT table_schema
         FROM information_schema.tables
         WHERE table_name = 'metadata_tables'
           AND table_type = 'BASE TABLE'
+          AND table_schema = ANY(schema_list)
     LOOP
         IF first THEN
             first := false;
         ELSE
             sql := sql || ' UNION ALL ';
         END IF;
-        sql := sql || format('SELECT * FROM %I.metadata_tables', rec.table_schema);  -- Use the record variable
+        sql := sql || format('SELECT * FROM %I.metadata_tables', rec.table_schema);
     END LOOP;
 
     -- Only execute if there are schemas found
     IF NOT first THEN
-        EXECUTE sql;  -- Execute the constructed SQL to create the view
+        EXECUTE sql;
     ELSE
-        RAISE NOTICE 'No tables named metadata_tables found.';
+        RAISE NOTICE 'No tables named metadata_tables found in the specified schemas.';
     END IF;
-END $$;"
+END $$;
+"
 
-columns_sql = "DO $$
+columns_sql <- "
+DO $$
 DECLARE
+    schema_list text[] := ?schema_list?;
     sql text := 'CREATE OR REPLACE VIEW public.all_columns AS ';
     first boolean := true;
-    rec record;  -- Declare a record variable
+    rec record;
 BEGIN
     FOR rec IN
         SELECT table_schema
         FROM information_schema.tables
         WHERE table_name = 'metadata_columns'
           AND table_type = 'BASE TABLE'
+          AND table_schema = ANY(schema_list)
     LOOP
         IF first THEN
             first := false;
         ELSE
             sql := sql || ' UNION ALL ';
         END IF;
-        sql := sql || format('SELECT * FROM %I.metadata_columns', rec.table_schema);  -- Use the record variable
+        sql := sql || format('SELECT * FROM %I.metadata_columns', rec.table_schema);
     END LOOP;
 
     -- Only execute if there are schemas found
     IF NOT first THEN
-        EXECUTE sql;  -- Execute the constructed SQL to create the view
+        EXECUTE sql;
     ELSE
-        RAISE NOTICE 'No tables named metadata_columns found.';
+        RAISE NOTICE 'No tables named metadata_columns found in the specified schemas.';
     END IF;
-END $$;"
+END $$;
+"
 
+# Replace the placeholder with the formatted schema list
+formatted_schema_list <- format_schema_list(schema_list)
+tables_sql <- gsub("\\?schema_list\\?", formatted_schema_list, tables_sql)
+columns_sql <- gsub("\\?schema_list\\?", formatted_schema_list, columns_sql)
+
+# Execute the SQL within a transaction
 dbBegin(dbcon)
 
 tryCatch(
   {
-  dbExecute(dbcon, tables_sql)
-  dbExecute(dbcon, columns_sql)
-  
-  # Commit the transaction if successful
-  dbCommit(dbcon)
-  cat("Transaction successful!")
-  
+    dbExecute(dbcon, tables_sql)
+    dbExecute(dbcon, columns_sql)
+    
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    cat("Transaction successful!")
+    
   }, error = function(e) {
-  # Rollback in case of error
-  dbRollback(dbcon)
-  message("Transaction failed: ", e$message)
-})
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  }
+)
 ```
 
 ```{r}
