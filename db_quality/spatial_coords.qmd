@@ -1,0 +1,51 @@
+---
+title: "spatial_coords"
+format: html
+---
+
+```{r}
+
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, uuid, RIBBiTR-BII/ribbitrrr, EML, ropensci/bold, ropensci/taxize, EDIorg/taxonomyCleanr)
+
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+# connect to database
+dbcon = hopToDB()
+```
+
+```{r}
+calc_q = "UPDATE survey_data.site
+SET latitude = ST_Y(ST_Transform(ST_SetSRID(ST_MakePoint(utme, utmn), 32600 + utm_zone), 4326)),
+    longitude = ST_X(ST_Transform(ST_SetSRID(ST_MakePoint(utme, utmn), 32600 + utm_zone), 4326));"
+
+dbExecute(dbcon, calc_q)
+
+```
+
+```{r}
+db_site = tbl(dbcon, Id("survey_data", "site"))
+
+numeric_zone = db_site %>%
+  collect() %>%
+  mutate(utm_zone = gsub("[^0-9]", "", utm_zone))
+
+temp_site = stage_to_temp(dbcon, db_site, numeric_zone)
+pointer = tbl(dbcon, temp_site)
+rows_update(db_site, pointer, by="site_id", in_place=TRUE, unmatched = "ignore")
+
+```
+
+```{r}
+db_site = tbl(dbcon, Id("survey_data", "site"))
+
+grab = db_site %>%
+  select(latitude,
+         longitude) %>%
+  filter(!is.na(latitude) & 
+         !is.na(longitude)) %>%
+  collect()
+
+write_csv(grab, here("staging", "site_coords.csv"))
+
+```
