@@ -158,11 +158,11 @@ taxa_rp = replace_taxa("hyalinobatrachium_fleishmanni", "hyalinobatrachium fleis
 taxa_rp = replace_taxa("lithobates_sylvaticus", "rana sylvatica", path = taxa_map_path)
 taxa_rp = replace_taxa("plethodon_glutinosis", "plethodon glutinosus", path = taxa_map_path)
 taxa_rp = replace_taxa("boana_platenera", "boana platanera", path = taxa_map_path)
+taxa_rp = replace_taxa("tadpole_species_1", "anura", path = taxa_map_path)
+taxa_rp = replace_taxa("tad_spp_2", "anura", path = taxa_map_path)
 
 # to NA
 taxa_rp = replace_taxa("see_notes", NA, path = taxa_map_path)
-taxa_rp = replace_taxa("tadpole_species_1", NA, path = taxa_map_path)
-taxa_rp = replace_taxa("tad_spp_2", NA, path = taxa_map_path)
 taxa_rp = replace_taxa("unknown", NA, path = taxa_map_path)
 taxa_rp = replace_taxa("unknown_species", NA, path = taxa_map_path)
 
@@ -224,7 +224,7 @@ taxa_lookup = function(taxa) {
     
     hierarchy_itis = itis_hierarchy(taxa_itis$result$currentRecordId, "full") %>%
       mutate(ranknum = map_int(rankname, ~ map_rank(.x))) %>%
-      filter(ranknum >= 9,
+      filter(ranknum >= 8,
              ranknum <= ranknum_itis) %>%
       select(rankname,
              taxonname) %>%
@@ -236,12 +236,19 @@ taxa_lookup = function(taxa) {
   
   cat(", NCBI", sep = "")
   taxa_ncbi = safely_gna_verifier(taxa, data_sources = 4, capitalize = TRUE)
-  if (taxa_ncbi$result$matchType == "PartialExact") {
-    taxa_ncbi$error$message = "PartialExact"
+  if (is.null(taxa_ncbi$error)){
+    if (taxa_ncbi$result$matchType == "PartialExact") {
+      taxa_ncbi$error$message = "PartialExact"
+    }
   }
   
   cat(", IUCN\n", sep = "")
   taxa_iucn = safely_gna_verifier(taxa, data_sources = 163, capitalize = TRUE)
+  if (is.null(taxa_iucn$error)){
+    if (taxa_iucn$result$matchType == "PartialExact") {
+      taxa_iucn$error$message = "PartialExact"
+    }
+  }
   
   taxa_out = taxa_aw %>%
     rename_with(~ paste0("aw_", .)) %>%
@@ -282,7 +289,8 @@ taxa_lookup_map = function(taxa_list) {
   taxa_lm = map_df(taxa_list, ~ taxa_lookup(.x))
   
   taxa_lm_clean = taxa_lm %>%
-    mutate("amphibiaweb_species" = ifelse(is.na(aw_species), NA, paste(aw_genus, aw_species))) %>%
+    mutate("amphibiaweb_species" = ifelse(is.na(aw_species), NA, paste(aw_genus, aw_species)),
+           "amphibiaweb_class" = ifelse(is.na(aw_species), NA, "Amphibia")) %>%
     rename("taxon" = "taxa_search",
            "amphibiaweb_id" = "aw_amphib_id",
            "amphibiaweb_order" = "aw_order",
@@ -307,6 +315,7 @@ taxa_lookup_map = function(taxa_list) {
            "iucn_canonical_current" = "iucn_currentCanonicalSimple") %>%
     select(any_of(c("taxon",
                     "amphibiaweb_id",
+                    "amphibiaweb_class",
                     "amphibiaweb_order",
                     "amphibiaweb_family",
                     "amphibiaweb_subfamily",
@@ -321,6 +330,7 @@ taxa_lookup_map = function(taxa_list) {
                     "itis_tsn_current",
                     "itis_canonical_current",
                     "itis_rank_current",
+                    "itis_class",
                     "itis_order",
                     "itis_family",
                     "itis_genus",
@@ -411,7 +421,7 @@ sn_replace_region = sn_all %>%
               select(taxon,
                      amphibiaweb_species,
                      itis_canonical_current), by = c("taxa_search" = "taxon")) %>%
-  filter(taxa_trimmed != tolower(amphibiaweb_species) | taxa_trimmed != tolower(itis_canonical_current) | amphibiaweb_species != itis_canonical_current) %>%
+  filter(taxa_trimmed != tolower(amphibiaweb_species) | taxa_trimmed != tolower(itis_canonical_current) | amphibiaweb_species != itis_canonical_current | is.na(itis_canonical_current)) %>%
   arrange(country)
 
 write_csv(sn_replace_region, here("staging", "taxa_report.csv"))
