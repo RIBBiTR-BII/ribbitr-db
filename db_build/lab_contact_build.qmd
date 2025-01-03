@@ -56,6 +56,19 @@ rows_update(db_bd, pointer, by="result_id", in_place=TRUE, unmatched = "ignore")
 ```
 
 ```{r}
+rename_lab = db_bd %>%
+  filter(qpcr_lab == "PLE") %>%
+  collect()
+
+rename_lab$qpcr_lab = "ple"
+
+temp_bd = stage_to_temp(dbcon, db_bd, rename_lab)
+pointer = tbl(dbcon, temp_bd)
+rows_update(db_bd, pointer, by="result_id", in_place=TRUE, unmatched = "ignore")
+
+```
+
+```{r}
 ki_visit = tbl(dbcon, Id("kira_pep", "visit"))
 ki_survey = tbl(dbcon, Id("kira_pep", "survey"))
 
