@@ -221,15 +221,15 @@ clean_survey_info = raw_survey_info %>%
          temp_survey_id = fulcrum_id,
          visit_fulcrum_id = fulcrum_parent_id,
          sample_location_description = varm_transect_meters,
-         sample_location_utme = utme,
-         sample_location_utmn = utmn,
-         sample_location_utm_zone = utmz,
-         sample_location_elevation_m = elevation_m,
+         environmental_utme = utme,
+         environmental_utmn = utmn,
+         environmental_utm_zone = utmz,
+         environmental_elevation_m = elevation_m,
          precipitation_during_visit = precipitation) %>%
-  mutate(sample_location_utme = as.numeric(sample_location_utme),
-         sample_location_utmn = as.numeric(sample_location_utmn),
-         sample_location_utm_zone = "17N",
-         sample_location_elevation_m = as.numeric(sample_location_elevation_m)) %>%
+  mutate(environmental_utme = as.numeric(environmental_utme),
+         environmental_utmn = as.numeric(environmental_utmn),
+         environmental_utm_zone = 17,
+         environmental_elevation_m = as.numeric(environmental_elevation_m)) %>%
   mutate(pressure_psi = pressureinhg * 0.491154) %>%
   select(-any_of(to_drop)) %>%
   filter(!if_all(everything(), is.na))
@@ -344,19 +344,19 @@ clean_edna = raw_edna %>%
 
 
 # value corrections
-clean_survey_info$sample_location_utm_zone[clean_survey_info$temp_survey_id == "271fe5d3-ae5b-4c2e-bd1f-4d1f356dcc37"] = "17N"
-clean_survey_info$sample_location_utme[clean_survey_info$temp_survey_id == "271fe5d3-ae5b-4c2e-bd1f-4d1f356dcc37"] = 545764
-clean_survey_info$sample_location_utmn[clean_survey_info$temp_survey_id == "271fe5d3-ae5b-4c2e-bd1f-4d1f356dcc37"] = 953809
+clean_survey_info$environmental_utm_zone[clean_survey_info$temp_survey_id == "271fe5d3-ae5b-4c2e-bd1f-4d1f356dcc37"] = 17
+clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "271fe5d3-ae5b-4c2e-bd1f-4d1f356dcc37"] = 545764
+clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "271fe5d3-ae5b-4c2e-bd1f-4d1f356dcc37"] = 953809
 
-clean_survey_info$sample_location_utm_zone[clean_survey_info$temp_survey_id == "6d327912-04e3-409d-8cd8-82cc3e202a84"] = "17N"
-clean_survey_info$sample_location_utme[clean_survey_info$temp_survey_id == "271fe5d3-ae5b-4c2e-bd1f-4d1f356dcc37"] = 545075
-clean_survey_info$sample_location_utmn[clean_survey_info$temp_survey_id == "271fe5d3-ae5b-4c2e-bd1f-4d1f356dcc37"] = 958539
+clean_survey_info$environmental_utm_zone[clean_survey_info$temp_survey_id == "6d327912-04e3-409d-8cd8-82cc3e202a84"] = 17
+clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "271fe5d3-ae5b-4c2e-bd1f-4d1f356dcc37"] = 545075
+clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "271fe5d3-ae5b-4c2e-bd1f-4d1f356dcc37"] = 958539
 
-clean_survey_info$sample_location_utme[clean_survey_info$temp_survey_id == "1f244904-98e3-4165-aa92-49e1023122bf"] = 545074
-clean_survey_info$sample_location_utme[clean_survey_info$temp_survey_id == "c593b1d5-ca35-4698-9c47-bbe557d858c7"] = 485752
-clean_survey_info$sample_location_utme[clean_survey_info$temp_survey_id == "2582cd39-8edc-4af2-a99a-6a6d351ee987"] = 607336
+clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "1f244904-98e3-4165-aa92-49e1023122bf"] = 545074
+clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "c593b1d5-ca35-4698-9c47-bbe557d858c7"] = 485752
+clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "2582cd39-8edc-4af2-a99a-6a6d351ee987"] = 607336
 
-clean_survey_info$sample_location_utmn[clean_survey_info$temp_survey_id == "bb484e0c-a982-4f48-b274-72a9cd3934ef"] = 955380
+clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "bb484e0c-a982-4f48-b274-72a9cd3934ef"] = 955380
 
 
 ```
@@ -376,14 +376,14 @@ clean_visit_info %>%
 
 gelled_site = clean_visit_info %>%
   left_join(clean_survey_info, by = c("temp_visit_id" = "visit_fulcrum_id")) %>%
-  select(region, site, sample_location_utm_zone, sample_location_utme, sample_location_utmn, sample_location_elevation_m) %>% 
+  select(region, site, environmental_utm_zone, environmental_utme, environmental_utmn, environmental_elevation_m) %>% 
   group_by(site) %>% 
   slice(1) %>%
   left_join(db_site %>% collect(), by = c("site")) %>%
-  mutate(utme = coalesce(utme, sample_location_utme),
-         utmn = coalesce(utmn, sample_location_utmn),
-         utm_zone = ifelse(is.na(utme), NA, coalesce(utm_zone, sample_location_utm_zone)),
-         elevation_m = coalesce(elevation_m, sample_location_elevation_m)) %>%
+  mutate(utme = coalesce(utme, environmental_utme),
+         utmn = coalesce(utmn, environmental_utmn),
+         utm_zone = ifelse(is.na(utme), NA, coalesce(utm_zone, environmental_utm_zone)),
+         elevation_m = coalesce(elevation_m, environmental_elevation_m)) %>%
   select(-region_id) %>%
   left_join(db_region %>% collect(), by = c("region")) %>% 
   mutate(site_id = map_chr(site_id, ~ ifelse(is.na(.x), UUIDgenerate(), .x)))
@@ -520,10 +520,10 @@ db_visit = tbl(dbcon, Id("survey_data", "visit"))
 ```{r}
 
 env_cols = c("sample_location_description",
-             "sample_location_utm_zone",
-             "sample_location_utme",
-             "sample_location_utmn",
-             "sample_location_elevation_m",
+             "environmental_utm_zone",
+             "environmental_utme",
+             "environmental_utmn",
+             "environmental_elevation_m",
              "pressureinhg",
              "relative_humidity_percent",
              "wind_speed_m_s",
@@ -557,8 +557,8 @@ unified_env = clean_visit_info %>%
               filter(!is.na(visit_id)) %>%
               collect(),
             by = tbl_nkey("survey", mdc)) %>%
-  filter(rowSums(is.na(select(., air_temp_c, water_temp_c, precipitation_during_visit, sample_location_utme))) < 4) %>%
-  group_by(visit_id, air_temp_c, water_temp_c, precipitation_during_visit, sample_location_utme) %>%
+  filter(rowSums(is.na(select(., air_temp_c, water_temp_c, precipitation_during_visit, environmental_utme))) < 4) %>%
+  group_by(visit_id, air_temp_c, water_temp_c, precipitation_during_visit, environmental_utme) %>%
   summarise(across(everything(), ~ first(na.omit(.)), .names = "{col}"), .groups = "drop") %>%
   ungroup() %>%
   filter(!is.na(site),

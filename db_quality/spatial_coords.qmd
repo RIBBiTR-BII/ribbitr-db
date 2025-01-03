@@ -13,11 +13,31 @@ librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr
 # connect to database
 dbcon = hopToDB()
 ```
-
+# sites
 ```{r}
 calc_q = "UPDATE survey_data.site
-SET latitude = ST_Y(ST_Transform(ST_SetSRID(ST_MakePoint(utme, utmn), 32600 + utm_zone), 4326)),
-    longitude = ST_X(ST_Transform(ST_SetSRID(ST_MakePoint(utme, utmn), 32600 + utm_zone), 4326));"
+SET site_latitude = ST_Y(ST_Transform(ST_SetSRID(ST_MakePoint(site_utme, site_utmn), 32600 + site_utm_zone), 4326)),
+    site_longitude = ST_X(ST_Transform(ST_SetSRID(ST_MakePoint(site_utme, site_utmn), 32600 + site_utm_zone), 4326));"
+
+dbExecute(dbcon, calc_q)
+
+```
+
+# environmental
+```{r}
+calc_q = "UPDATE survey_data.environmental
+SET environmental_latitude = ST_Y(ST_Transform(ST_SetSRID(ST_MakePoint(environmental_utme, environmental_utmn), 32600 + environmental_utm_zone), 4326)),
+    environmental_longitude = ST_X(ST_Transform(ST_SetSRID(ST_MakePoint(environmental_utme, environmental_utmn), 32600 + environmental_utm_zone), 4326));"
+
+dbExecute(dbcon, calc_q)
+
+```
+
+# capture
+```{r}
+calc_q = "UPDATE survey_data.capture
+SET capture_latitude = ST_Y(ST_Transform(ST_SetSRID(ST_MakePoint(capture_utme, capture_utmn), 32600 + capture_utm_zone), 4326)),
+    capture_longitude = ST_X(ST_Transform(ST_SetSRID(ST_MakePoint(capture_utme, capture_utmn), 32600 + capture_utm_zone), 4326));"
 
 dbExecute(dbcon, calc_q)
 
@@ -33,6 +53,40 @@ numeric_zone = db_site %>%
 temp_site = stage_to_temp(dbcon, db_site, numeric_zone)
 pointer = tbl(dbcon, temp_site)
 rows_update(db_site, pointer, by="site_id", in_place=TRUE, unmatched = "ignore")
+
+```
+
+```{r}
+db_env = tbl(dbcon, Id("survey_data", "environmental"))
+
+numeric_zone = db_env %>%
+  collect() %>%
+  mutate(sample_location_utm_zone = gsub("[^0-9]", "", sample_location_utm_zone))
+
+temp_env = stage_to_temp(dbcon, db_env, numeric_zone)
+pointer = tbl(dbcon, temp_env)
+rows_update(db_env, pointer, by="environmental_id", in_place=TRUE, unmatched = "ignore")
+
+```
+
+```{r}
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+
+inherit_zone = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  filter(!is.na(capture_utme)) %>%
+  collect() %>%
+  mutate(capture_utm_zone = site_utm_zone) %>%
+  select(all_of(colnames(db_capture)))
+
+temp_capture = stage_to_temp(dbcon, db_capture, inherit_zone)
+pointer = tbl(dbcon, temp_capture)
+rows_update(db_capture, pointer, by="capture_id", in_place=TRUE, unmatched = "ignore")
 
 ```
 
