@@ -1,0 +1,94 @@
+---
+title: "taxa_table_build"
+format: html
+editor: source
+---
+
+```{r}
+
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, uuid, RIBBiTR-BII/ribbitrrr, EML, ropensci/bold, ropensci/taxize, EDIorg/taxonomyCleanr)
+
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+# connect to database
+dbcon = hopToDB()
+```
+
+```{r}
+mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
+  collect()
+
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+```
+
+```{r}
+colnames(db_visit)
+colnames(db_bd)
+
+db_bd %>%
+  select(qpcr_lab) %>%
+  distinct() %>%
+  collect()
+
+db_bd %>%
+  select(extraction_lab) %>%
+  distinct() %>%
+  collect()
+
+peace = db_bd %>%s
+  filter(extraction_lab == "woodhams_lab") %>%
+  collect()
+```
+
+```{r}
+rename_lab = db_bd %>%
+  filter(extraction_lab == "RZ") %>%
+  collect()
+
+rename_lab$extraction_lab = "rz_lab"
+
+temp_bd = stage_to_temp(dbcon, db_bd, rename_lab)
+pointer = tbl(dbcon, temp_bd)
+rows_update(db_bd, pointer, by="result_id", in_place=TRUE, unmatched = "ignore")
+
+```
+
+```{r}
+ki_visit = tbl(dbcon, Id("kira_pep", "visit"))
+ki_survey = tbl(dbcon, Id("kira_pep", "survey"))
+
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
+kiv = ki_visit %>%
+  left_join(db_site, by = "site") %>%
+  collect()
+
+dbv = db_visit %>%
+  left_join(db_site, by = "site_id") %>%
+  collect()
+
+comv = dbv %>%
+  select(site, date) %>%
+  inner_join(kiv, by = c("site", "date"))
+
+```
+
+```{r}
+all_visits = db_visit %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  collect() %>%
+  mutate(visit_lab = case_when(
+    country == "panama" ~ "jv_lab",
+    country == "brazil" ~ "becker_lab",
+    region == "pennsylvania" ~ "rz_lab"
+  ))
+
+```
