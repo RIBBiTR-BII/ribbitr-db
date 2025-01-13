@@ -130,40 +130,87 @@ comment_taxa_dict = list("pristimantis_sp._potential_new_sp" = "potential new sp
                          "tadpole_species_1" = "tadpole species 1",
                          "tad_spp_2" = "tadpole species 2")
 
-clean_taxa_dict = list(
-  # "chiasmocleis_cf._atlantica" = "chiasmocleis",
-  "desmoganthus_sp." = "desmognathus",
-  "Desmognathaus_sp." = "desmognathus",
-  "desmongnathus_sp" = "desmognathus",
-  "desmog_spp" = "desmognathus",
-  "desmog_spp." = "desmognathus",
-  # "ischnocnema_sp._02_(aff._lactea)", "ischnocnema",
-  "larval_salamander_sp." = "caudata",
-  # "ololygon_aff._brieni" = "ololygon",
-  # "ololygon_aff._littoralis" = "ololygon",
-  # "ololygon_cf_litoralis" = "ololygon",
-  "pristimantis_sp._potential_new_sp" = "pristimantis",
-  "Rana_catesbeiana_x_Rana_clamitans_ = ossibly)", "rana",
-  "red_backed_salamander" = "plethodon cinereus",
-  "toad_sp." = "bufonidae",
-  "esparadana_prosoblepon" = "espadarana prosoblepon",
-  "bufo_americanus" = "anaxyrus americanus",
-  "colostethus_panamensis" = "colostethus panamansis",
-  # "hyliola_regilla" = "pseudacris regilla",
-  # "leptodactylus_marmoratus" = "adenomera marmorata",
-  # "boana_bandeirante" = "boana bandeirantes",
-  "eurycea_bislaneata" = "eurycea bislineata",
-  "hyalinobatrachium_fleishmanni" = "hyalinobatrachium fleischmanni",
-  "lithobates_sylvaticus" = "rana sylvatica",
-  "plethodon_glutinosis" = "plethodon glutinosus",
-  "boana_platenera" = "boana platanera",
-  "tadpole_species_1" = "anura",
-  "tad_spp_2" = "anura",
-  "uptidactylus_sarajay" = "leptodactylus savagei",
-  "see_notes" = NA,
-  "unknown" = NA,
-  "unknown_species" = NA
+clean_taxa_dict <- list(
+  'Desmognathaus_sp.' = 'desmognathus',
+  'Rana_catesbeiana_x_Rana_clamitans_(possibly)' = 'rana',
+  'Rana_sp' = 'rana',
+  'boana_platenera' = 'boana_platanera',
+  'bolitoglossa_spp' = 'bolitoglossa',
+  'brachycephalus_sp' = 'brachycephalus',
+  'brachycephalus_sp.' = 'brachycephalus',
+  'bufo_americanus' = 'anaxyrus_americanus',
+  'bufo_sp.' = 'bufo',
+  'caecilia_spp' = 'caecilia',
+  'cochranella_spp' = 'cochranella',
+  'colostethus_panamensis' = 'colostethus_panamansis',
+  'craugastor_spp' = 'craugastor',
+  'cycloramphus_sp.' = 'cycloramphus',
+  'desmog_spp' = 'desmognathus',
+  'desmog_spp.' = 'desmognathus',
+  'desmoganthus_sp.' = 'desmognathus',
+  'desmognathus_so' = 'desmognathus',
+  'desmognathus_sp.' = 'desmognathus',
+  'desmongnathus_sp' = 'desmognathus',
+  'diasporus_spp' = 'diasporus',
+  'diasporus_spp.' = 'diasporus',
+  'duellmanohyla_spp' = 'duellmanohyla',
+  'esparadana_prosoblepon' = 'espadarana_prosoblepon',
+  'eurycea_bislaneata' = 'eurycea_bislineata',
+  'hyalinobatrachium_fleishmanni' = 'hyalinobatrachium_fleischmanni',
+  'hyalinobatrachium_spp' = 'hyalinobatrachium',
+  'hyliola_regilla' = 'pseudacris_regilla',
+  'ischnocnema_sp' = 'ischnocnema',
+  'larval_salamander_sp.' = 'caudata',
+  'leptodactylus_spp' = 'leptodactylus',
+  'lithobates_sylvaticus' = 'rana_sylvatica',
+  'physalaemus_sp' = 'physalaemus',
+  'plethodon_glutinosis' = 'plethodon_glutinosus',
+  'pristimantis_sp._potential_new_sp' = 'pristimantis',
+  'pristimantis_spp' = 'pristimantis',
+  'rana_spp' = 'rana',
+  'red_backed_salamander' = 'plethodon_cinereus',
+  'silverstoneia_spp' = 'silverstoneia',
+  'smilisca_spp' = 'smilisca',
+  'tad_spp_2' = 'anura',
+  'tadpole_species_1' = 'anura',
+  'toad_sp.' = 'bufonidae',
+  'uptidactylus_sarajay' = 'leptodactylus_savagei'
 )
+
+# clean_taxa_dict = list(
+#   # "chiasmocleis_cf._atlantica" = "chiasmocleis",
+#   "desmoganthus_sp." = "desmognathus",
+#   "Desmognathaus_sp." = "desmognathus",
+#   "desmongnathus_sp" = "desmognathus",
+#   "desmog_spp" = "desmognathus",
+#   "desmog_spp." = "desmognathus",
+#   # "ischnocnema_sp._02_(aff._lactea)", "ischnocnema",
+#   "larval_salamander_sp." = "caudata",
+#   # "ololygon_aff._brieni" = "ololygon",
+#   # "ololygon_aff._littoralis" = "ololygon",
+#   # "ololygon_cf_litoralis" = "ololygon",
+#   "pristimantis_sp._potential_new_sp" = "pristimantis",
+#   "Rana_catesbeiana_x_Rana_clamitans_ = ossibly)", "rana",
+#   "red_backed_salamander" = "plethodon cinereus",
+#   "toad_sp." = "bufonidae",
+#   "esparadana_prosoblepon" = "espadarana prosoblepon",
+#   "bufo_americanus" = "anaxyrus americanus",
+#   "colostethus_panamensis" = "colostethus panamansis",
+#   # "hyliola_regilla" = "pseudacris regilla",
+#   # "leptodactylus_marmoratus" = "adenomera marmorata",
+#   # "boana_bandeirante" = "boana bandeirantes",
+#   "eurycea_bislaneata" = "eurycea bislineata",
+#   "hyalinobatrachium_fleishmanni" = "hyalinobatrachium fleischmanni",
+#   "lithobates_sylvaticus" = "rana sylvatica",
+#   "plethodon_glutinosis" = "plethodon glutinosus",
+#   "boana_platenera" = "boana platanera",
+#   "tadpole_species_1" = "anura",
+#   "tad_spp_2" = "anura",
+#   "uptidactylus_sarajay" = "leptodactylus savagei",
+#   "see_notes" = NA,
+#   "unknown" = NA,
+#   "unknown_species" = NA
+# )
 
 # overwrite
 revised_capture = db_capture %>%
@@ -232,31 +279,31 @@ taxa_trim = trim_taxa(path = taxa_map_path)
 
 # # replace taxa
 # taxa_rp = replace_taxa("chiasmocleis_cf._atlantica", "chiasmocleis", path = taxa_map_path)
-# taxa_rp = replace_taxa("Desmognathaus_sp.", "desmognathus", path = taxa_map_path)
-# taxa_rp = replace_taxa("desmognathus_so", "desmognathus", path = taxa_map_path)
-# taxa_rp = replace_taxa("desmog_spp", "desmognathus", path = taxa_map_path)
-# taxa_rp = replace_taxa("desmog_spp.", "desmognathus", path = taxa_map_path)
+taxa_rp = replace_taxa("Desmognathaus_sp.", "desmognathus", path = taxa_map_path)
+taxa_rp = replace_taxa("desmognathus_so", "desmognathus", path = taxa_map_path)
+taxa_rp = replace_taxa("desmog_spp", "desmognathus", path = taxa_map_path)
+taxa_rp = replace_taxa("desmog_spp.", "desmognathus", path = taxa_map_path)
 # taxa_rp = replace_taxa("ischnocnema_sp._02_(aff._lactea)", "ischnocnema", path = taxa_map_path)
-# taxa_rp = replace_taxa("larval_salamander_sp.", "caudata", path = taxa_map_path)
+taxa_rp = replace_taxa("larval_salamander_sp.", "caudata", path = taxa_map_path)
 # taxa_rp = replace_taxa("ololygon_aff._brieni", "ololygon", path = taxa_map_path)
 # taxa_rp = replace_taxa("ololygon_aff._littoralis", "ololygon", path = taxa_map_path)
 # taxa_rp = replace_taxa("ololygon_cf_litoralis", "ololygon", path = taxa_map_path)
 taxa_rp = replace_taxa("pristimantis_sp._potential_new_sp", "pristimantis", path = taxa_map_path)
-# taxa_rp = replace_taxa("Rana_catesbeiana_x_Rana_clamitans_(possibly)", "rana", path = taxa_map_path)
+taxa_rp = replace_taxa("Rana_catesbeiana_x_Rana_clamitans_(possibly)", "rana", path = taxa_map_path)
 taxa_rp = replace_taxa("red_backed_salamander", "plethodon cinereus", path = taxa_map_path)
-# taxa_rp = replace_taxa("toad_sp.", "bufonidae", path = taxa_map_path)
+taxa_rp = replace_taxa("toad_sp.", "bufonidae", path = taxa_map_path)
 taxa_rp = replace_taxa("esparadana_prosoblepon", "espadarana prosoblepon", path = taxa_map_path)
 taxa_rp = replace_taxa("desmongnathus_sp", "desmognathus", path = taxa_map_path)
 taxa_rp = replace_taxa("desmoganthus_sp.", "desmognathus", path = taxa_map_path)
-# taxa_rp = replace_taxa("bufo_americanus", "anaxyrus americanus", path = taxa_map_path)
+taxa_rp = replace_taxa("bufo_americanus", "anaxyrus americanus", path = taxa_map_path)
 taxa_rp = replace_taxa("colostethus_panamensis", "colostethus panamansis", path = taxa_map_path)
 taxa_rp = replace_taxa("hyliola_regilla", "pseudacris regilla", path = taxa_map_path)
 # taxa_rp = replace_taxa("leptodactylus_marmoratus", "adenomera marmorata", path = taxa_map_path)
 # taxa_rp = replace_taxa("boana_bandeirante", "boana bandeirantes", path = taxa_map_path)
-# taxa_rp = replace_taxa("eurycea_bislaneata", "eurycea bislineata", path = taxa_map_path)
+taxa_rp = replace_taxa("eurycea_bislaneata", "eurycea bislineata", path = taxa_map_path)
 taxa_rp = replace_taxa("hyalinobatrachium_fleishmanni", "hyalinobatrachium fleischmanni", path = taxa_map_path)
-# taxa_rp = replace_taxa("lithobates_sylvaticus", "rana sylvatica", path = taxa_map_path)
-# taxa_rp = replace_taxa("plethodon_glutinosis", "plethodon glutinosus", path = taxa_map_path)
+taxa_rp = replace_taxa("lithobates_sylvaticus", "rana sylvatica", path = taxa_map_path)
+taxa_rp = replace_taxa("plethodon_glutinosis", "plethodon glutinosus", path = taxa_map_path)
 taxa_rp = replace_taxa("boana_platenera", "boana platanera", path = taxa_map_path)
 taxa_rp = replace_taxa("tadpole_species_1", "anura", path = taxa_map_path)
 taxa_rp = replace_taxa("tad_spp_2", "anura", path = taxa_map_path)
@@ -469,7 +516,24 @@ taxa_map_clean = read_taxa_map(taxa_map_path) %>%
            !is.na(taxa_replacement) ~ tolower(taxa_replacement),
            !is.na(taxa_trimmed) ~ tolower(taxa_trimmed),
            TRUE ~ NA
-         ))
+         ),
+         taxa_id = gsub(" ", "_", taxa_search))
+
+taxa_list_clean = taxa_map_clean %>%
+  filter(taxa_raw != taxa_id)
+
+taxa_dict = setNames(as.list(taxa_list_clean$taxa_id), taxa_list_clean$taxa_raw)
+
+print_dict <- function(dictionary) {
+    cat("dict <- list(\n")
+    for (key in names(dictionary)) {
+        cat(sprintf("%s = %s,\n", shQuote(key), shQuote(dictionary[[key]])))
+    }
+    cat(")\n")
+}
+
+# Call the function to print the dictionary
+print_dict(taxa_dict)
 
 taxa_unique = unique(as.character(na.omit(taxa_map_clean$taxa_search)))
 
