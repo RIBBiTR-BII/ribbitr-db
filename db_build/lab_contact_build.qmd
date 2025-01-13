@@ -134,3 +134,15 @@ pointer = tbl(dbcon, temp_visit)
 rows_update(db_visit, pointer, by="visit_id", in_place=TRUE, unmatched = "ignore")
 
 ```
+
+# kira add lab
+```{r}
+update_ki_visit = ki_visit %>%
+  collect() %>%
+  mutate(visit_lab = "km_pep")
+
+temp_visit = stage_to_temp(dbcon, ki_visit, update_ki_visit)
+pointer = tbl(dbcon, temp_visit)
+rows_update(ki_visit, pointer, by="visit_id", in_place=TRUE, unmatched = "ignore")
+
+```
