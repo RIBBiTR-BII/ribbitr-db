@@ -37,7 +37,7 @@ db_bd %>%
   distinct() %>%
   collect()
 
-peace = db_bd %>%s
+peace = db_bd %>%
   filter(extraction_lab == "woodhams_lab") %>%
   collect()
 ```
@@ -92,6 +92,20 @@ comv = dbv %>%
 
 ```
 
+# load lab lookup
+```{r}
+db_lab = tbl(dbcon, Id("survey_data", "lab"))
+
+novel_lab = read_csv(here("staging", "lab_lookup.csv")) %>%
+  arrange(lab_id)
+
+# dbWriteTable(dbcon, Id("survey_data", "lab"), labs, overwrite = TRUE)
+ 
+temp_lab = stage_to_temp(dbcon, db_lab, novel_lab)
+pointer = tbl(dbcon, temp_lab)
+rows_upsert(db_lab, pointer, by="lab_id", in_place=TRUE)
+```
+
 ```{r}
 all_visits = db_visit %>%
   left_join(db_site, by = "site_id") %>%
@@ -99,9 +113,24 @@ all_visits = db_visit %>%
   left_join(db_country, by = "country_id") %>%
   collect() %>%
   mutate(visit_lab = case_when(
-    country == "panama" ~ "jv_lab",
     country == "brazil" ~ "becker_lab",
-    region == "pennsylvania" ~ "rz_lab"
+    country == "panama" ~ "jv_lab",
+    region == "california" ~ "snarl",
+    region == "new_mexico" ~ "jv_lab",
+    region == "louisiana" ~ "serdp_tn",
+    region == "pennsylvania" ~ "rz_lab",
+    region == "tennessee" ~ "serdp_tn",
+    region == "vermont" ~ "woodhams_lab"
   ))
+
+peace = all_visits %>%
+  filter(is.na(visit_lab))
+
+update_visit = all_visits %>%
+  select(all_of(colnames(db_visit)))
+
+temp_visit = stage_to_temp(dbcon, db_visit, update_visit)
+pointer = tbl(dbcon, temp_visit)
+rows_update(db_visit, pointer, by="visit_id", in_place=TRUE, unmatched = "ignore")
 
 ```
