@@ -1,0 +1,171 @@
+---
+title: "target_bd_prevalence"
+format: html
+---
+
+```{r}
+
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, uuid, RIBBiTR-BII/ribbitrrr, ggplot2, DescTools)
+
+# connect to database
+dbcon = hopToDB("ribbitr")
+```
+
+```{r}
+mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
+  collect()
+
+# pull relevant chain tables from DB
+db_bdqpcr = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+```
+
+```{r}
+data_bd_capture = db_bdqpcr %>%
+  inner_join(db_sample, by = "sample_id") %>%
+  inner_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id")
+
+colnames(data_bd_capture)
+
+taxa = data_bd_capture %>%
+  select(taxon_capture) %>%
+  distinct() %>%
+  arrange(taxon_capture) %>%
+  pull(taxon_capture)
+```
+
+```{r}
+data_sierrae = data_bd_capture %>%
+  filter(taxon_capture == "rana_muscosa",
+         !is.na(detected)) %>%
+  select(taxon_capture,
+         site,
+         date,
+         region,
+         country,
+         detected) %>%
+  collect()
+
+data_catesbeiana = data_bd_capture %>%
+  filter(taxon_capture == "rana_catesbeiana",
+         !is.na(detected)) %>%
+  select(taxon_capture,
+         site,
+         date,
+         region,
+         country,
+         detected) %>%
+  collect()
+
+data_panamansis = data_bd_capture %>%
+  filter(taxon_capture == "colostethus_panamensis",
+         !is.na(detected)) %>%
+  select(taxon_capture,
+         site,
+         date,
+         region,
+         country,
+         detected) %>%
+  collect()
+
+data_henselii = data_bd_capture %>%
+  filter(taxon_capture == "ischnocnema_henselii",
+         !is.na(detected)) %>%
+  select(taxon_capture,
+         site,
+         date,
+         region,
+         country,
+         detected) %>%
+  collect()
+
+data_joint = data_bd_capture %>%
+  filter(taxon_capture == "rana_muscosa" | 
+           taxon_capture == "rana_catesbeiana" |
+           taxon_capture == "colostethus_panamensis" |
+           taxon_capture == "ischnocnema_henselii",
+         !is.na(detected),
+         date >= "2020-01-01") %>%
+  select(taxon_capture,
+         site,
+         date,
+         region,
+         country,
+         detected) %>%
+  arrange(taxon_capture) %>%
+  collect() %>%
+mutate(detected = as.logical(detected))
+
+```
+
+```{r}
+stats_global = data_joint %>%
+  group_by(taxon_capture) %>%
+  summarise(n = n(),
+            prevalence = sum(detected)/n()) %>%
+  arrange(taxon_capture)
+
+stats_site = data_joint %>%
+  group_by(taxon_capture,
+           site) %>%
+  summarise(n = n(),
+            prevalence = sum(detected)/n()) %>%
+  arrange(taxon_capture, desc(n))
+
+stats_site_w = stats_site %>%
+  group_by(taxon_capture) %>%
+  summarise(w_mean = sum(prevalence * n) / sum(n),
+            w_var = sum(n*(prevalence - w_mean)^2)/sum(n)) %>%
+  mutate(w_sd = sqrt(w_var),
+         w_range_l = w_mean - w_sd,
+         w_range_h = w_mean + w_sd)
+
+ss_panamansis = stats_site %>%
+  filter(taxon_capture == "colostethus_panamensis")
+
+stats_site_panamansis_iqrl = IQRw(ss_panamansis$prevalence, ss_panamansis$n)
+
+stats_site_date = data_joint %>%
+  mutate(year = year(date)) %>%
+  group_by(taxon_capture,
+           site,
+           year) %>%
+  summarise(n = n(),
+            prevalence = sum(detected)/n()) %>%
+  arrange(taxon_capture, desc(n))
+
+stats_site_date_w = stats_site_date %>%
+  group_by(taxon_capture) %>%
+  summarise(w_mean = sum(prevalence * n) / sum(n),
+            w_var = sum(n*(prevalence - w_mean)^2)/sum(n)) %>%
+  mutate(w_sd = sqrt(w_var),
+         w_range_l = w_mean - w_sd,
+         w_range_h = w_mean + w_sd)
+
+ssd_panamansis = stats_site_date %>%
+  filter(taxon_capture == "colostethus_panamensis")
+ssd_henselii = stats_site_date %>%
+  filter(taxon_capture == "ischnocnema_henselii")
+ssd_catesbeiana = stats_site_date %>%
+  filter(taxon_capture == "rana_catesbeiana")
+ssd_muscosa = stats_site_date %>%
+  filter(taxon_capture == "rana_muscosa")
+
+stats_site_date_panamansis_iqrl = Quantile(ssd_panamansis$prevalence, ssd_panamansis$n)
+stats_site_date_henselii_iqrl = Quantile(ssd_henselii$prevalence, ssd_henselii$n)
+stats_site_date_catesbeiana_iqrl = Quantile(ssd_catesbeiana$prevalence, ssd_catesbeiana$n)
+stats_site_date_muscosa_iqrl = Quantile(ssd_muscosa$prevalence, ssd_muscosa$n)
+
+```
