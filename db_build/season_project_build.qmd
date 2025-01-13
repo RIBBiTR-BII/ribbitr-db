@@ -1,0 +1,61 @@
+---
+title: "season_project_build"
+format: html
+---
+
+```{r}
+
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, uuid, RIBBiTR-BII/ribbitrrr, ggplot2, reshape2)
+
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+# connect to database
+dbcon = hopToDB()
+```
+
+```{r}
+mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
+  collect()
+
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+```
+
+#plotting for field season
+```{r}
+data_visit = db_visit %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  collect()
+
+data_vis_mut = data_visit %>%
+  mutate(doy = yday(date),
+         cr = case_when(
+           country == "brazil" ~ "brazil",
+           country == "panama" ~ "panama",
+           region == "california" ~ "california",
+           region == "new_mexico" ~ "new_mexico",
+           region == "louisiana" ~ "louisiana",
+           region == "pennsylvania" ~ "pennsylvania",
+           region == "tennessee" ~ "tennessee",
+           region == "vermont" ~ "vermont"
+         )) %>%
+  filter(date >= "2020-01-01") %>%
+  group_by(cr, doy) %>%
+  summarise(n = n())
+
+# visit by country/region vs doy
+heatmap_table = data_vis_mut %>%
+  group_by(cr, doy) %>%
+  summarise(visit_count = n(), .groups = 'drop') %>%
+  pivot_wider(names_from = cr, values_from = visit_count, values_fill = 0)
+
+ggplot(data_vis_mut, aes(x = doy, y = cr, fill = n)) +
+    geom_tile() +
+    labs(title = "Correlation Heatmap", x = "Variable 1", y = "Variable 2")
+
+```
