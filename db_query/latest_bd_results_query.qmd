@@ -1,0 +1,99 @@
+---
+title: "sierra_bd_query"
+format: html
+---
+
+```{r, message=FALSE}
+# minimal packages for RIBBiTR DB data discovery
+librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, RIBBiTR-BII/ribbitrrr)
+
+# establish database connection
+dbcon <- hopToDB("ribbitr")
+
+# load table metadata
+mdt <- tbl(dbcon, Id("public", "all_tables")) %>%
+  filter(table_schema == "survey_data") %>%
+  collect()
+
+# load column metadata
+mdc <- tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
+  filter(table_schema == "survey_data") %>%
+  collect()
+```
+### Point to support tables
+
+```{r}
+# pointers for all tables of interest
+db_bdqpcr = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
+```
+
+### Join data of interest
+```{r}
+# inner join capture and bd samples
+# left join supporting tables
+data_bd_capture = db_bdqpcr %>%
+  inner_join(db_sample, by = "sample_id") %>%
+  inner_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id")
+
+# see what columns are available
+colnames(data_bd_capture)
+
+# we can also see which columns come from specified tables, for context
+colnames(db_bdqpcr)
+
+```
+
+### Select columns of interest, filter to date
+```{r}
+
+# pull data from database
+data_bd_capture_2020 = data_bd_capture %>%
+  # filter to dates of interest
+  filter(date >= "2020-01-01") %>%
+  # select columns of interest
+  select(capture_id,
+         taxon_capture,
+         life_stage,
+         svl_mm,
+         body_mass_g,
+         survey_id,
+         cmr_id,
+         sample_id,
+         sample_name_bd,
+         detected,
+         average_ct,
+         average_target_quant,
+         target_quant_per_swab,
+         comments_capture,
+         comments_qpcr,
+         date,
+         site,
+         region,
+         country)
+```
+
+### Explore # of filtered observations by life stage, then filter again
+```{r}
+
+data_bd_capture_2020 %>%
+  select(region, date) %>%
+  group_by(region) %>%
+  summarise(row_count = n(),
+            mrd = max(date)) %>%
+  arrange(desc(row_count)) %>%
+  collect()
+
+```
