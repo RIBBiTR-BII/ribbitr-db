@@ -279,22 +279,31 @@ taxa_results = taxa_lookup_map(taxa_unique_clean)
 ```
 # clean taxa in database
 ```{r}
-comment_taxa_dict = list("pristimantis_sp._potential_new_sp" = "potential new species",
+comment_taxa_dict = list("chiasmocleis_cf._atlantica" = "chiasmocleis_cf._atlantica",
+                         'ischnocnema_sp._02_(aff._lactea)' = 'ischnocnema_sp._02_(aff._lactea)',
+                         'ololygon_aff._brieni' = 'ololygon_aff._brieni',
+                         'ololygon_aff._littoralis' = 'ololygon_aff._littoralis',
+                         'ololygon_cf_litoralis' = 'ololygon_cf_litoralis',
+                         "pristimantis_sp._potential_new_sp" = "potential new species",
+                         'Rana_catesbeiana_x_Rana_clamitans_(possibly)' = 'Rana_catesbeiana or Rana_clamitans',
                          "tadpole_species_1" = "tadpole species 1",
                          "tad_spp_2" = "tadpole species 2")
 
 clean_taxa_dict_sorted <- list(
   'boana_platenera' = 'boana_platanera',
   'bolitoglossa_spp' = 'bolitoglossa',
+  'boana_bandeirante' = 'boana_bandeirantes',
   'brachycephalus_sp' = 'brachycephalus',
   'brachycephalus_sp.' = 'brachycephalus',
   'bufo_americanus' = 'anaxyrus_americanus',
   'bufo_sp.' = 'bufo',
   'caecilia_spp' = 'caecilia',
+  'chiasmocleis_cf._atlantica' = 'chiasmocleis',
   'cochranella_spp' = 'cochranella',
   'colostethus_panamensis' = 'colostethus_panamansis',
   'craugastor_spp' = 'craugastor',
   'cycloramphus_sp.' = 'cycloramphus',
+  'dendrophryniscus_haddadi' = 'dendropsophus_haddadi',
   'desmog_spp' = 'desmognathus',
   'desmog_spp.' = 'desmognathus',
   'desmoganthus_sp.' = 'desmognathus',
@@ -311,9 +320,14 @@ clean_taxa_dict_sorted <- list(
   'hyalinobatrachium_spp' = 'hyalinobatrachium',
   'hyliola_regilla' = 'pseudacris_regilla',
   'ischnocnema_sp' = 'ischnocnema',
+  'ischnocnema_sp._02_(aff._lactea)' = 'ischnocnema',
   'larval_salamander_sp.' = 'caudata',
+  'leptodactylus_marmoratus' = 'adenomera_marmorata',
   'leptodactylus_spp' = 'leptodactylus',
   'lithobates_sylvaticus' = 'rana_sylvatica',
+  'ololygon_aff._brieni' = 'ololygon',
+  'ololygon_aff._littoralis' = 'ololygon',
+  'ololygon_cf_litoralis' = 'ololygon',
   'physalaemus_sp' = 'physalaemus',
   'plethodon_glutinosis' = 'plethodon_glutinosus',
   'pristimantis_sp._potential_new_sp' = 'pristimantis',
@@ -322,11 +336,15 @@ clean_taxa_dict_sorted <- list(
   'Rana_sp' = 'rana',
   'rana_spp' = 'rana',
   'red_backed_salamander' = 'plethodon_cinereus',
+  'see_notes'= NA,
   'silverstoneia_spp' = 'silverstoneia',
+  'scinax_crospedopilus' = 'scinax_crospedospilus',
   'smilisca_spp' = 'smilisca',
   'tad_spp_2' = 'anura',
   'tadpole_species_1' = 'anura',
   'toad_sp.' = 'bufonidae',
+  'unknown' = NA,
+  'unknown_species' = NA,
   'uptidactylus_sarajay' = 'leptodactylus_savagei'
 )
 
@@ -335,7 +353,7 @@ revised_aural = db_aural %>%
          taxon_aural,
          comments_aural) %>%
   collect() %>%
-  filter(taxon_aural %in% names(clean_taxa_dict)) %>%
+  # filter(taxon_aural %in% names(clean_taxa_dict)) %>%
 mutate(comments_aural = ifelse(taxon_aural %in% names(comment_taxa_dict), 
                           ifelse(is.na(comments_capture), 
                                           as.character(comment_taxa_dict[taxon_aural]), 
@@ -350,7 +368,7 @@ revised_capture = db_capture %>%
          taxon_capture,
          comments_capture) %>%
   collect() %>%
-  filter(taxon_capture %in% names(clean_taxa_dict)) %>%
+  # filter(taxon_capture %in% names(clean_taxa_dict)) %>%
   mutate(comments_capture = ifelse(taxon_capture %in% names(comment_taxa_dict), 
                                    ifelse(is.na(comments_capture), 
                                           as.character(comment_taxa_dict[taxon_capture]), 
@@ -365,7 +383,7 @@ revised_ves = db_ves %>%
          taxon_ves,
          comments_ves) %>%
   collect() %>%
-  filter(taxon_ves %in% names(clean_taxa_dict)) %>%
+  # filter(taxon_ves %in% names(clean_taxa_dict)) %>%
   mutate(comments_ves = ifelse(taxon_ves %in% names(comment_taxa_dict), 
                                ifelse(is.na(comments_ves), 
                                           as.character(comment_taxa_dict[taxon_ves]), 
@@ -379,14 +397,30 @@ revised_cmr = db_cmr %>%
   select(cmr_id,
          taxon_cmr) %>%
   collect() %>%
-  filter(taxon_cmr %in% names(clean_taxa_dict)) %>%
+  # filter(taxon_cmr %in% names(clean_taxa_dict)) %>%
   mutate(taxon_cmr = ifelse(taxon_cmr %in% names(clean_taxa_dict),
                                 clean_taxa_dict[taxon_cmr],
                                 taxon_cmr))
 
 
 # need to update taxa table at the same time!
+taxa_revised_unique = sort(na.omit(unique(c(as.character(revised_aural$taxon_aural),
+                                            as.character(revised_capture$taxon_capture),
+                                            as.character(revised_ves$taxon_ves),
+                                            as.character(revised_cmr$taxon_cmr)))))
 
+# clean
+taxa_revised_unique_clean = map_chr(taxa_revised_unique, ~ tolower(gsub("_", " ", .x)))
+```
+
+# Lookup: run taxonomy lookup all revised taxa
+```{r}
+taxa_revised_results = taxa_lookup_map(taxa_revised_unique_clean)
+
+```
+
+# commit to db
+```{r}
 dbBegin(dbcon)
 
 tryCatch(
