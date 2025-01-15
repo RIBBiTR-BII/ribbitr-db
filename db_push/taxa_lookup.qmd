@@ -1,0 +1,422 @@
+---
+title: "taxa_lookup"
+format: html
+---
+
+```{r}
+
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, uuid, RIBBiTR-BII/ribbitrrr, EML, ropensci/bold, ropensci/taxize, EDIorg/taxonomyCleanr)
+
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+# connect to database
+dbcon = hopToDB()
+```
+
+# Pull metadata and tables
+```{r}
+mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
+  collect()
+
+# pull relevant chain tables from DB
+db_aural = tbl(dbcon, Id("survey_data", "aural"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_ves = tbl(dbcon, Id("survey_data", "ves"))
+db_cmr = tbl(dbcon, Id("survey_data", "cmr"))
+
+# db_env = tbl(dbcon, Id("survey_data", "environmental"))
+# db_survey = tbl(dbcon, Id("survey_data", "survey"))
+# db_visit = tbl(dbcon, Id("survey_data", "visit"))
+# db_site = tbl(dbcon, Id("survey_data", "site"))
+# db_region = tbl(dbcon, Id("survey_data", "region"))
+# db_country = tbl(dbcon, Id("survey_data", "country"))
+# db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+```
+
+# define taxonomy lookup functions
+```{r}
+# peace = gnr_datasources()
+
+map_rank = function(rank) {
+  rmap = c("kingdom" = 1,
+           "subkingdom" = 2,
+           "infrakingdom" = 3,
+           "phylum" = 4,
+           "subphylum" = 5,
+           "infraphylum" = 6,
+           "superclass" = 7,
+           "class" = 8,
+           "order" = 9,
+           "family" = 10,
+           "subfamily" = 11,
+           "genus" = 12,
+           "species" = 13)
+  
+  return(as.integer(rmap[rank]))
+}
+
+safely_gna_verifier = safely(gna_verifier)
+
+taxa_lookup = function(taxa) {
+  # intentionally written non-vectorized, to build in time buffers between query for each database as requested
+  
+  cat("\033[1;37m", taxa, ": ", sep = "")
+  cat("\033[38;5;240m", "AmphibiaWeb", sep = "")
+  taxa_aw = scrape_amphibiaweb(taxa, quietly = TRUE)
+  cat(", ITIS", sep = "")
+  taxa_itis = safely_gna_verifier(taxa, data_sources = 3, capitalize = TRUE)
+
+  
+  if (is.null(taxa_itis$error)){
+    if (taxa_itis$result$matchType == "PartialExact") {
+      taxa_itis$error$message = "PartialExact"
+      itis_pos = FALSE
+    } else if (!is.na(taxa_itis$result$currentRecordId)){
+      itis_pos = TRUE
+    } else {
+      itis_pos = FALSE
+    }
+  } else {
+    itis_pos = FALSE
+  }
+  
+  if (itis_pos) {
+    cat(", ITIS hierarchy", sep = "")
+    rankname_itis = tolower(itis_taxrank(taxa_itis$result$currentRecordId))
+    ranknum_itis = map_rank(rankname_itis)
+    
+    hierarchy_itis = itis_hierarchy(taxa_itis$result$currentRecordId, "full") %>%
+      mutate(ranknum = map_int(rankname, ~ map_rank(.x))) %>%
+      filter(ranknum >= 8,
+             ranknum <= ranknum_itis) %>%
+      select(rankname,
+             taxonname) %>%
+      pivot_wider(names_from = rankname,
+                  values_from = taxonname) %>%
+      mutate(rankname = rankname_itis)
+  }
+  
+  
+  cat(", NCBI", sep = "")
+  taxa_ncbi = safely_gna_verifier(taxa, data_sources = 4, capitalize = TRUE)
+  if (is.null(taxa_ncbi$error)){
+    if (taxa_ncbi$result$matchType == "PartialExact") {
+      taxa_ncbi$error$message = "PartialExact"
+    }
+  }
+  
+  cat(", GBIF", sep = "")
+  taxa_gbif = safely_gna_verifier(taxa, data_sources = 11, capitalize = TRUE)
+  if (is.null(taxa_gbif$error)){
+    if (taxa_gbif$result$matchType == "PartialExact") {
+      taxa_gbif$error$message = "PartialExact"
+    }
+  }
+  
+  cat(", IUCN\n", sep = "")
+  taxa_iucn = safely_gna_verifier(taxa, data_sources = 163, capitalize = TRUE)
+  if (is.null(taxa_iucn$error)){
+    if (taxa_iucn$result$matchType == "PartialExact") {
+      taxa_iucn$error$message = "PartialExact"
+    }
+  }
+  
+  taxa_out = taxa_aw %>%
+    rename_with(~ paste0("aw_", .)) %>%
+    mutate(taxa_search = taxa)
+  
+  if (is.null(taxa_itis$error)) {
+    taxa_out = taxa_out %>%
+      bind_cols(taxa_itis$result %>%
+                  rename_with(~ paste0("itis_", .)))
+    
+    if (itis_pos) {
+      taxa_out = taxa_out %>%
+        bind_cols(hierarchy_itis %>%
+                    rename_with(~ paste0("itis_", .)))
+    }
+  }
+  
+  if (is.null(taxa_ncbi$error)) {
+    taxa_out = taxa_out %>%
+      bind_cols(taxa_ncbi$result %>%
+                  rename_with(~ paste0("ncbi_", .)))
+  }
+  
+  if (is.null(taxa_gbif$error)) {
+    taxa_out = taxa_out %>%
+      bind_cols(taxa_gbif$result %>%
+                  rename_with(~ paste0("gbif_", .)))
+  }
+  
+  if (is.null(taxa_iucn$error)) {
+    taxa_out = taxa_out %>%
+      bind_cols(taxa_iucn$result %>%
+                  rename_with(~ paste0("iucn_", .)))
+  }
+  
+  return(taxa_out)
+}
+
+taxa_lookup_map = function(taxa_list) {
+  taxa_lm = map_df(taxa_list, ~ taxa_lookup(.x))
+  
+  taxa_lm_clean = taxa_lm %>%
+    mutate("amphibiaweb_species" = ifelse(is.na(aw_species), NA, paste(aw_genus, aw_species)),
+           "amphibiaweb_class" = ifelse(is.na(aw_species), NA, "Amphibia"),
+           "aw_url" = gsub("_ws\\?", "_query?", aw_url)) %>%
+    rename("taxon" = "taxa_search",
+           "amphibiaweb_id" = "aw_amphib_id",
+           "amphibiaweb_order" = "aw_order",
+           "amphibiaweb_family" = "aw_family",
+           "amphibiaweb_subfamily" = "aw_subfamily",
+           "amphibiaweb_genus" = "aw_genus",
+           "amphibiaweb_common" = "aw_common_name",
+           "amphibiaweb_url" = "aw_url",
+           "itis_tsn_matched" = "itis_recordId",
+           "itis_canonical_matched" = "itis_matchedCanonicalSimple",
+           "itis_status_matched" = "itis_taxonomicStatus",
+           "itis_match_type" = "itis_matchType",
+           "itis_tsn_current" = "itis_currentRecordId",
+           "itis_canonical_current" = "itis_currentCanonicalSimple",
+           "itis_rank_current" = "itis_rankname",
+           "ncbi_id_matched" = "ncbi_recordId",
+           "ncbi_canonical_matched" = "ncbi_matchedCanonicalSimple",
+           "ncbi_status_matched" = "ncbi_taxonomicStatus",
+           "ncbi_id_current" = "ncbi_currentRecordId",
+           "ncbi_canonical_current" = "ncbi_currentCanonicalSimple",
+           "gbif_id_matched" = "gbif_recordId",
+           "gbif_canonical_matched" = "gbif_matchedCanonicalSimple",
+           "gbif_status_matched" = "gbif_taxonomicStatus",
+           "gbif_id_current" = "gbif_currentRecordId",
+           "gbif_canonical_current" = "gbif_currentCanonicalSimple",
+           "iucn_tsn_matched" = "iucn_recordId",
+           "iucn_canonical_matched" = "iucn_matchedCanonicalSimple",
+           "iucn_status_matched" = "iucn_taxonomicStatus",
+           "iucn_tsn_current" = "iucn_currentRecordId",
+           "iucn_canonical_current" = "iucn_currentCanonicalSimple") %>%
+    select(any_of(c("taxon",
+                    "amphibiaweb_id",
+                    "amphibiaweb_class",
+                    "amphibiaweb_order",
+                    "amphibiaweb_family",
+                    "amphibiaweb_subfamily",
+                    "amphibiaweb_genus",
+                    "amphibiaweb_species",
+                    "amphibiaweb_common",
+                    "amphibiaweb_url",
+                    "itis_tsn_matched",
+                    "itis_canonical_matched",
+                    "itis_status_matched",
+                    "itis_match_type",
+                    "itis_tsn_current",
+                    "itis_canonical_current",
+                    "itis_rank_current",
+                    "itis_class",
+                    "itis_order",
+                    "itis_family",
+                    "itis_genus",
+                    "itis_species",
+                    "ncbi_id_matched",
+                    "ncbi_canonical_matched",
+                    "ncbi_status_matched",
+                    "ncbi_id_current",
+                    "ncbi_canonical_current",
+                    "gbif_id_matched",
+                    "gbif_canonical_matched",
+                    "gbif_status_matched",
+                    "gbif_id_current",
+                    "gbif_canonical_current",
+                    "iucn_tsn_matched",
+                    "iucn_canonical_matched",
+                    "iucn_status_matched",
+                    "iucn_tsn_current",
+                    "iucn_canonical_current")))
+  
+  return(list(taxa_lm,
+              taxa_lm_clean))
+}
+
+```
+
+# collect all taxa
+```{r}
+
+taxa_aural = db_aural %>%
+  select(taxon_aural) %>%
+  distinct() %>%
+  pull(taxon_aural)
+
+taxa_capture = db_capture %>%
+  select(taxon_capture) %>%
+  distinct() %>%
+  pull(taxon_capture)
+
+taxa_ves = db_ves %>%
+  select(taxon_ves) %>%
+  distinct() %>%
+  pull(taxon_ves)
+
+taxa_cmr = db_cmr %>%
+  select(taxon_cmr) %>%
+  distinct() %>%
+  pull(taxon_cmr)
+
+taxa_unique = sort(na.omit(unique(c(taxa_aural,
+                                    taxa_capture,
+                                    taxa_ves,
+                                    taxa_cmr))))
+
+# clean
+taxa_unique_clean = map_chr(taxa_unique, ~ tolower(gsub("_", " ", .x)))
+```
+
+# Diagnosis: run taxonomy lookup all current taxa
+```{r}
+taxa_results = taxa_lookup_map(taxa_unique_clean)
+
+```
+# clean taxa in database
+```{r}
+comment_taxa_dict = list("pristimantis_sp._potential_new_sp" = "potential new species",
+                         "tadpole_species_1" = "tadpole species 1",
+                         "tad_spp_2" = "tadpole species 2")
+
+clean_taxa_dict_sorted <- list(
+  'boana_platenera' = 'boana_platanera',
+  'bolitoglossa_spp' = 'bolitoglossa',
+  'brachycephalus_sp' = 'brachycephalus',
+  'brachycephalus_sp.' = 'brachycephalus',
+  'bufo_americanus' = 'anaxyrus_americanus',
+  'bufo_sp.' = 'bufo',
+  'caecilia_spp' = 'caecilia',
+  'cochranella_spp' = 'cochranella',
+  'colostethus_panamensis' = 'colostethus_panamansis',
+  'craugastor_spp' = 'craugastor',
+  'cycloramphus_sp.' = 'cycloramphus',
+  'desmog_spp' = 'desmognathus',
+  'desmog_spp.' = 'desmognathus',
+  'desmoganthus_sp.' = 'desmognathus',
+  'desmognathus_so' = 'desmognathus',
+  'Desmognathaus_sp.' = 'desmognathus',
+  'desmognathus_sp.' = 'desmognathus',
+  'desmongnathus_sp' = 'desmognathus',
+  'diasporus_spp' = 'diasporus',
+  'diasporus_spp.' = 'diasporus',
+  'duellmanohyla_spp' = 'duellmanohyla',
+  'esparadana_prosoblepon' = 'espadarana_prosoblepon',
+  'eurycea_bislaneata' = 'eurycea_bislineata',
+  'hyalinobatrachium_fleishmanni' = 'hyalinobatrachium_fleischmanni',
+  'hyalinobatrachium_spp' = 'hyalinobatrachium',
+  'hyliola_regilla' = 'pseudacris_regilla',
+  'ischnocnema_sp' = 'ischnocnema',
+  'larval_salamander_sp.' = 'caudata',
+  'leptodactylus_spp' = 'leptodactylus',
+  'lithobates_sylvaticus' = 'rana_sylvatica',
+  'physalaemus_sp' = 'physalaemus',
+  'plethodon_glutinosis' = 'plethodon_glutinosus',
+  'pristimantis_sp._potential_new_sp' = 'pristimantis',
+  'pristimantis_spp' = 'pristimantis',
+  'Rana_catesbeiana_x_Rana_clamitans_(possibly)' = 'rana',
+  'Rana_sp' = 'rana',
+  'rana_spp' = 'rana',
+  'red_backed_salamander' = 'plethodon_cinereus',
+  'silverstoneia_spp' = 'silverstoneia',
+  'smilisca_spp' = 'smilisca',
+  'tad_spp_2' = 'anura',
+  'tadpole_species_1' = 'anura',
+  'toad_sp.' = 'bufonidae',
+  'uptidactylus_sarajay' = 'leptodactylus_savagei'
+)
+
+revised_aural = db_aural %>%
+  select(aural_id,
+         taxon_aural,
+         comments_aural) %>%
+  collect() %>%
+  filter(taxon_aural %in% names(clean_taxa_dict)) %>%
+mutate(comments_aural = ifelse(taxon_aural %in% names(comment_taxa_dict), 
+                          ifelse(is.na(comments_capture), 
+                                          as.character(comment_taxa_dict[taxon_aural]), 
+                                          as.character(paste(comments_aural, comment_taxa_dict[taxon_aural], sep = "; "))),
+                          comments_aural),
+         taxon_aural = ifelse(taxon_aural %in% names(clean_taxa_dict),
+                                clean_taxa_dict[taxon_aural],
+                                taxon_aural))
+
+revised_capture = db_capture %>%
+  select(capture_id,
+         taxon_capture,
+         comments_capture) %>%
+  collect() %>%
+  filter(taxon_capture %in% names(clean_taxa_dict)) %>%
+  mutate(comments_capture = ifelse(taxon_capture %in% names(comment_taxa_dict), 
+                                   ifelse(is.na(comments_capture), 
+                                          as.character(comment_taxa_dict[taxon_capture]), 
+                                          as.character(paste(comments_capture, comment_taxa_dict[taxon_capture], sep = "; "))),
+                                   comments_capture),
+         taxon_capture = ifelse(taxon_capture %in% names(clean_taxa_dict),
+                                clean_taxa_dict[taxon_capture],
+                                taxon_capture))
+
+revised_ves = db_ves %>%
+  select(ves_id,
+         taxon_ves,
+         comments_ves) %>%
+  collect() %>%
+  filter(taxon_ves %in% names(clean_taxa_dict)) %>%
+  mutate(comments_ves = ifelse(taxon_ves %in% names(comment_taxa_dict), 
+                               ifelse(is.na(comments_ves), 
+                                          as.character(comment_taxa_dict[taxon_ves]), 
+                                          as.character(paste(comments_ves, comment_taxa_dict[taxon_ves], sep = "; "))), 
+                               comments_ves),
+         taxon_ves = ifelse(taxon_ves %in% names(clean_taxa_dict),
+                            clean_taxa_dict[taxon_ves],
+                            taxon_ves))
+
+revised_cmr = db_cmr %>%
+  select(cmr_id,
+         taxon_cmr) %>%
+  collect() %>%
+  filter(taxon_cmr %in% names(clean_taxa_dict)) %>%
+  mutate(taxon_cmr = ifelse(taxon_cmr %in% names(clean_taxa_dict),
+                                clean_taxa_dict[taxon_cmr],
+                                taxon_cmr))
+
+
+# need to update taxa table at the same time!
+
+dbBegin(dbcon)
+
+tryCatch(
+  {
+    
+    temp_aural = stage_to_temp(dbcon, db_aural, revised_aural)
+    pointer = tbl(dbcon, temp_aural)
+    rows_update(db_aural, pointer, by="aural_id", in_place=TRUE, unmatched="ignore")
+    
+    temp_capture = stage_to_temp(dbcon, db_capture, revised_capture)
+    pointer = tbl(dbcon, temp_capture)
+    rows_update(db_capture, pointer, by="capture_id", in_place=TRUE, unmatched="ignore")
+    
+    temp_ves = stage_to_temp(dbcon, db_ves, revised_ves)
+    pointer = tbl(dbcon, temp_ves)
+    rows_update(db_ves, pointer, by="ves_id", in_place=TRUE, unmatched="ignore")
+    
+    temp_cmr = stage_to_temp(dbcon, db_cmr, revised_cmr)
+    pointer = tbl(dbcon, temp_cmr)
+    rows_update(db_cmr, pointer, by="cmr_id", in_place=TRUE, unmatched="ignore")
+    
+    
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful!")
+    
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
+
+```
