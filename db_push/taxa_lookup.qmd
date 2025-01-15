@@ -25,6 +25,8 @@ db_capture = tbl(dbcon, Id("survey_data", "capture"))
 db_ves = tbl(dbcon, Id("survey_data", "ves"))
 db_cmr = tbl(dbcon, Id("survey_data", "cmr"))
 
+
+# db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
 # db_env = tbl(dbcon, Id("survey_data", "environmental"))
 # db_survey = tbl(dbcon, Id("survey_data", "survey"))
 # db_visit = tbl(dbcon, Id("survey_data", "visit"))
@@ -58,8 +60,10 @@ map_rank = function(rank) {
 
 safely_gna_verifier = safely(gna_verifier)
 
-taxa_lookup = function(taxa) {
+taxa_lookup = function(taxa_raw) {
   # intentionally written non-vectorized, to build in time buffers between query for each database as requested
+  
+  taxa = tolower(gsub("_", " ", taxa_raw))
   
   cat("\033[1;37m", taxa, ": ", sep = "")
   cat("\033[38;5;240m", "AmphibiaWeb", sep = "")
@@ -156,6 +160,8 @@ taxa_lookup = function(taxa) {
                   rename_with(~ paste0("iucn_", .)))
   }
   
+  taxa_out$taxa_raw = taxa_raw
+  
   return(taxa_out)
 }
 
@@ -166,7 +172,8 @@ taxa_lookup_map = function(taxa_list) {
     mutate("amphibiaweb_species" = ifelse(is.na(aw_species), NA, paste(aw_genus, aw_species)),
            "amphibiaweb_class" = ifelse(is.na(aw_species), NA, "Amphibia"),
            "aw_url" = gsub("_ws\\?", "_query?", aw_url)) %>%
-    rename("taxon" = "taxa_search",
+    rename("taxon_id" = "taxa_raw",
+           "taxon" = "taxa_search",
            "amphibiaweb_id" = "aw_amphib_id",
            "amphibiaweb_order" = "aw_order",
            "amphibiaweb_family" = "aw_family",
@@ -196,7 +203,8 @@ taxa_lookup_map = function(taxa_list) {
            "iucn_status_matched" = "iucn_taxonomicStatus",
            "iucn_tsn_current" = "iucn_currentRecordId",
            "iucn_canonical_current" = "iucn_currentCanonicalSimple") %>%
-    select(any_of(c("taxon",
+    select(any_of(c("taxon_id",
+                    "taxon",
                     "amphibiaweb_id",
                     "amphibiaweb_class",
                     "amphibiaweb_order",
@@ -234,8 +242,9 @@ taxa_lookup_map = function(taxa_list) {
                     "iucn_tsn_current",
                     "iucn_canonical_current")))
   
-  return(list(taxa_lm,
-              taxa_lm_clean))
+  # return(list(taxa_lm,
+  #             taxa_lm_clean))
+  return(taxa_lm_clean)
 }
 
 ```
@@ -268,14 +277,48 @@ taxa_unique = sort(na.omit(unique(c(taxa_aural,
                                     taxa_ves,
                                     taxa_cmr))))
 
-# clean
-taxa_unique_clean = map_chr(taxa_unique, ~ tolower(gsub("_", " ", .x)))
 ```
 
 # Diagnosis: run taxonomy lookup all current taxa
 ```{r}
-taxa_results = taxa_lookup_map(taxa_unique_clean)
+taxa_results_current = taxa_lookup_map(taxa_unique)
 
+taxa_results_current_build = taxa_results_current %>%
+  rename("itis_tsn" = "itis_tsn_current",
+         "itis_taxon" = "itis_canonical_current",
+         "itis_rank" = "itis_rank_current",
+         "ncbi_id" = "ncbi_id_matched",
+         "ncbi_taxon" = "ncbi_canonical_matched",
+         "gbif_id" = "gbif_id_current",
+         "gbif_taxon" = "gbif_canonical_current",
+         "iucn_tsn" = "iucn_tsn_current",
+         "iucn_taxon" = "iucn_canonical_current",
+         "amphibiaweb_common_name" = "amphibiaweb_common") %>%
+  select(all_of(c("taxon_id",
+                  "taxon",
+                  "amphibiaweb_id",
+                  "amphibiaweb_class",
+                  "amphibiaweb_order",
+                  "amphibiaweb_family",
+                  "amphibiaweb_genus",
+                  "amphibiaweb_species",
+                  "amphibiaweb_common_name",
+                  "amphibiaweb_url",
+                  "itis_tsn",
+                  "itis_rank",
+                  "itis_class",
+                  "itis_order",
+                  "itis_family",
+                  "itis_genus",
+                  "itis_species",
+                  "ncbi_id",
+                  "ncbi_taxon",
+                  "gbif_id",
+                  "gbif_taxon",
+                  "iucn_tsn",
+                  "iucn_taxon")))
+
+# dbWriteTable(dbcon, Id("survey_data", "taxonomy"), taxa_results_current_build, overwrite = TRUE)
 ```
 # clean taxa in database
 ```{r}
@@ -289,7 +332,7 @@ comment_taxa_dict = list("chiasmocleis_cf._atlantica" = "chiasmocleis_cf._atlant
                          "tadpole_species_1" = "tadpole species 1",
                          "tad_spp_2" = "tadpole species 2")
 
-clean_taxa_dict_sorted <- list(
+clean_taxa_dict <- list(
   'boana_platenera' = 'boana_platanera',
   'bolitoglossa_spp' = 'bolitoglossa',
   'boana_bandeirante' = 'boana_bandeirantes',
@@ -336,15 +379,15 @@ clean_taxa_dict_sorted <- list(
   'Rana_sp' = 'rana',
   'rana_spp' = 'rana',
   'red_backed_salamander' = 'plethodon_cinereus',
-  'see_notes'= NA,
+  'see_notes'= NA_character_,
   'silverstoneia_spp' = 'silverstoneia',
   'scinax_crospedopilus' = 'scinax_crospedospilus',
   'smilisca_spp' = 'smilisca',
   'tad_spp_2' = 'anura',
   'tadpole_species_1' = 'anura',
   'toad_sp.' = 'bufonidae',
-  'unknown' = NA,
-  'unknown_species' = NA,
+  'unknown' = NA_character_,
+  'unknown_species' = NA_character_,
   'uptidactylus_sarajay' = 'leptodactylus_savagei'
 )
 
@@ -353,54 +396,50 @@ revised_aural = db_aural %>%
          taxon_aural,
          comments_aural) %>%
   collect() %>%
-  # filter(taxon_aural %in% names(clean_taxa_dict)) %>%
-mutate(comments_aural = ifelse(taxon_aural %in% names(comment_taxa_dict), 
-                          ifelse(is.na(comments_capture), 
-                                          as.character(comment_taxa_dict[taxon_aural]), 
-                                          as.character(paste(comments_aural, comment_taxa_dict[taxon_aural], sep = "; "))),
-                          comments_aural),
-         taxon_aural = ifelse(taxon_aural %in% names(clean_taxa_dict),
-                                clean_taxa_dict[taxon_aural],
-                                taxon_aural))
+  mutate(comments_aural = ifelse(taxon_aural %in% names(comment_taxa_dict), 
+                                 ifelse(is.na(comments_capture), 
+                                        as.character(comment_taxa_dict[taxon_aural]), 
+                                        as.character(paste(comments_aural, comment_taxa_dict[taxon_aural], sep = "; "))),
+                                 comments_aural),
+         taxon_aural = as.character(ifelse(taxon_aural %in% names(clean_taxa_dict),
+                              clean_taxa_dict[taxon_aural],
+                              taxon_aural)))
 
 revised_capture = db_capture %>%
   select(capture_id,
          taxon_capture,
          comments_capture) %>%
   collect() %>%
-  # filter(taxon_capture %in% names(clean_taxa_dict)) %>%
   mutate(comments_capture = ifelse(taxon_capture %in% names(comment_taxa_dict), 
                                    ifelse(is.na(comments_capture), 
                                           as.character(comment_taxa_dict[taxon_capture]), 
                                           as.character(paste(comments_capture, comment_taxa_dict[taxon_capture], sep = "; "))),
                                    comments_capture),
-         taxon_capture = ifelse(taxon_capture %in% names(clean_taxa_dict),
+         taxon_capture = as.character(ifelse(taxon_capture %in% names(clean_taxa_dict),
                                 clean_taxa_dict[taxon_capture],
-                                taxon_capture))
+                                taxon_capture)))
 
 revised_ves = db_ves %>%
   select(ves_id,
          taxon_ves,
          comments_ves) %>%
   collect() %>%
-  # filter(taxon_ves %in% names(clean_taxa_dict)) %>%
   mutate(comments_ves = ifelse(taxon_ves %in% names(comment_taxa_dict), 
                                ifelse(is.na(comments_ves), 
                                           as.character(comment_taxa_dict[taxon_ves]), 
                                           as.character(paste(comments_ves, comment_taxa_dict[taxon_ves], sep = "; "))), 
                                comments_ves),
-         taxon_ves = ifelse(taxon_ves %in% names(clean_taxa_dict),
+         taxon_ves = as.character(ifelse(taxon_ves %in% names(clean_taxa_dict),
                             clean_taxa_dict[taxon_ves],
-                            taxon_ves))
+                            taxon_ves)))
 
 revised_cmr = db_cmr %>%
   select(cmr_id,
          taxon_cmr) %>%
   collect() %>%
-  # filter(taxon_cmr %in% names(clean_taxa_dict)) %>%
-  mutate(taxon_cmr = ifelse(taxon_cmr %in% names(clean_taxa_dict),
+  mutate(taxon_cmr = as.character(ifelse(taxon_cmr %in% names(clean_taxa_dict),
                                 clean_taxa_dict[taxon_cmr],
-                                taxon_cmr))
+                                taxon_cmr)))
 
 
 # need to update taxa table at the same time!
@@ -409,13 +448,84 @@ taxa_revised_unique = sort(na.omit(unique(c(as.character(revised_aural$taxon_aur
                                             as.character(revised_ves$taxon_ves),
                                             as.character(revised_cmr$taxon_cmr)))))
 
-# clean
-taxa_revised_unique_clean = map_chr(taxa_revised_unique, ~ tolower(gsub("_", " ", .x)))
 ```
 
 # Lookup: run taxonomy lookup all revised taxa
 ```{r}
-taxa_revised_results = taxa_lookup_map(taxa_revised_unique_clean)
+taxa_revised_results = taxa_lookup_map(taxa_revised_unique)
+
+parent_cols = c("itis_class",
+                "itis_order",
+                "itis_family",
+                "itis_genus")
+
+parent_taxa = sort(tolower(unique(na.omit(unlist(taxa_revised_results[parent_cols]))))) %>%
+  setdiff(taxa_revised_unique)
+
+parent_revised_results = taxa_lookup_map(parent_taxa)
+
+taxa_revised_final = bind_rows(taxa_revised_results,
+                               parent_revised_results) %>%
+  rename("itis_tsn" = "itis_tsn_current",
+         "itis_taxon" = "itis_canonical_current",
+         "itis_rank" = "itis_rank_current",
+         "ncbi_id" = "ncbi_id_matched",
+         "ncbi_taxon" = "ncbi_canonical_matched",
+         "gbif_id" = "gbif_id_current",
+         "gbif_taxon" = "gbif_canonical_current",
+         "iucn_tsn" = "iucn_tsn_current",
+         "iucn_taxon" = "iucn_canonical_current",
+         "amphibiaweb_common_name" = "amphibiaweb_common") %>%
+  select(all_of(c("taxon_id",
+                  "taxon",
+                  "amphibiaweb_id",
+                  "amphibiaweb_class",
+                  "amphibiaweb_order",
+                  "amphibiaweb_family",
+                  "amphibiaweb_genus",
+                  "amphibiaweb_species",
+                  "amphibiaweb_common_name",
+                  "amphibiaweb_url",
+                  "itis_tsn",
+                  "itis_rank",
+                  "itis_class",
+                  "itis_order",
+                  "itis_family",
+                  "itis_genus",
+                  "itis_species",
+                  "ncbi_id",
+                  "ncbi_taxon",
+                  "gbif_id",
+                  "gbif_taxon",
+                  "iucn_tsn",
+                  "iucn_taxon")))
+```
+
+# subset data
+```{r}
+db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
+
+compare_taxa = compare_df_cols(db_taxa %>%
+                                 filter(FALSE) %>%
+                                 collect(), taxa_revised_final)
+
+tray = compare_for_staging(db_taxa %>% collect(), taxa_revised_final, "taxon_id", return_all = TRUE, report = "taxa")
+
+taxa_upsert = bind_rows(tray$insert,
+                        tray$update)
+taxa_drop = tray$orphan
+
+tray = compare_for_staging(db_aural %>% collect(), revised_aural, "aural_id", return_all = TRUE, report = "aural")
+revised_aural_update = tray$update
+
+tray = compare_for_staging(db_capture %>% collect(), revised_capture, "capture_id", return_all = TRUE, report = "capture")
+revised_capture_update = tray$update
+
+tray = compare_for_staging(db_ves %>% collect(), revised_ves, "ves_id", return_all = TRUE, report = "ves")
+revised_ves_update = tray$update
+
+tray = compare_for_staging(db_cmr %>% collect(), revised_cmr, "cmr_id", return_all = TRUE, report = "cmr")
+revised_cmr_update = tray$update
 
 ```
 
@@ -425,23 +535,32 @@ dbBegin(dbcon)
 
 tryCatch(
   {
+    # first upsert taxonomy
+    temp_taxa = stage_to_temp(dbcon, db_taxa, taxa_upsert)
+    pointer = tbl(dbcon, temp_taxa)
+    rows_upsert(db_taxa, pointer, by="taxon_id", in_place=TRUE)
     
-    temp_aural = stage_to_temp(dbcon, db_aural, revised_aural)
+    # update all taxon data
+    temp_aural = stage_to_temp(dbcon, db_aural, revised_aural_update)
     pointer = tbl(dbcon, temp_aural)
     rows_update(db_aural, pointer, by="aural_id", in_place=TRUE, unmatched="ignore")
     
-    temp_capture = stage_to_temp(dbcon, db_capture, revised_capture)
+    temp_capture = stage_to_temp(dbcon, db_capture, revised_capture_update)
     pointer = tbl(dbcon, temp_capture)
     rows_update(db_capture, pointer, by="capture_id", in_place=TRUE, unmatched="ignore")
     
-    temp_ves = stage_to_temp(dbcon, db_ves, revised_ves)
+    temp_ves = stage_to_temp(dbcon, db_ves, revised_ves_update)
     pointer = tbl(dbcon, temp_ves)
     rows_update(db_ves, pointer, by="ves_id", in_place=TRUE, unmatched="ignore")
     
-    temp_cmr = stage_to_temp(dbcon, db_cmr, revised_cmr)
+    temp_cmr = stage_to_temp(dbcon, db_cmr, revised_cmr_update)
     pointer = tbl(dbcon, temp_cmr)
     rows_update(db_cmr, pointer, by="cmr_id", in_place=TRUE, unmatched="ignore")
     
+    # drop unnecesary taxa
+    temp_taxa = stage_to_temp(dbcon, db_taxa, taxa_drop)
+    pointer = tbl(dbcon, temp_taxa)
+    rows_delete(db_taxa, pointer, by="taxon_id", in_place=TRUE, unmatched="ignore")
     
     # Commit the transaction if successful
     dbCommit(dbcon)
