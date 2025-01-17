@@ -1,0 +1,91 @@
+---
+title: "brazil_legacy_fix"
+format: html
+---
+
+## Setup
+
+```{r}
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, rio, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+## Connect to DB
+dbcon <- hopToDB("ribbitr")
+
+## Point to local data directory
+ddir = Sys.getenv("data_dir")  # data directory
+# Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
+wddir = here(ddir, "brazil", "legacy") # working data directory
+
+```
+
+## load csv
+```{r}
+raw_ls_area <- read_csv(here(wddir, "area_gps_landscapes_brazil_for_cob.csv"))
+raw_ls <- read_csv(here(wddir, "raw_data_landscapes_brazil_for_cob.csv"))
+raw_sv <- read_csv(here(wddir, "TS_Santa_Virginia_PCE_Legacy_Data_For_Cob_.csv"))
+
+```
+# clean & stats
+```{r}
+clean_ls = raw_ls %>%
+  clean_names() %>%
+  mutate(date = mdy(date))
+
+clean_ls_area = raw_ls_area %>%
+  clean_names()
+
+clean_sv = raw_sv %>%
+  clean_names() %>%
+  mutate(date = mdy(date))
+
+nrow(clean_ls)
+min(clean_ls$date, na.rm=TRUE)
+max(clean_ls$date, na.rm=TRUE)
+unique(clean_ls$landscape_id)
+
+nrow(raw_sv)
+min(clean_sv$date, na.rm=TRUE)
+max(clean_sv$date, na.rm=TRUE)
+unique(clean_sv$transect_id)
+
+```
+
+## db pointers
+```{r}
+mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
+  collect()
+
+db_aural = tbl(dbcon, Id("survey_data", "aural"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_ves = tbl(dbcon, Id("survey_data", "ves"))
+db_env = tbl(dbcon, Id("survey_data", "environmental"))
+
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
+db_cmr = tbl(dbcon, Id("survey_data", "cmr"))
+db_lab = tbl(dbcon, Id("survey_data", "lab"))
+db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
+
+```
+
+## point to existing data
+
+```{r}
+br_legacy = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(country == "brazil") %>%
+  collect()
+
+```
