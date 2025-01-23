@@ -10,7 +10,7 @@ librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, rio, RPostgres, st
 # librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 
 ## Connect to DB
-dbcon <- hopToDB("ribbitr")
+dbcon <- hopToDB()
 
 ## Point to local data directory
 ddir = Sys.getenv("data_dir")  # data directory
@@ -23,31 +23,25 @@ wddir = here(ddir, "brazil", "legacy") # working data directory
 ```{r}
 raw_ls_area <- read_csv(here(wddir, "area_gps_landscapes_brazil_for_cob.csv"))
 raw_ls <- read_csv(here(wddir, "raw_data_landscapes_brazil_for_cob.csv"))
-raw_sv <- read_csv(here(wddir, "TS_Santa_Virginia_PCE_Legacy_Data_For_Cob_.csv"))
+raw_sv <- read_csv(here(wddir, "TS_Santa_Virginia_PCE_Legacy_Data_For_Cob_utm23s.csv"))
 
 ```
 # clean & stats
 ```{r}
 clean_ls = raw_ls %>%
   clean_names() %>%
-  mutate(date = mdy(date))
+  mutate(date = ifelse(date == "27/09/2018", "9/27/2018", date),
+         date = mdy(date),
+         sample_id = as.character(sample_id))
 
 clean_ls_area = raw_ls_area %>%
   clean_names()
 
 clean_sv = raw_sv %>%
   clean_names() %>%
-  mutate(date = mdy(date))
-
-nrow(clean_ls)
-min(clean_ls$date, na.rm=TRUE)
-max(clean_ls$date, na.rm=TRUE)
-unique(clean_ls$landscape_id)
-
-nrow(raw_sv)
-min(clean_sv$date, na.rm=TRUE)
-max(clean_sv$date, na.rm=TRUE)
-unique(clean_sv$transect_id)
+  mutate(date = mdy(date),
+         utm_zone = "23S",
+         id = as.character(id))
 
 ```
 
@@ -85,7 +79,215 @@ br_legacy = db_capture %>%
   left_join(db_site, by = "site_id") %>%
   left_join(db_region, by = "region_id") %>%
   left_join(db_country, by = "country_id") %>%
-  filter(country == "brazil") %>%
+  filter(country == "brazil")
+
+br_qpcr = db_bd %>%
+  inner_join(db_sample, by = "sample_id") %>%
+  right_join(br_legacy, by = "capture_id") %>%
   collect()
+
+br_legacy_data = br_legacy %>%
+  collect()
+
+```
+
+# align landscape data
+```{r}
+ls_sites = clean_ls_area %>%
+  # group_by(area_amostral) %>%
+  # summarise(utm_easting = round(mean(utm_easting)),
+  #           utm_northing = (mean(utm_northing)),
+  #           utm_zone = first(utm_zone)) %>%
+  mutate(geographic_area_descriptive = area_amostral,
+         geographic_area = case_match(area_amostral,
+                           "Bananal" ~ "bananal",
+                           "Cotia" ~ "cotia",
+                           "P.E. Intervales" ~ "intervales",
+                           "PESM - Sta Virgínia" ~ "sta_virgínia",
+                           "Pilar do Sul" ~ "pilar",
+                           "Ribeirão Branco" ~ "rb",
+                           "Serra do Japi" ~ "japi",
+                           "São Luís do Paraitinga" ~ "slp"),
+         site = paste0(geographic_area, "_", tolower(ponto_amostral)),
+         utm_zone = gsub("[$[:upper:]?]", "", utm_zone))
+
+db_landscape = br_qpcr %>%
+  filter(grepl('^RM', sample_name_bd)) %>%
+  mutate(sample_name_bd = gsub("RM", "", sample_name_bd)) %>%
+  left_join(clean_ls %>%
+              rename_with(~ paste0("csv_", .)), by = c("sample_name_bd" = "csv_sample_id")) %>%
+  left_join(ls_sites %>%
+              rename_with(~ paste0("ls_", .)), by = c("site" = "ls_site")) %>%
+  mutate(project = "landscapes",
+         life_stage = case_when(
+           grepl('jovem', comments_capture) | grepl("juvenil", comments_capture) ~ "juvenile",
+           TRUE ~ "adult"),
+         sample_name_bd = paste0("brls_", sample_name_bd),
+         qpcr_plate_name = paste0("BraLandscapes_", csv_plate),
+         qpcr_well = csv_well,
+         region = "sao_paulo",
+         time_zone = "America/Sao_Paulo",
+         site = gsub("sta_virgínia", "sv", site),
+         site_utme = ls_utm_easting,
+         site_utmn = ls_utm_northing,
+         site_utm_zone = ls_utm_zone,
+         site_name_descriptive = ls_area_amostral,
+         microhabitat_type = case_match(csv_microclimate_of_capture_location,
+                                        "Lago" ~ "lake",),
+         geographic_area = ls_geographic_area,
+         geographic_area_descriptive = ls_geographic_area_descriptive) %>%
+  select(-visit_id,
+         -site_id,
+         -region_id)
+
+
+db_capture %>%
+  select(microhabitat_type) %>%
+  distinct() %>%
+  pull(microhabitat_type) %>%
+  sort()
+
+peace = db_landscape %>%
+  select(sample_name_bd,
+         date,
+         transect,
+         site,
+         geographic_area,
+         geographic_area_descriptive,
+         region,
+         csv_notes,
+         csv_notes_2,
+         comments_capture)
+
+# questions:
+## distinction between jovem & juvenil?
+## reassign visits to correspond to new sites?
+## add site_name_descriptive
+
+```
+# drop bd_qpcr_result duplicates
+```{r}
+db_sv_qpcr = br_qpcr %>%
+  filter(!grepl('^RM', sample_name_bd),
+         date %in% unique(clean_sv$date)) %>%
+  select(all_of(colnames(db_bd)),
+         all_of(colnames(db_sample)))
+
+peace = get_dupes(db_sv_qpcr, sample_name_bd)
+
+drop_id = c(
+  "c24db5e0-fe7e-497c-a023-4de4a972c754",
+  "b768da4b-9bff-420a-a972-904590e50557",
+  "d7ae6b9c-65df-4576-874e-fe08020e8fa1",
+  "771050a7-a0b4-41a8-896c-b30a1f9cba9e",
+  "5faa1a2d-6adc-4b13-8413-4c8a4e23fbb7",
+  "c3788401-d48d-41a6-93f5-37d6de4de8f5",
+  "c3122532-985b-426e-b824-da5cd07d9f12",
+  "ee8bc02a-c932-42f0-83d0-ddd1d762ab4e",
+  "e5af19bc-8361-40ca-8601-60bdf00114d5",
+  "05db9b05-b59d-4e05-80a9-1f0335184637",
+  "c25b92cb-4f18-4700-8f09-0bf39b0d0c5c",
+  "a466804c-290b-4546-91b6-532e8d5d6941"
+)
+
+result_drop = db_bd %>%
+  filter(result_id %in% drop_id) %>%
+  select(result_id) %>%
+  collect()
+
+
+dbBegin(dbcon)
+
+# tryCatch(
+#   {
+#     
+#     db_bd = db_bd %>%
+#       rows_delete(result_drop, by="result_id", unmatched = "ignore", in_place=TRUE, copy=TRUE)
+#     
+#     # Commit the transaction if successful
+#     dbCommit(dbcon)
+#     print("Transaction successful!")
+#     
+#   }, error = function(e) {
+#     # Rollback in case of error
+#     dbRollback(dbcon)
+#     message("Transaction failed: ", e$message)
+#   })
+
+```
+
+# align Santa Virginia
+```{r}
+nrow(raw_sv)
+min(clean_sv$date, na.rm=TRUE)
+max(clean_sv$date, na.rm=TRUE)
+sort(unique(clean_sv$transect_id))
+
+sum(is.na(clean_sv))
+
+colnames(clean_sv)
+
+clean_ls$sample_id
+
+sv_sites = clean_sv %>%
+  group_by(transect_id) %>%
+  summarise(utm_easting = round(mean(easting)),
+            utm_northing = round(mean(northing)),
+            utm_zone = gsub("[$[:upper:]?]", "", first(utm_zone)))
+
+db_sv = br_qpcr %>%
+  filter(!grepl('^RM', sample_name_bd),
+         date %in% unique(clean_sv$date)) %>%
+  left_join(clean_sv %>%
+              rename_with(~ paste0("csv_", .)), by = c("sample_name_bd" = "csv_id")) %>%
+  left_join(sv_sites %>%
+              rename_with(~ paste0("sv_", .)), by = c("csv_transect_id" = "sv_transect_id")) %>%
+  mutate(project = "pce_santa_virginia",
+         site = "sta_virgínia",
+         geographic_area = "sta_virgínia",
+         geographic_area_descriptive = "PESM - Sta Virgínia",
+         site = paste0("sv_", gsub(" ", "_", tolower(csv_transect_id))),
+         region = "sao_paulo",
+         time_zone = "America/Sao_Paulo",
+         transect = tolower(csv_transect_type),
+         sample_name_bd = paste0("pce_", sample_name_bd),
+         sex = case_match(csv_sex,
+                          'M' ~ "male",
+                          c("F","FO") ~ "female",
+                          c("U", "J") ~ NA),
+         life_stage = case_match(csv_sex,
+                                 "J" ~ "juvenile",
+                                 .default = "adult"),
+         capture_animal_state = case_match(csv_dead,
+                                           "Y" ~ "dead",
+                                           NA ~ NA,
+                                           .default = "alive"),
+         site_utme = sv_utm_easting,
+         site_utmn = sv_utm_northing,
+         site_utm_zone = sv_utm_zone) %>%
+  select(-visit_id,
+         -site_id,
+         -region_id)
+
+
+colnames(clean_sv)
+colnames(db_sv)
+
+peace = db_sv %>%
+  select(sample_name_bd,
+         date,
+         transect,
+         site,
+         geographic_area,
+         geographic_area_descriptive,
+         region,
+         sv_utm_easting,
+         sv_utm_northing,
+         site_utme,
+         site_utmn
+         )
+
+# actions
+
 
 ```
