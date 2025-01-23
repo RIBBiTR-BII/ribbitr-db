@@ -1,0 +1,14 @@
+---
+title: "sn_connect"
+format: html
+---
+
+```{r}
+
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
+
+# connect to database
+dbcon = hopToDB("ucsb")
+
+```
