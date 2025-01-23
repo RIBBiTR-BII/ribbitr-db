@@ -558,9 +558,12 @@ tryCatch(
     rows_update(db_cmr, pointer, by="cmr_id", in_place=TRUE, unmatched="ignore")
     
     # drop unnecesary taxa
-    temp_taxa = stage_to_temp(dbcon, db_taxa, taxa_drop)
-    pointer = tbl(dbcon, temp_taxa)
-    rows_delete(db_taxa, pointer, by="taxon_id", in_place=TRUE, unmatched="ignore")
+    db_taxa = db_taxa %>%
+      rows_delete(taxa_drop, by="taxon_id", unmatched = "ignore", in_place=TRUE)
+    # 
+    # temp_taxa = stage_to_temp(dbcon, db_taxa, taxa_drop)
+    # pointer = tbl(dbcon, temp_taxa)
+    # rows_delete(db_taxa, pointer, by="taxon_id", in_place=TRUE, unmatched="ignore")
     
     # Commit the transaction if successful
     dbCommit(dbcon)
