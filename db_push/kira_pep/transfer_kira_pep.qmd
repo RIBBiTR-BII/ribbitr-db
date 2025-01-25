@@ -1,0 +1,34 @@
+---
+title: "transfer_kira_pep"
+format: html
+---
+
+```{r}
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, janitor, RIBBiTR-BII/ribbitrrr, here)
+
+# connect to database
+dbcon = hopToDB()
+
+```
+
+# pull db
+```{r}
+mdc_s = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
+  collect()
+
+mdc_k = tbl(dbcon, Id("kira_pep", "metadata_columns")) %>%
+  collect()
+
+# pull relevant chain tables from DB
+db_capture = tbl(dbcon, Id("kira_pep", "capture"))
+db_survey = tbl(dbcon, Id("kira_pep", "survey"))
+db_visit = tbl(dbcon, Id("kira_pep", "visit"))
+db_bd = tbl(dbcon, Id("kira_pep", "bd_results"))
+
+data_cap = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  collect()
+
+```
