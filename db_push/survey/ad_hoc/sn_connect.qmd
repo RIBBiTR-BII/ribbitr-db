@@ -9,6 +9,6 @@ format: html
 librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
 
 # connect to database
-dbcon = hopToDB("ucsb")
+dbcon = hopToDB("ucsb_ssh")
 
 ```
