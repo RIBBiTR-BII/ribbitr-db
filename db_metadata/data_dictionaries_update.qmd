@@ -259,7 +259,7 @@ meta_column_duplicate = list()
 
 for (schema in schemas) {
   table_results = compare_for_staging(meta_table_data[[schema]] %>%
-                                       collect() %>%,
+                                       collect(),
                                       pg_table_data[[schema]] %>%
                                        collect(),
                                      tables_pkey,
@@ -386,10 +386,27 @@ if (update || insert) {
 
 ## drop orphans
 ```{r}
-# does not work yet, tables don't share same source. Could use DBI instead.
+# does not work in transaction, nested transactions error.
+# program management for simple renames...
 
-# begin transaction
-dbBegin(dbcon)
+db_mdt = list()
+db_mdc = list()
+
+for (schema in schemas) {
+  # crate lazy data table
+  if (nrow(meta_table_orphan[[schema]]) > 0) {
+    # drop orphans
+    db_mdt[[schema]] = tbl(dbcon, Id(schema, "metadata_tables"))
+  }
+  
+  if (nrow(meta_column_orphan[[schema]]) > 0) {
+    # drop orphans
+    db_mdc[[schema]] = tbl(dbcon, Id(schema, "metadata_columns"))
+  }
+}
+# 
+# # begin transaction
+# dbBegin(dbcon)
 
 tryCatch(
   {
@@ -397,28 +414,31 @@ tryCatch(
       # some local test to avoid below if not needed
       if (nrow(meta_table_orphan[[schema]]) > 0) {
         # drop orphans
-        rows_delete(meta_table_data[[schema]], meta_table_orphan[[schema]], by=tables_pkey, in_place=TRUE)
+        db_mdt[[schema]] = db_mdt[[schema]] %>%
+          rows_delete(meta_table_orphan[[schema]], by=tables_pkey, unmatched = "ignore", in_place=TRUE, copy = TRUE)
         
         cat("Table orphans deleted for schema: ", schema, "\n")
       }
       
-      if (nrow(meta_column_upsert[[schema]]) > 0) {
+      if (nrow(meta_column_orphan[[schema]]) > 0) {
         # drop orphans
-        rows_delete(meta_column_data[[schema]], meta_column_orphan[[schema]], by=columns_pkey, in_place=TRUE)
-      
+        db_mdc[[schema]] = db_mdc[[schema]] %>%
+          rows_delete(meta_column_orphan[[schema]], by=columns_pkey, unmatched = "ignore", in_place=TRUE, copy = TRUE)
+        
         cat("Column orphans deleted for schema: ", schema, "\n")
       }
     }
     
     # Commit the transaction if successful
-    dbCommit(dbcon)
+    # dbCommit(dbcon)
     print("Transaction successful! All tables are up to date.")
 
   }, error = function(e) {
     # Rollback in case of error
-    dbRollback(dbcon)
+    # dbRollback(dbcon)
     message("Transaction failed: ", e$message)
   })
+
 
 ```
 
