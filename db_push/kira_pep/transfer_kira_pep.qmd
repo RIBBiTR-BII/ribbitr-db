@@ -12,23 +12,154 @@ dbcon = hopToDB()
 
 ```
 
-# pull db
+# db pointers
 ```{r}
 mdc_s = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
   collect()
+
+# pull relevant chain tables from DB
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_ves = tbl(dbcon, Id("survey_data", "ves"))
+db_env = tbl(dbcon, Id("survey_data", "environmental"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
 
 mdc_k = tbl(dbcon, Id("kira_pep", "metadata_columns")) %>%
   collect()
 
 # pull relevant chain tables from DB
-db_capture = tbl(dbcon, Id("kira_pep", "capture"))
-db_survey = tbl(dbcon, Id("kira_pep", "survey"))
-db_visit = tbl(dbcon, Id("kira_pep", "visit"))
-db_bd = tbl(dbcon, Id("kira_pep", "bd_results"))
-
-data_cap = db_capture %>%
-  left_join(db_survey, by = "survey_id") %>%
-  left_join(db_visit, by = "visit_id") %>%
-  collect()
+km_capture = tbl(dbcon, Id("kira_pep", "capture"))
+km_ves = tbl(dbcon, Id("kira_pep", "ves"))
+km_survey = tbl(dbcon, Id("kira_pep", "survey"))
+km_visit = tbl(dbcon, Id("kira_pep", "visit"))
+km_bd = tbl(dbcon, Id("kira_pep", "bd_results"))
 
 ```
+
+# restructure ves
+```{r}
+data_ves = km_ves %>%
+  left_join(km_survey, by = "survey_id") %>%
+  left_join(km_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site") %>%
+  collect
+
+clean_ves = data_ves %>%
+  rename(comments_ves = comment,
+         count_ves = count,
+         microhabitat_type = location_ves,
+         life_stage = visual_life_stage,
+         comments_survey = general_survey_comment,
+         description = survey_description,
+         observers_survey = surveyor_id,
+         comments_visit = visit_comment) %>%
+  mutate(start_timestamp = ymd_hms(paste(date, start_time), tz = "America/Los_Angeles"),
+         end_timestamp = ymd_hms(paste(date, end_time), tz = "America/Los_Angeles"),
+         duration_minutes = as.numeric(difftime(end_timestamp, start_timestamp, units = "mins")),
+         detection_type = "visual",
+         number_observers = map_int(observers_survey, ~ length(unique(na.omit(unlist(str_split(gsub(" ", "", .x), ",")))))),
+         taxon_ves = case_match(species_ves,
+                                "buca" ~ "anaxyrus_canorus",
+                                "hyre" ~ "pseudacris_regilla",
+                                "ramu" ~ "rana_muscosa",
+                                "thel" ~ "thamnophis_elegans"),
+         time_of_day = "day",
+         project = "ribbitr_pep")
+
+# subset and compare
+subset_ves = clean_ves %>%
+  select(any_of(colnames(db_ves)))
+
+comparison_ves = compare_df_cols(db_ves %>% filter(FALSE) %>% collect(), subset_ves)
+
+subset_ves_survey = clean_ves %>%
+  select(any_of(colnames(db_survey)))
+
+comparison_ves_survey = compare_df_cols(db_survey %>% filter(FALSE) %>% collect(), subset_ves_survey)
+
+subset_ves_visit = clean_ves %>%
+  select(any_of(colnames(db_visit)))
+
+comparison_ves_visit = compare_df_cols(db_visit %>% filter(FALSE) %>% collect(), subset_ves_visit)
+
+subset_ves_site = clean_ves %>%
+  select(any_of(colnames(db_site)))
+
+comparison_ves_site = compare_df_cols(db_site %>% filter(FALSE) %>% collect(), subset_ves_site)
+
+
+```
+
+# restructure capture
+```{r}
+data_capture = km_capture %>%
+  left_join(km_survey, by = "survey_id") %>%
+  left_join(km_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site") %>%
+  collect
+
+clean_capture = data_capture %>%
+  rename(bag_mass_g = bag_weight,
+         comments_capture = capture_comment,
+         life_stage = capture_life_stage,
+         svm_mm = length,
+         microhabitat_type = location,
+         photo_id = photos_cap,
+         sex = sex_swabbing,
+         observer = swabber_id,
+         body_and_bag_mass_g = total_weight,
+         body_mass_g = weight,
+         capture_utme = utme,
+         capture_utmn = utmn,
+         comments_survey = general_survey_comment,
+         description = survey_description,
+         observers_survey = surveyor_id,
+         comments_visit = visit_comment) %>%
+  mutate(photo = !is.na(photo_id),
+         taxon_capture = case_match(species,
+                                    "buca" ~ "anaxyrus_canorus",
+                                    "hyre" ~ "pseudacris_regilla",
+                                    "ramu" ~ "rana_muscosa",
+                                    "thel" ~ "thamnophis_elegans"),
+         capture_utm_zone = 11,
+         start_timestamp = ymd_hms(paste(date, start_time), tz = "America/Los_Angeles"),
+         end_timestamp = ymd_hms(paste(date, end_time), tz = "America/Los_Angeles"),
+         duration_minutes = as.numeric(difftime(end_timestamp, start_timestamp, units = "mins")),
+         detection_type = "visual",
+         number_observers = map_int(observers_survey, ~ length(unique(na.omit(unlist(str_split(gsub(" ", "", .x), ",")))))),
+         time_of_day = "day",
+         project = "ribbitr_pep")
+  
+  
+# subset and compare
+subset_capture = clean_capture %>%
+  select(any_of(colnames(db_capture)))
+
+comparison_capture = compare_df_cols(db_capture %>% filter(FALSE) %>% collect(), subset_capture)
+
+subset_capture_survey = clean_capture %>%
+  select(any_of(colnames(db_survey)))
+
+comparison_capture_survey = compare_df_cols(db_survey %>% filter(FALSE) %>% collect(), subset_capture_survey)
+
+subset_capture_visit = clean_capture %>%
+  select(any_of(colnames(db_visit)))
+
+comparison_capture_visit = compare_df_cols(db_visit %>% filter(FALSE) %>% collect(), subset_capture_visit)
+
+subset_capture_site = clean_capture %>%
+  select(any_of(colnames(db_site)))
+
+comparison_capture_site = compare_df_cols(db_site %>% filter(FALSE) %>% collect(), subset_capture_site)
+
+```
+
+# restructure environmental
+
+# restructure cmr
+
+# restructure bd results
+
+
