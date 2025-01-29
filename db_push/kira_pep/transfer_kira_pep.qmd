@@ -8,7 +8,7 @@ format: html
 librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, janitor, RIBBiTR-BII/ribbitrrr, here)
 
 # connect to database
-dbcon = hopToDB()
+dbcon = hopToDB("ribbitr")
 
 ```
 
@@ -44,7 +44,7 @@ data_ves = km_ves %>%
   left_join(km_survey, by = "survey_id") %>%
   left_join(km_visit, by = "visit_id") %>%
   left_join(db_site, by = "site") %>%
-  collect
+  collect()
 
 clean_ves = data_ves %>%
   rename(comments_ves = comment,
@@ -98,7 +98,7 @@ data_capture = km_capture %>%
   left_join(km_survey, by = "survey_id") %>%
   left_join(km_visit, by = "visit_id") %>%
   left_join(db_site, by = "site") %>%
-  collect
+  collect()
 
 clean_capture = data_capture %>%
   rename(bag_mass_g = bag_weight,
@@ -157,9 +157,77 @@ comparison_capture_site = compare_df_cols(db_site %>% filter(FALSE) %>% collect(
 ```
 
 # restructure environmental
+```{r}
+data_env = km_survey %>%
+  left_join(km_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site") %>%
+  collect()
+  
+clean_env = data_env %>%
+  rename(comments_survey = general_survey_comment,
+         observers_survey = surveyor_id,
+         comments_visit = visit_comment) %>%
+  mutate(start_timestamp = ymd_hms(paste(date, start_time), tz = "America/Los_Angeles"),
+         end_timestamp = ymd_hms(paste(date, end_time), tz = "America/Los_Angeles"),
+         duration_minutes = as.numeric(difftime(end_timestamp, start_timestamp, units = "mins")),
+         detection_type = "environmental",
+         number_observers = map_int(observers_survey, ~ length(unique(na.omit(unlist(str_split(gsub(" ", "", .x), ",")))))),
+         time_of_day = "day",
+         project = "ribbitr_pep",
+         sky = case_match(sky,
+                          "Clear" ~ "clear",
+                          c("precip", "Precipitating") ~ "precipitating",
+                          "m_cloudy" ~ "mostly_cloudy",
+                          "p_cloudy" ~ "partly_cloudy",
+                          .default = sky))
+  
+# subset and compare
+subset_env = clean_env %>%
+  select(any_of(colnames(db_env)))
 
-# restructure cmr
+comparison_env = compare_df_cols(db_env %>% filter(FALSE) %>% collect(), subset_env)
 
-# restructure bd results
+subset_env_survey = clean_env %>%
+  select(any_of(colnames(db_survey)))
+
+comparison_env_survey = compare_df_cols(db_survey %>% filter(FALSE) %>% collect(), subset_env_survey)
+
+subset_env_visit = clean_env %>%
+  select(any_of(colnames(db_visit)))
+
+comparison_env_visit = compare_df_cols(db_visit %>% filter(FALSE) %>% collect(), subset_env_visit)
+
+subset_env_site = clean_env %>%
+  select(any_of(colnames(db_site)))
+
+comparison_env_site = compare_df_cols(db_site %>% filter(FALSE) %>% collect(), subset_env_site)
+
+```
+
+# restructure samples & bd results
+
+```{r}
+clean_sample = clean_capture %>%
+  select(capture_id,
+         bd_swab_id,
+         microbiome_swab_id) %>%
+  rename(bd = bd_swab_id,
+         microbiome = microbiome_swab_id) %>%
+  pivot_longer(!capture_id, names_to = "sample_type", values_to = "sample_name") %>%
+  mutate(sample_id = map_chr(sample_name, ~ UUIDgenerate()))
+
+clean_bd = km_bd %>%
+  collect() %>%
+  left_join(clean_sample %>%
+              filter(sample_type == "bd"), by = c("bd_swab_id" = "sample_name")) %>%
+  rename(sample_name_bd = "bd_swab_id",
+         average_ct = quant_cycle,
+         comments_qpcr = notes,
+         qpcr_dilution_factor = dilution) %>%
+  mutate(qpcr_plate_name = paste0("KM_", plate),
+         qpcr_dilution_factor = ifelse(is.na(qpcr_dilution_factor), 100, qpcr_dilution_factor))
+
+comparison_bd = compare_df_cols(db_bd %>% filter(FALSE) %>% collect(), clean_bd)
+```
 
 
