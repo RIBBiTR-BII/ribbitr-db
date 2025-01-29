@@ -1,0 +1,60 @@
+---
+title: "clean_nominals"
+format: html
+---
+
+```{r}
+
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+# connect to database
+dbcon = hopToDB()
+
+```
+
+Pull metadata and tables
+
+```{r}
+mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
+  collect()
+
+# pull relevant chain tables from DB
+db_aural = tbl(dbcon, Id("survey_data", "aural"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_ves = tbl(dbcon, Id("survey_data", "ves"))
+db_env = tbl(dbcon, Id("survey_data", "environmental"))
+
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
+db_cmr = tbl(dbcon, Id("survey_data", "cmr"))
+
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+
+```
+
+# environmental table
+```{r}
+clean_env = db_env %>%
+  collect() %>%
+  mutate(sky = case_match(sky,
+                          "Clear" ~ "clear",
+                          c("precip", "Precipitating") ~ "precipitating",
+                          "m_cloudy" ~ "mostly_cloudy",
+                          "p_cloudy" ~ "partly_cloudy",
+                          .default = sky))
+
+temp_env = stage_to_temp(dbcon, db_env, clean_env)
+pointer = tbl(dbcon, temp_env)
+db_env = rows_update(db_env, pointer, by="environmental_id", in_place = TRUE, unmatched = "ignore")
+
+sort(unique(db_env %>% pull(sky)))
+
+```
+
