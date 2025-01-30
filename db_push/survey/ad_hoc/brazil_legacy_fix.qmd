@@ -6,7 +6,7 @@ format: html
 ## Setup
 
 ```{r}
-librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, rio, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, rio, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr, plotly)
 # librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 
 ## Connect to DB
@@ -25,7 +25,10 @@ raw_ls_area <- read_csv(here(wddir, "area_gps_landscapes_brazil_for_cob.csv"))
 raw_ls <- read_csv(here(wddir, "raw_data_landscapes_brazil_for_cob.csv"))
 raw_sv <- read_csv(here(wddir, "TS_Santa_Virginia_PCE_Legacy_Data_For_Cob_utm23s.csv"))
 
+raw_cct = import_list(here(wddir, "climate_ct.xlsx"))
+raw_cct = raw_cct$Sheet1
 ```
+
 # clean & stats
 ```{r}
 clean_ls = raw_ls %>%
@@ -42,6 +45,11 @@ clean_sv = raw_sv %>%
   mutate(date = mdy(date),
          utm_zone = "23S",
          id = as.character(id))
+
+clean_cct = raw_cct %>%
+  clean_names() %>%
+  rename_with(~ paste0("cct_", .)) %>%
+  mutate(sample_name = gsub("RM ", "", cct_id))
 
 ```
 
@@ -111,7 +119,7 @@ ls_sites = clean_ls_area %>%
          site = paste0(geographic_area, "_", tolower(ponto_amostral)),
          utm_zone = gsub("[$[:upper:]?]", "", utm_zone))
 
-db_landscape = br_qpcr %>%
+data_landscape = br_qpcr %>%
   filter(grepl('^RM', sample_name_bd)) %>%
   mutate(sample_name_bd = gsub("RM", "", sample_name_bd)) %>%
   left_join(clean_ls %>%
@@ -133,7 +141,8 @@ db_landscape = br_qpcr %>%
          site_utm_zone = ls_utm_zone,
          site_name_descriptive = ls_area_amostral,
          microhabitat_type = case_match(csv_microclimate_of_capture_location,
-                                        "Lago" ~ "lake",),
+                                        "Lago" ~ "lake",
+                                        .default = NA_character_),
          geographic_area = ls_geographic_area,
          geographic_area_descriptive = ls_geographic_area_descriptive) %>%
   select(-visit_id,
@@ -141,13 +150,15 @@ db_landscape = br_qpcr %>%
          -region_id)
 
 
+sort(unique(data_landscape$csv_microclimate_of_capture_location))
+
 db_capture %>%
   select(microhabitat_type) %>%
   distinct() %>%
   pull(microhabitat_type) %>%
   sort()
 
-peace = db_landscape %>%
+peace = data_landscape %>%
   select(sample_name_bd,
          date,
          transect,
@@ -165,6 +176,7 @@ peace = db_landscape %>%
 ## add site_name_descriptive
 
 ```
+
 # drop bd_qpcr_result duplicates
 ```{r}
 db_sv_qpcr = br_qpcr %>%
@@ -235,13 +247,14 @@ sv_sites = clean_sv %>%
             utm_northing = round(mean(northing)),
             utm_zone = gsub("[$[:upper:]?]", "", first(utm_zone)))
 
-db_sv = br_qpcr %>%
+data_sv = br_qpcr %>%
   filter(!grepl('^RM', sample_name_bd),
          date %in% unique(clean_sv$date)) %>%
   left_join(clean_sv %>%
               rename_with(~ paste0("csv_", .)), by = c("sample_name_bd" = "csv_id")) %>%
   left_join(sv_sites %>%
               rename_with(~ paste0("sv_", .)), by = c("csv_transect_id" = "sv_transect_id")) %>%
+  left_join(clean_cct, by = "sample_name") %>%
   mutate(project = "pce_santa_virginia",
          site = "sta_virgínia",
          geographic_area = "sta_virgínia",
@@ -264,16 +277,23 @@ db_sv = br_qpcr %>%
                                            .default = "alive"),
          site_utme = sv_utm_easting,
          site_utmn = sv_utm_northing,
-         site_utm_zone = sv_utm_zone) %>%
+         site_utm_zone = sv_utm_zone,
+         detected = ifelse(is.na(csv_bd_load_swab), NA, detected),
+         replicate_detected = ifelse(is.na(csv_bd_load_swab), NA, replicate_detected),
+         average_ct = ifelse(is.na(csv_bd_load_swab), NA, average_ct),
+         average_target_quant = ifelse(is.na(csv_bd_load_swab), NA, average_target_quant),
+         target_quant_per_swab = ifelse(is.na(csv_bd_load_swab), NA, target_quant_per_swab),
+         average_its1_copies_per_swab = ifelse(is.na(csv_bd_load_swab), NA, average_its1_copies_per_swab),
+         comments_qpcr = ifelse(is.na(csv_bd_load_swab), paste(na.omit(comments_qpcr, "positive results dropped due to possible cross-contamination")), comments_qpcr)) %>%
   select(-visit_id,
          -site_id,
          -region_id)
 
 
 colnames(clean_sv)
-colnames(db_sv)
+colnames(data_sv)
 
-peace = db_sv %>%
+peace = data_sv %>%
   select(sample_name_bd,
          date,
          transect,
@@ -281,13 +301,26 @@ peace = db_sv %>%
          geographic_area,
          geographic_area_descriptive,
          region,
-         sv_utm_easting,
-         sv_utm_northing,
-         site_utme,
-         site_utmn
-         )
+         detected,
+         csv_bd_presence,
+         average_ct,
+         average_target_quant,
+         target_quant_per_swab,
+         csv_bd_load_swab,
+         csv_bd_log10,
+         csv_bd_ln,
+         cct_zoo_load_100,
+         tq_load,
+         tq_cct,
+         atq_load,
+         atq_cct)
 
 # actions
 
+
+miplot = ggplot(peace, aes(x = target_quant_per_swab, y = csv_bd_load_swab)) +
+  geom_point()
+
+ggplotly(miplot)
 
 ```
