@@ -14,7 +14,7 @@ dbcon <- hopToDB()
 
 ```
 
-## Define functions to pull table and column metadata
+## Define functions to scrape table and column metadata
 
 ```{r}
 pull_pg_column_data <- function(schema) {
