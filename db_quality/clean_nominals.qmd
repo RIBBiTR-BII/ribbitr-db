@@ -58,3 +58,49 @@ sort(unique(db_env %>% pull(sky)))
 
 ```
 
+# clean microhabitat
+```{r}
+db_capture = tbl(dbcon, (Id("survey_data", "capture")))
+                 
+mhab = rbind(db_capture %>%
+               select(microhabitat_type),
+             db_ves %>%
+               select(microhabitat_type)) %>%
+  group_by(microhabitat_type) %>%
+  summarise(n = n()) %>%
+  collect() %>%
+  arrange(microhabitat_type)
+
+capture_update = db_capture %>%
+  select(microhabitat_type) %>%
+  collect() %>%
+  mutate(microhabitat_type = tolower(microhabitat_type),
+         microhabitat_type = gsub("_", " ", microhabitat_type),
+         microhabitat_type = gsub("on tree", "tree", microhabitat_type),
+         microhabitat_type = gsub("1m", "1 m", microhabitat_type),
+         microhabitat_type = case_match(microhabitat_type,
+                                        "tree/ log/ bush above 1 m" ~ "tree/log/bush above 1 m",
+                                        "boulder/rock" ~ "rock",
+                                        "emergent vegetation (higher than 1 m)" ~ "emergent vegetation above 1 m",
+                                        "emergent vegetation (lower than 1 m)" ~ "emergent vegetation below 0.1 m",
+                                        "fine sub" ~ "fine substrate",
+                                        "litter" ~ "leaf litter",
+                                        "other" ~ NA_character_,
+                                        "tree/log/bush (higher than 1 m)" ~ "tree/log/bush above 1 m",
+                                        "tree/log/bush (lower than 1 m)" ~ "tree/log/bush below 1 m",
+                                        "unknown" ~ NA_character_,
+                                        "water flooded" ~ "water",
+                                        "water pool" ~ "water",
+                                        .default = microhabitat_type))%>%
+  group_by(microhabitat_type) %>%
+  summarise(n = n()) %>%
+  arrange(microhabitat_type)
+
+capture_mhab_notes = db_capture %>%
+  select(microhabitat_notes) %>%
+  collect() %>%
+  group_by(microhabitat_notes) %>%
+  summarise(n = n()) %>%
+  arrange(microhabitat_notes)
+
+```
