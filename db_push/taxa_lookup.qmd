@@ -24,6 +24,7 @@ db_aural = tbl(dbcon, Id("survey_data", "aural"))
 db_capture = tbl(dbcon, Id("survey_data", "capture"))
 db_ves = tbl(dbcon, Id("survey_data", "ves"))
 db_cmr = tbl(dbcon, Id("survey_data", "cmr"))
+db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
 
 
 # db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
@@ -166,7 +167,13 @@ taxa_lookup = function(taxa_raw) {
 }
 
 taxa_lookup_map = function(taxa_list) {
-  taxa_lm = map_df(taxa_list, ~ taxa_lookup(.x))
+  if (is_empty(taxa_list)) {
+    taxa_lm = taxa_lookup("foo")[0, ]
+    
+  } else {
+    
+    taxa_lm = map_df(taxa_list, ~ taxa_lookup(.x))
+  }
   
   taxa_lm_clean = taxa_lm %>%
     mutate("amphibiaweb_species" = ifelse(is.na(aw_species), NA, paste(aw_genus, aw_species)),
@@ -245,6 +252,7 @@ taxa_lookup_map = function(taxa_list) {
   # return(list(taxa_lm,
   #             taxa_lm_clean))
   return(taxa_lm_clean)
+  
 }
 
 ```
@@ -452,7 +460,19 @@ taxa_revised_unique = sort(na.omit(unique(c(as.character(revised_aural$taxon_aur
 
 # Lookup: run taxonomy lookup all revised taxa
 ```{r}
+lookup_all = FALSE
+
+if (lookup_all) {
 taxa_revised_results = taxa_lookup_map(taxa_revised_unique)
+} else {
+  taxa_existing = db_taxa %>%
+    pull(taxon_id)
+  
+  taxa_revised_unique_new = setdiff(taxa_revised_unique, taxa_existing)
+  
+  taxa_revised_results_new = taxa_lookup_map(taxa_revised_unique_new)
+  
+}
 
 parent_cols = c("itis_class",
                 "itis_order",
@@ -503,11 +523,11 @@ taxa_revised_final = bind_rows(taxa_revised_results,
 
 # subset data
 ```{r}
-db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
-
 compare_taxa = compare_df_cols(db_taxa %>%
                                  filter(FALSE) %>%
                                  collect(), taxa_revised_final)
+
+taxa_revised_final_joined = 
 
 tray = compare_for_staging(db_taxa %>% collect(), taxa_revised_final, "taxon_id", return_all = TRUE, report = "taxa")
 
@@ -535,31 +555,44 @@ dbBegin(dbcon)
 
 tryCatch(
   {
-    # first upsert taxonomy
-    temp_taxa = stage_to_temp(dbcon, db_taxa, taxa_upsert)
-    pointer = tbl(dbcon, temp_taxa)
-    rows_upsert(db_taxa, pointer, by="taxon_id", in_place=TRUE)
     
-    # update all taxon data
-    temp_aural = stage_to_temp(dbcon, db_aural, revised_aural_update)
-    pointer = tbl(dbcon, temp_aural)
-    rows_update(db_aural, pointer, by="aural_id", in_place=TRUE, unmatched="ignore")
+    if (nrow(taxa_upsert) > 0) {
+      # first upsert taxonomy
+      temp_taxa = stage_to_temp(dbcon, db_taxa, taxa_upsert)
+      pointer = tbl(dbcon, temp_taxa)
+      rows_upsert(db_taxa, pointer, by="taxon_id", in_place=TRUE)
+    }
     
-    temp_capture = stage_to_temp(dbcon, db_capture, revised_capture_update)
-    pointer = tbl(dbcon, temp_capture)
-    rows_update(db_capture, pointer, by="capture_id", in_place=TRUE, unmatched="ignore")
+    if (nrow(revised_aural_update) > 0) {
+      # update all taxon data
+      temp_aural = stage_to_temp(dbcon, db_aural, revised_aural_update)
+      pointer = tbl(dbcon, temp_aural)
+      rows_update(db_aural, pointer, by="aural_id", in_place=TRUE, unmatched="ignore")
+    }
     
-    temp_ves = stage_to_temp(dbcon, db_ves, revised_ves_update)
-    pointer = tbl(dbcon, temp_ves)
-    rows_update(db_ves, pointer, by="ves_id", in_place=TRUE, unmatched="ignore")
+    if (nrow(revised_capture_update) > 0) {
+      temp_capture = stage_to_temp(dbcon, db_capture, revised_capture_update)
+      pointer = tbl(dbcon, temp_capture)
+      rows_update(db_capture, pointer, by="capture_id", in_place=TRUE, unmatched="ignore")
+    }
     
-    temp_cmr = stage_to_temp(dbcon, db_cmr, revised_cmr_update)
-    pointer = tbl(dbcon, temp_cmr)
-    rows_update(db_cmr, pointer, by="cmr_id", in_place=TRUE, unmatched="ignore")
+    if (nrow(revised_ves_update) > 0) {
+      temp_ves = stage_to_temp(dbcon, db_ves, revised_ves_update)
+      pointer = tbl(dbcon, temp_ves)
+      rows_update(db_ves, pointer, by="ves_id", in_place=TRUE, unmatched="ignore")
+    }
     
-    # drop unnecesary taxa
-    db_taxa = db_taxa %>%
-      rows_delete(taxa_drop, by="taxon_id", unmatched = "ignore", in_place=TRUE)
+    if (nrow(revised_cmr_update) > 0) {
+      temp_cmr = stage_to_temp(dbcon, db_cmr, revised_cmr_update)
+      pointer = tbl(dbcon, temp_cmr)
+      rows_update(db_cmr, pointer, by="cmr_id", in_place=TRUE, unmatched="ignore")
+    }
+    
+    if (nrow(taxa_drop) > 0) {
+      # drop unnecesary taxa
+      db_taxa = db_taxa %>%
+        rows_delete(taxa_drop, by="taxon_id", unmatched = "ignore", in_place=TRUE)
+    }
     # 
     # temp_taxa = stage_to_temp(dbcon, db_taxa, taxa_drop)
     # pointer = tbl(dbcon, temp_taxa)
