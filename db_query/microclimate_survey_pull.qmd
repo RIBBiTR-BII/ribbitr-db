@@ -1,0 +1,207 @@
+---
+title: "microclimate_survey_pull"
+format: html
+---
+
+
+```{r}
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, rio, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr, plotly)
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+## Connect to DB
+dbcon <- hopToDB("ribbitr")
+
+```
+
+table pointers
+```{r}
+# survey data
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+
+# microclimate data
+db_ts01 = tbl(dbcon, Id("microclimate_data", "time_series_01_raw"))
+db_sensor = tbl(dbcon, Id("microclimate_data", "sensor"))
+db_logger = tbl(dbcon, Id("microclimate_data", "logger"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+```
+
+# example dataset
+```{r}
+data_ex = db_survey %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(date >= "2022-07-03",
+         date <= "2023-08-10",
+         region == "pennsylvania") %>%
+  collect()
+
+```
+
+# subsetting function
+```{r}
+survey_data = data_ex
+start = "2020-07-12"
+end = NA
+buffer = days(5)
+output_timezone = NA
+time_sensitive = FALSE
+return_continuous = TRUE
+
+microclimate_subset = function(survey_data, start = NA, end = NA, buffer = NA, output_timezone = NA, time_sensitive = FALSE, return_continuous = TRUE) {
+  
+  if (!return_continuous) {
+    stop("programming needed to return non-continuous. Tell Cob to get on it.")
+  }
+  
+  if (!is.na(output_timezone)) {
+    message(paste0("Changing connection timezone to ", output_timezone))
+    tz_query = dbExecute("SET TIME ZONE '",output_timezone , "';")
+  }
+  
+  # check data format
+  if (is.data.frame(survey_data)) {
+    data_cols = colnames(survey_data)
+  } else {
+    stop("Data format not recognized.")
+  }
+  
+  # time/date check
+  if (time_sensitive) {
+    # check for timestamp
+    if ("start_timestamp" %in% data_cols & "end_timestamp" %in% data_cols) {
+      # check format
+      if (!all(c(class(survey_data$start_timestamp) == c("POSIXct", "POSIXt"), class(survey_data$end_timestamp) == c("POSIXct", "POSIXt")))) {
+        stop("Unexpected format of 'start_timestamp' and 'end_timestamp' columns.")
+      }
+    } else {
+      stop("Required columns 'start_timestamp' and 'end_timestamp' not found in survey_data")
+    }
+  } else {
+    # check for date
+    if ("date" %in% data_cols) {
+      # check format
+      if (!is.Date(survey_data$date)) {
+        stop("Unexpected format of 'date' column.")
+      }
+    } else {
+      stop("Required column 'date' not found in survey_data")
+    }
+  }
+  
+  # check for site_id
+  if ("site_id" %in% data_cols) {
+    # check format
+    if (!is.character(survey_data$site_id)) {
+      stop("Unexpected format of 'site_id' column.")
+    }
+  } else {
+    stop("Required column 'site_id' not found in survey_data")
+  }
+  
+  # parse start
+  if (is.na(start)) {
+    start_bool = FALSE
+  } else {
+    start_bool = TRUE
+    if (time_sensitive) {
+      start = ymd_hms(start)
+      if (!all(class(start) == c("POSIXct", "POSIXt")) | is.na(start)) {
+        stop("'start' format not recognized.")
+      }
+    } else {
+      start = ymd(start)
+      if (!is.Date(start) | is.na(start)) {
+        stop("'start' format not recognized.")
+      }
+    }
+  }
+  
+  # parse end
+  if (is.na(end)) {
+    end_bool = FALSE
+  } else {
+    end_bool = TRUE
+    if (time_sensitive) {
+      end = ymd_hms(end)
+      if (!all(class(end) == c("POSIXct", "POSIXt")) | is.na(end)) {
+        stop("'end' format not recognized.")
+      }
+    } else {
+      end = ymd(end)
+      if (!is.Date(end) | is.na(end)) {
+        stop("'end' format not recognized.")
+      }
+    }
+  }
+  
+  # parse buffer
+  if (is.na(buffer)) {
+    buffer_bool = FALSE
+  } else {
+    buffer_bool = TRUE
+    if (!class(buffer) == "Period") {
+      stop("'buffer' format not recognized.")
+    }
+  }
+  
+  # main query
+  
+  # site_id params
+  site_list = unique(survey_data$site_id)
+  
+  site_list_mc = db_logger %>%
+    select(site_id) %>%
+    distinct() %>%
+    filter(site_id %in% site_list) %>%
+    pull(site_id)
+  
+  # time/date params
+  if (time_sensitive) {
+        # define start date
+    if (start_bool) {
+      start_date = start
+    } else {
+      start_date = min(survey_data$start_timestamp) - buffer
+    }
+    
+     # define end date
+    if (end_bool) {
+      end_datetime = end
+    } else {
+      end_datetime = max(survey_data$end_timestamp) + buffer
+    }
+    
+  } else {
+    
+    # define start date
+    if (start_bool) {
+      start_date = start
+    } else {
+      start_date = min(survey_data$date) - buffer
+    }
+    
+     # define end date
+    if (end_bool) {
+      end_datetime = end
+    } else {
+      end_datetime = max(survey_data$date) + buffer
+    }
+    
+  }
+  
+  mc_data = db_ts01 %>%
+      left_join(db_sensor, by = "sensor_id") %>%
+      left_join(db_logger, by = "logger_id") %>%
+      filter(site_id %in% site_list_mc,
+             timestamptz >= start_datetime,
+             timestamptz <= end_datetime) %>%
+      collect()
+
+}
+
+```
