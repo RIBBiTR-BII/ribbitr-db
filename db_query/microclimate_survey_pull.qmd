@@ -201,7 +201,8 @@ microclimate_subset = function(survey_data, start = NA, end = NA, buffer = NA, o
              timestamptz >= start_datetime,
              timestamptz <= end_datetime) %>%
       collect()
-
+  
+  return(mc_data)
 }
 
 ```
