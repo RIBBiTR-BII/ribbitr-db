@@ -28,34 +28,8 @@ db_region = tbl(dbcon, Id("survey_data", "region"))
 db_country = tbl(dbcon, Id("survey_data", "country"))
 ```
 
-# define functions
+# define function
 ```{r}
-microclimate_subset_site = function(site_id, start, end, metadata = TRUE, quiet = TRUE) {
-  
-  if (!quiet) {
-    message(paste0("Collecting for site_id: ", site_id, ", start: ", as.character(start), ", end: ", as.character(end)))
-  }
-  
-  # main query
-  mc_data_long_query = db_ts01 %>%
-      left_join(db_sensor, by = "sensor_id") %>%
-      left_join(db_logger, by = "logger_id") %>%
-      filter(site_id == site_id,
-             timestamptz >= start,
-             timestamptz <= end)
-  
-  if (!metadata) {
-    mc_data_long = mc_data_long_query %>%
-      select(all_of(colnames(db_ts01))) %>%
-      collect()
-  } else {
-    mc_data_long = mc_data_long_query %>%
-      collect()
-  }
-  
-  return(mc_data_long)
-}
-
 microclimate_subset_presurvey = function(survey_data, buffer, time_sensitive = FALSE, output_timezone = NA) {
   
   if (!is.na(output_timezone)) {
@@ -131,7 +105,7 @@ microclimate_subset_presurvey = function(survey_data, buffer, time_sensitive = F
   sites_mc = db_logger %>%
     select(site_id) %>%
     distinct() %>%
-    filter(site_id %in% site_list) %>%
+    filter(site_id %in% sites_data) %>%
     pull(site_id)
   
   sites_present = intersect(sites_data, sites_mc)
@@ -172,13 +146,53 @@ microclimate_subset_presurvey = function(survey_data, buffer, time_sensitive = F
   survey_start_end_valid = survey_start_end %>%
     filter(!(survey_id %in% invalid_start_end))
   
-  # main query
+
   if (nrow(survey_start_end_valid) > 0) {
-    mc_data = pmap_df(survey_start_end,
+    # build single compound query to fetch all data (less expensive than hundreds of queries)
+    message("Pulling data from server... ", appendLF = FALSE)
+    # create filter expression for one row
+    create_row_filter <- function(site_id, start, end) {
+      expr(
+        (site_id == !!site_id & 
+           timestamptz >= !!start & 
+           timestamptz <= !!end)
+      )
+    }
+    
+    # create full filter expression
+    create_full_filter <- function(filter_df) {
+      row_filters <- pmap(filter_df, create_row_filter)
+      reduce(row_filters, ~ expr(!!.x | !!.y))
+    }
+    
+    # Create filter
+    full_filter <- create_full_filter(survey_start_end_valid %>%
+                                        select(-survey_id))
+    # fetch all data
+    mc_data = db_ts01 %>%
+      left_join(db_sensor, by = "sensor_id") %>%
+      left_join(db_logger, by = "logger_id") %>%
+      filter(!!full_filter) %>%
+      select(site_id,
+             sensor_id,
+             timestamptz,
+             value) %>%
+      collect()
+    message("done.")
+    
+    # map data to each survey
+    message("Remapping data to surveys... ", appendLF = FALSE)
+    mc_data_mapped = pmap_df(survey_start_end_valid,
                       function(survey_id, site_id, start, end) {
-                        microclimate_subset_site(site_id, start, end, metadata = FALSE, quiet = FALSE) %>%
-                          mutate(survey_id = survey_id)
+                        mc_data %>%
+                          filter(site_id == site_id,
+                                 timestamptz >= start,
+                                 timestamptz <= end) %>%
+                          mutate(survey_id = survey_id) %>%
+                          select(-site_id)
                       })
+    message("done.")
+    
   } else {
     stop("No valid surveys for given parameters, query aborted.")
   }
@@ -188,7 +202,7 @@ microclimate_subset_presurvey = function(survey_data, buffer, time_sensitive = F
     left_join(db_logger, by = "logger_id") %>%
     collect()
   
-  mc_data_final = mc_data %>%
+  mc_data_final = mc_data_mapped %>%
     left_join(mc_meta, by = "sensor_id") %>%
     select(survey_id,
            sensor_id,
@@ -209,11 +223,6 @@ microclimate_subset_presurvey = function(survey_data, buffer, time_sensitive = F
 
 # example dataset
 ```{r}
-sites_mc = db_logger %>%
-  select(site_id) %>%
-  distinct() %>%
-  pull(site_id)
-
 data_ex = db_survey %>%
   left_join(db_visit, by = "visit_id") %>%
   left_join(db_site, by = "site_id") %>%
@@ -221,16 +230,14 @@ data_ex = db_survey %>%
   left_join(db_country, by = "country_id") %>%
   filter(date >= "2023-06-01",
          date <= "2023-08-01",
-         region == "pennsylvania",
-         site_id %in% sites_mc) %>%
+         region == "pennsylvania") %>%
   collect()
 
 ```
 
 # call function
 ```{r}
-test_1 = microclimate_subset_site(site_id = "9076d776-20f1-4532-834a-6f0512a4f15f", start = "2022-06-01", end = "2022-07-01", quiet = FALSE)
-
+test_1 = microclimate_subset_presurvey(data_ex, buffer = days(2), time_sensitive = FALSE, output_timezone = NA)
 test_2 = microclimate_subset_presurvey(data_ex, buffer = days(14), time_sensitive = FALSE, output_timezone = NA)
 
 # currently fails becuase start_timestamp needs to be calculated for a number of our surveys still. Working on this.
