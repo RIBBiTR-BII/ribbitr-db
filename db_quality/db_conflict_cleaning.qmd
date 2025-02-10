@@ -11,7 +11,7 @@ librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr
 # librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 
 # connect to database
-dbcon = hopToDB()
+dbcon = hopToDB("ribbitr")
 
 ```
 
@@ -904,4 +904,52 @@ tryCatch(
     dbRollback(dbcon)
     message("Transaction failed: ", e$message)
   })
+```
+
+# calculate survey timestamps
+```{r}
+survey_data = db_survey %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  collect()
+
+timestamp_func = function(df, reg_id) {
+  tz = df %>%
+    filter(region_id == reg_id) %>%
+    slice(1) %>%
+    pull(time_zone)
+  
+  df_out = df %>%
+    filter(region_id == reg_id) %>%
+    mutate(start_timestamp = ymd_hms(paste(date, start_time), tz = tz),
+           end_timestamp = ymd_hms(paste(date, end_time), tz = tz),
+           duration_minutes = as.numeric(difftime(end_timestamp, start_timestamp, units = "mins")),
+           number_observers = map_int(observers_survey, ~ length(unique(na.omit(unlist(str_split(gsub(" ", "", .x), ",")))))),
+           number_observers = ifelse(number_observers == 0, NA, number_observers),
+           end_date = as.Date(date - days(floor(duration_minutes / 1440))),
+           end_timestamp = ymd_hms(paste(end_date, end_time), tz = tz),
+           duration_minutes = as.integer(round(as.numeric(difftime(end_timestamp, start_timestamp, units = "mins")), digits = 0)))
+}
+
+region_id_list = survey_data %>%
+  select(region_id) %>%
+  distinct() %>%
+  pull(region_id)
+
+survey_calc = map(region_id_list, ~ timestamp_func(survey_data, .x))
+survey_calc_df = list_rbind(survey_calc) %>%
+  select(all_of(colnames(db_survey)))
+
+# commit timestamps
+
+compare_survey = compare_df_cols(db_survey %>% filter(FALSE) %>% collect(), survey_calc_df)
+tray = compare_for_staging(db_survey %>% collect(), survey_calc_df, key_columns = "survey_id", report = "survey")
+peace = compare_updates(tray)
+
+
+# temp_survey = stage_to_temp(dbcon, db_survey, survey_calc_df)
+# pointer = tbl(dbcon, temp_survey)
+# rows_update(db_survey, pointer, by = "survey_id", in_place=TRUE, unmatched = "ignore")
+
 ```
