@@ -11,7 +11,7 @@ librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr
 # librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 
 # connect to database
-dbcon = hopToDB()
+dbcon = hopToDB("wibbitr")
 ```
 
 # Pull metadata and tables
@@ -100,6 +100,15 @@ taxa_lookup = function(taxa_raw) {
       pivot_wider(names_from = rankname,
                   values_from = taxonname) %>%
       mutate(rankname = rankname_itis)
+  } else {
+    hierarchy_itis <- data.frame(
+      class = NA_character_,
+      order = NA_character_,
+      family = NA_character_,
+      genus = NA_character_,
+      species = NA_character_,
+      rankname = NA_character_
+    )
   }
   
   
@@ -136,11 +145,10 @@ taxa_lookup = function(taxa_raw) {
       bind_cols(taxa_itis$result %>%
                   rename_with(~ paste0("itis_", .)))
     
-    if (itis_pos) {
-      taxa_out = taxa_out %>%
-        bind_cols(hierarchy_itis %>%
-                    rename_with(~ paste0("itis_", .)))
-    }
+    
+    taxa_out = taxa_out %>%
+      bind_cols(hierarchy_itis %>%
+                  rename_with(~ paste0("itis_", .)))
   }
   
   if (is.null(taxa_ncbi$error)) {
@@ -169,9 +177,7 @@ taxa_lookup = function(taxa_raw) {
 taxa_lookup_map = function(taxa_list) {
   if (is_empty(taxa_list)) {
     taxa_lm = taxa_lookup("foo")[0, ]
-    
   } else {
-    
     taxa_lm = map_df(taxa_list, ~ taxa_lookup(.x))
   }
   
@@ -287,7 +293,7 @@ taxa_unique = sort(na.omit(unique(c(taxa_aural,
 
 ```
 
-# Diagnosis: run taxonomy lookup all current taxa
+# Diagnostic: run taxonomy lookup all current taxa
 ```{r}
 taxa_results_current = taxa_lookup_map(taxa_unique)
 
@@ -463,15 +469,16 @@ taxa_revised_unique = sort(na.omit(unique(c(as.character(revised_aural$taxon_aur
 lookup_all = FALSE
 
 if (lookup_all) {
-taxa_revised_results = taxa_lookup_map(taxa_revised_unique)
+  # lookup all
+  taxa_revised_results = taxa_lookup_map(taxa_revised_unique)
 } else {
+  # lookup new
   taxa_existing = db_taxa %>%
     pull(taxon_id)
   
   taxa_revised_unique_new = setdiff(taxa_revised_unique, taxa_existing)
   
-  taxa_revised_results_new = taxa_lookup_map(taxa_revised_unique_new)
-  
+  taxa_revised_results = taxa_lookup_map(taxa_revised_unique_new)
 }
 
 parent_cols = c("itis_class",
@@ -482,10 +489,13 @@ parent_cols = c("itis_class",
 parent_taxa = sort(tolower(unique(na.omit(unlist(taxa_revised_results[parent_cols]))))) %>%
   setdiff(taxa_revised_unique)
 
+
 parent_revised_results = taxa_lookup_map(parent_taxa)
 
-taxa_revised_final = bind_rows(taxa_revised_results,
-                               parent_revised_results) %>%
+# bind all results
+taxa_results_all = bind_rows(taxa_revised_results, parents_results_new)
+
+taxa_revised_clean = taxa_results_all %>%
   rename("itis_tsn" = "itis_tsn_current",
          "itis_taxon" = "itis_canonical_current",
          "itis_rank" = "itis_rank_current",
@@ -523,11 +533,17 @@ taxa_revised_final = bind_rows(taxa_revised_results,
 
 # subset data
 ```{r}
+# join with taxa for additional columns
+taxa_revised_final = taxa_revised_clean %>%
+  left_join(db_taxa %>%
+              select(taxon_id,
+                     all_of(setdiff(colnames(db_taxa), colnames(taxa_revised_clean)))) %>%
+              collect(), by = "taxon_id")
+
+
 compare_taxa = compare_df_cols(db_taxa %>%
                                  filter(FALSE) %>%
                                  collect(), taxa_revised_final)
-
-taxa_revised_final_joined = 
 
 tray = compare_for_staging(db_taxa %>% collect(), taxa_revised_final, "taxon_id", return_all = TRUE, report = "taxa")
 
