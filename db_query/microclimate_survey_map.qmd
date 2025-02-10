@@ -33,11 +33,11 @@ db_country = tbl(dbcon, Id("survey_data", "country"))
 microclimate_subset_presurvey = function(survey_data, buffer, time_sensitive = FALSE, output_timezone = NA) {
   
   if (!is.na(output_timezone)) {
-    message(paste0("Changing session timezone to ", output_timezone))
+    message(paste0("Changing session timezone to: ", output_timezone))
     # retrieve current timezone
     session_tz = dbGetQuery(dbcon, "SHOW timezone;")[["TimeZone"]]
     # set to passed time zone
-    tz_query = dbExecute("SET TIME ZONE '",output_timezone , "';")
+    tz_query = dbExecute(dbcon, paste0("SET TIME ZONE '",output_timezone , "';"))
   }
   
   # check data format
@@ -210,9 +210,9 @@ microclimate_subset_presurvey = function(survey_data, buffer, time_sensitive = F
   
   # reset to initial timezone
   if (!is.na(output_timezone)) {
-    message(paste0("Changing session timezone back to ", session_tz))
+    message(paste0("Changing session timezone back to: ", session_tz))
     # set to passed time zone
-    tz_query = dbExecute("SET TIME ZONE '",session_tz , "';")
+    tz_query = dbExecute(dbcon, paste0("SET TIME ZONE '",session_tz , "';"))
   }
   
   return(mc_data_final)
@@ -239,7 +239,6 @@ data_ex = db_survey %>%
 ```{r}
 test_1 = microclimate_subset_presurvey(data_ex, buffer = days(2), time_sensitive = FALSE, output_timezone = NA)
 test_2 = microclimate_subset_presurvey(data_ex, buffer = days(14), time_sensitive = FALSE, output_timezone = NA)
-
-# currently fails becuase start_timestamp needs to be calculated for a number of our surveys still. Working on this.
-test_3 = microclimate_subset_presurvey(data_ex, buffer = days(14), time_sensitive = TRUE, output_timezone = NA)
+test_3 = microclimate_subset_presurvey(data_ex, buffer = days(2), time_sensitive = TRUE, output_timezone = NA)
+test_4 = microclimate_subset_presurvey(data_ex, buffer = days(2), time_sensitive = TRUE, output_timezone = "America/Los_Angeles")
 ```
