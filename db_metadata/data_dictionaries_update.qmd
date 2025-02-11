@@ -11,7 +11,6 @@ librarian::shelf(tidyverse, dbplyr, DBI, RPostgres, here, janitor, RIBBiTR-BII/r
 
 ## Connect to DB
 dbcon <- hopToDB()
-
 ```
 
 ## Define functions to scrape table and column metadata
