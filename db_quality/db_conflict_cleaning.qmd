@@ -40,22 +40,6 @@ db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
 
 ```
 
-# add hemisphere to utm zone
-```{r}
-rev_site = db_site %>%
-  left_join(db_region, by = "region_id") %>%
-  left_join(db_country, by = "country_id") %>%
-  mutate(utm_zone = ifelse(country_name == "brazil", paste0(utm_zone, "S"), paste0(utm_zone, "N"))) %>%
-  select(all_of(colnames(db_site)))
-
-peace = rev_site %>%
-  collect()
-
-db_site = db_site %>%
-  rows_update(rev_site, by = "site_id", unmatched = "ignore", in_place = TRUE)
-
-```
-
 # NAs on natural key columns
 ```{r}
 
@@ -151,7 +135,6 @@ tryCatch(
 ```
 
 orphaned data
-
 ```{r}
 
 # visit_ids in survey which are not found in visit
@@ -597,6 +580,8 @@ loaners = db_survey %>%
   anti_join(all_survey_ids, by = "survey_id") %>%
   select(survey_id)
 
+hope = loaners %>% collect()
+
 get_dupes(db_survey %>% collect(), visit_id, detection_type)
 
 drop_others = db_survey %>%
@@ -604,8 +589,10 @@ drop_others = db_survey %>%
          is.na(comments_survey)) %>%
   left_join(loaners, by = "survey_id")
 
-db_survey = db_survey %>%
-  rows_delete(drop_others, by = "survey_id", in_place = TRUE, unmatched = "ignore")
+peace = drop_others %>% collect()
+
+# db_survey = db_survey %>%
+#   rows_delete(drop_others, by = "survey_id", in_place = TRUE, unmatched = "ignore")
 
 ```
 
