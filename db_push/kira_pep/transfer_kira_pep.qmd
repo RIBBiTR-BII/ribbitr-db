@@ -5,11 +5,11 @@ format: html
 
 ```{r}
 # librarian downloads, if not already downloaded, and reads in needed packages
-librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, janitor, uuid, RIBBiTR-BII/ribbitrrr, here)
+librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, janitor, uuid, RIBBiTR-BII/ribbitrrr, here, hms)
 
 # connect to database
 dbcon = hopToDB("wibbitr")
-qpcon = hopToDB("qpcr")
+# qpcon = hopToDB("qpcr")
 
 ```
 
@@ -25,6 +25,7 @@ db_env = tbl(dbcon, Id("survey_data", "environmental"))
 db_survey = tbl(dbcon, Id("survey_data", "survey"))
 db_visit = tbl(dbcon, Id("survey_data", "visit"))
 db_site = tbl(dbcon, Id("survey_data", "site"))
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
 db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
 
 mdc_k = tbl(dbcon, Id("kira_pep", "metadata_columns")) %>%
@@ -36,6 +37,11 @@ km_ves = tbl(dbcon, Id("kira_pep", "ves"))
 km_survey = tbl(dbcon, Id("kira_pep", "survey"))
 km_visit = tbl(dbcon, Id("kira_pep", "visit"))
 km_bd = tbl(dbcon, Id("kira_pep", "bd_results"))
+
+# pull relevant qpcr tables
+# qp_results = tbl(qpcon, Id("public", "results"))
+# qp_plates = tbl(qpcon, Id("public", "plates"))
+# qp_qc = tbl(qpcon, Id("public", "qc"))
 
 ```
 
@@ -67,29 +73,66 @@ clean_ves = data_ves %>%
                                 "ramu" ~ "rana_muscosa",
                                 "thel" ~ "thamnophis_elegans"),
          time_of_day = "day",
-         project = "ribbitr_pep")
+         project = "ribbitr_pep",
+         transect = NA)
 
 # subset and compare
 subset_ves = clean_ves %>%
   select(any_of(colnames(db_ves)))
 
 comparison_ves = compare_df_cols(db_ves %>% filter(FALSE) %>% collect(), subset_ves)
+tray = compare_for_staging(db_ves %>% collect(), subset_ves, "ves_id", report = "ves")
+insert_ves = subset_ves
 
 subset_ves_survey = clean_ves %>%
-  select(any_of(colnames(db_survey)))
+  select(any_of(colnames(db_survey))) %>%
+  distinct()
 
 comparison_ves_survey = compare_df_cols(db_survey %>% filter(FALSE) %>% collect(), subset_ves_survey)
+tray = compare_for_staging(db_survey %>% collect(), subset_ves_survey, "survey_id", report = "ves_survey")
+insert_ves_survey = subset_ves_survey
 
 subset_ves_visit = clean_ves %>%
-  select(any_of(colnames(db_visit)))
+  select(any_of(colnames(db_visit))) %>%
+  distinct()
 
 comparison_ves_visit = compare_df_cols(db_visit %>% filter(FALSE) %>% collect(), subset_ves_visit)
+tray = compare_for_staging(db_visit %>% collect(), subset_ves_visit, "visit_id", report = "ves_visit")
+insert_ves_visit = subset_ves_visit
 
 subset_ves_site = clean_ves %>%
-  select(any_of(colnames(db_site)))
+  select(any_of(colnames(db_site))) %>%
+  distinct()
 
 comparison_ves_site = compare_df_cols(db_site %>% filter(FALSE) %>% collect(), subset_ves_site)
+tray = compare_for_staging(db_site %>% collect(), subset_ves_site, "site_id", report = "ves_sites")
 
+# update ves
+dbBegin(dbcon)
+tryCatch(
+  {
+
+    temp_visit = stage_to_temp(dbcon, db_visit, insert_ves_visit)
+    pointer = tbl(dbcon, temp_visit)
+    rows_insert(db_visit, pointer, by="visit_id", in_place=TRUE, conflict = "ignore")
+    
+    temp_survey = stage_to_temp(dbcon, db_survey, insert_ves_survey)
+    pointer = tbl(dbcon, temp_survey)
+    rows_insert(db_survey, pointer, by="survey_id", in_place=TRUE, conflict = "ignore")
+    
+    temp_ves = stage_to_temp(dbcon, db_ves, insert_ves)
+    pointer = tbl(dbcon, temp_ves)
+    rows_insert(db_ves, pointer, by="ves_id", in_place=TRUE, conflict = "ignore")
+    
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful!")
+    
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
 
 ```
 
@@ -139,21 +182,61 @@ subset_capture = clean_capture %>%
   select(any_of(colnames(db_capture)))
 
 comparison_capture = compare_df_cols(db_capture %>% filter(FALSE) %>% collect(), subset_capture)
+tray = compare_for_staging(db_capture %>% collect(), subset_capture, "capture_id", report = "capture")
+insert_capture = subset_capture
 
 subset_capture_survey = clean_capture %>%
-  select(any_of(colnames(db_survey)))
+  select(any_of(colnames(db_survey))) %>%
+  distinct()
 
 comparison_capture_survey = compare_df_cols(db_survey %>% filter(FALSE) %>% collect(), subset_capture_survey)
+tray = compare_for_staging(db_survey %>% collect(), subset_capture_survey, "survey_id", report = "capture_survey")
+insert_capture_survey = subset_capture_survey
 
 subset_capture_visit = clean_capture %>%
-  select(any_of(colnames(db_visit)))
+  select(any_of(colnames(db_visit))) %>%
+  distinct()
 
 comparison_capture_visit = compare_df_cols(db_visit %>% filter(FALSE) %>% collect(), subset_capture_visit)
+tray = compare_for_staging(db_visit %>% collect(), subset_capture_visit, "visit_id", report = "capture_visit")
+insert_capture_visit = tray$insert
 
 subset_capture_site = clean_capture %>%
-  select(any_of(colnames(db_site)))
+  select(any_of(colnames(db_site))) %>%
+  distinct()
 
 comparison_capture_site = compare_df_cols(db_site %>% filter(FALSE) %>% collect(), subset_capture_site)
+tray = compare_for_staging(db_site %>% collect(), subset_capture_site, "site_id", report = "capture_site")
+
+# update capture
+dbBegin(dbcon)
+
+tryCatch(
+  {
+
+    temp_visit = stage_to_temp(dbcon, db_visit, insert_capture_visit)
+    pointer = tbl(dbcon, temp_visit)
+    rows_insert(db_visit, pointer, by="visit_id", in_place=TRUE, conflict = "ignore")
+    
+    temp_survey = stage_to_temp(dbcon, db_survey, insert_capture_survey)
+    pointer = tbl(dbcon, temp_survey)
+    rows_insert(db_survey, pointer, by="survey_id", in_place=TRUE, conflict = "ignore")
+    
+    temp_capture = stage_to_temp(dbcon, db_capture, insert_capture)
+    pointer = tbl(dbcon, temp_capture)
+    rows_insert(db_capture, pointer, by="capture_id", in_place=TRUE, conflict = "ignore")
+    
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful!")
+    
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
+
+
 
 ```
 
@@ -168,10 +251,7 @@ clean_env = data_env %>%
   rename(comments_survey = general_survey_comment,
          observers_survey = surveyor_id,
          comments_visit = visit_comment) %>%
-  mutate(start_timestamp = ymd_hms(paste(date, start_time), tz = "America/Los_Angeles"),
-         end_timestamp = ymd_hms(paste(date, end_time), tz = "America/Los_Angeles"),
-         duration_minutes = as.numeric(difftime(end_timestamp, start_timestamp, units = "mins")),
-         detection_type = "environmental",
+  mutate(detection_type = "environmental",
          number_observers = map_int(observers_survey, ~ length(unique(na.omit(unlist(str_split(gsub(" ", "", .x), ",")))))),
          time_of_day = "day",
          project = "ribbitr_pep",
@@ -180,34 +260,96 @@ clean_env = data_env %>%
                           c("precip", "Precipitating") ~ "precipitating",
                           "m_cloudy" ~ "mostly_cloudy",
                           "p_cloudy" ~ "partly_cloudy",
-                          .default = sky))
+                          .default = sky),
+         air_time = start_time,
+         environmental_id = map_chr(project, ~ UUIDgenerate()),
+         transect = NA,
+         survey_quality = NA,
+         comments_survey = NA,
+         duration_minutes = NA) %>%
+  group_by(visit_id) %>%
+  mutate(survey_id = UUIDgenerate(),
+         start_time = as_hms(min(start_time)),
+         end_time = as_hms(max(end_time)),
+         start_timestamp = ymd_hms(paste(date, start_time), tz = "America/Los_Angeles"),
+         end_timestamp = ymd_hms(paste(date, end_time), tz = "America/Los_Angeles"),
+         duration_minutes = as.numeric(difftime(end_timestamp, start_timestamp, units = "mins")),
+         observers_survey = str_flatten_comma(unique(na.omit(unlist(str_split(observers_survey, ",\\s*")))), na.rm = TRUE),
+         number_observers = map_int(observers_survey, ~ length(unique(na.omit(unlist(str_split(gsub(" ", "", .x), ","))))))) %>%
+  ungroup()
   
+
 # subset and compare
 subset_env = clean_env %>%
   select(any_of(colnames(db_env)))
 
 comparison_env = compare_df_cols(db_env %>% filter(FALSE) %>% collect(), subset_env)
+tray = compare_for_staging(db_env %>% collect(), subset_env, "environmental_id", report = "env")
+insert_env = subset_env
 
 subset_env_survey = clean_env %>%
-  select(any_of(colnames(db_survey)))
+  select(any_of(colnames(db_survey))) %>%
+  distinct()
 
 comparison_env_survey = compare_df_cols(db_survey %>% filter(FALSE) %>% collect(), subset_env_survey)
+tray = compare_for_staging(db_survey %>% collect(), subset_env_survey, tbl_nkey("survey", mdc_s), report = "env_survey")
+insert_env_survey = subset_env_survey
+
 
 subset_env_visit = clean_env %>%
-  select(any_of(colnames(db_visit)))
+  select(any_of(colnames(db_visit))) %>%
+  distinct()
 
 comparison_env_visit = compare_df_cols(db_visit %>% filter(FALSE) %>% collect(), subset_env_visit)
+tray = compare_for_staging(db_visit %>% collect(), subset_env_visit, "visit_id", report = "env_visit")
 
 subset_env_site = clean_env %>%
-  select(any_of(colnames(db_site)))
+  select(any_of(colnames(db_site))) %>%
+  distinct()
 
 comparison_env_site = compare_df_cols(db_site %>% filter(FALSE) %>% collect(), subset_env_site)
+tray = compare_for_staging(db_site %>% collect(), subset_env_site, "site_id", report = "env_site")
+
+# update capture
+dbBegin(dbcon)
+
+tryCatch(
+  {
+    
+    temp_survey = stage_to_temp(dbcon, db_survey, insert_env_survey)
+    pointer = tbl(dbcon, temp_survey)
+    rows_insert(db_survey, pointer, by="survey_id", in_place=TRUE, conflict = "ignore")
+    
+    temp_env = stage_to_temp(dbcon, db_env, insert_env)
+    pointer = tbl(dbcon, temp_env)
+    rows_insert(db_env, pointer, by="environmental_id", in_place=TRUE, conflict = "ignore")
+    
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful!")
+    
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
+
 
 ```
 
 # restructure samples & bd results
 
 ```{r}
+
+clean_capture[["microbiome_swab_id"]][clean_capture$capture_id == "fbfd62de-daec-42aa-a368-a2dd45098b28"] = "KMMB0256"
+
+bd_result_names = km_bd %>%
+  rename(sample_name = bd_swab_id) %>%
+  select(sample_name) %>%
+  mutate(sample_type = "bd",
+         capture_id = NA) %>%
+  collect()
+
 clean_sample = clean_capture %>%
   select(capture_id,
          bd_swab_id,
@@ -216,6 +358,11 @@ clean_sample = clean_capture %>%
          microbiome = microbiome_swab_id) %>%
   pivot_longer(!capture_id, names_to = "sample_type", values_to = "sample_name") %>%
   filter(!is.na(sample_name)) %>%
+  bind_rows(bd_result_names) %>%
+  arrange(sample_name, capture_id) %>%
+  group_by(sample_name, sample_type) %>%
+  slice(1) %>%
+  ungroup() %>%
   mutate(sample_id = map_chr(sample_name, ~ UUIDgenerate()))
 
 clean_bd = km_bd %>%
@@ -224,12 +371,77 @@ clean_bd = km_bd %>%
               filter(sample_type == "bd"), by = c("bd_swab_id" = "sample_name")) %>%
   rename(sample_name_bd = bd_swab_id,
          average_ct = quant_cycle,
+         average_target_quant = start_quant,
          comments_qpcr = notes,
          qpcr_dilution_factor = dilution) %>%
   mutate(qpcr_plate_name = paste0("KM_", plate),
-         qpcr_dilution_factor = ifelse(is.na(qpcr_dilution_factor), 100, qpcr_dilution_factor))
+         qpcr_dilution_factor = ifelse(is.na(qpcr_dilution_factor), 100, qpcr_dilution_factor),
+         detected = !is.na(bd_load),
+         replicate = "singlet",
+         replicate_count = 1,
+         replicate_detected = case_match(detected,
+                                         FALSE ~ "n",
+                                         TRUE ~ "p",
+                                         NA ~ NA),
+         average_target_quant = ifelse(is.na(average_target_quant), 0, average_target_quant),
+         total_qpcr_volume_uL = 25,
+         qpcr_dilution_factor = 1,
+         volume_template_dna_uL = 5,
+         extract_volume_uL = 40,
+         target_quant_per_swab = bd_load, # average_target_quant * 8,
+         average_its1_copies_per_swab = target_quant_per_swab * 10,
+         swab_type = "mw113",
+         standard_target_type = "ITS1",
+         standard = "plasmid-briggs",
+         master_mix = "bioline",
+         extraction_kit = "prepman",
+         extraction_lab = "snarl",
+         qpcr_lab = "snarl",
+         qpcr_machine = "biorad_cfx96",
+         result_id = map_chr( qpcr_lab, ~ UUIDgenerate()))
 
 comparison_bd = compare_df_cols(db_bd %>% filter(FALSE) %>% collect(), clean_bd)
+
+subset_sample = clean_sample %>%
+  select(any_of(colnames(db_sample)))
+
+comparison_sample = compare_df_cols(db_sample %>% filter(FALSE) %>% collect(), subset_sample)
+tray = compare_for_staging(db_sample %>% collect(), subset_sample, "sample_id", report = "sample")
+insert_sample = subset_sample
+
+
+subset_bd = clean_bd %>%
+  select(any_of(colnames(db_bd)))
+
+comparison_bd = compare_df_cols(db_bd %>% filter(FALSE) %>% collect(), subset_bd)
+tray = compare_for_staging(db_bd %>% collect(), subset_bd, "result_id", report = "bd")
+insert_bd = subset_bd
+
+# update capture
+dbBegin(dbcon)
+
+tryCatch(
+  {
+    
+    temp_sample = stage_to_temp(dbcon, db_sample, insert_sample)
+    pointer = tbl(dbcon, temp_sample)
+    rows_insert(db_sample, pointer, by="sample_id", in_place=TRUE, conflict = "ignore")
+    
+    temp_bd = stage_to_temp(dbcon, db_bd, insert_bd)
+    pointer = tbl(dbcon, temp_bd)
+    rows_insert(db_bd, pointer, by="result_id", in_place=TRUE, conflict = "ignore")
+    
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful!")
+    
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
+
+
 ```
 
 
