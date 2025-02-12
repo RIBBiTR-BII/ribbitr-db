@@ -5,10 +5,11 @@ format: html
 
 ```{r}
 # librarian downloads, if not already downloaded, and reads in needed packages
-librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, janitor, RIBBiTR-BII/ribbitrrr, here)
+librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, janitor, uuid, RIBBiTR-BII/ribbitrrr, here)
 
 # connect to database
-dbcon = hopToDB("ribbitr")
+dbcon = hopToDB("wibbitr")
+qpcon = hopToDB("qpcr")
 
 ```
 
@@ -214,13 +215,14 @@ clean_sample = clean_capture %>%
   rename(bd = bd_swab_id,
          microbiome = microbiome_swab_id) %>%
   pivot_longer(!capture_id, names_to = "sample_type", values_to = "sample_name") %>%
+  filter(!is.na(sample_name)) %>%
   mutate(sample_id = map_chr(sample_name, ~ UUIDgenerate()))
 
 clean_bd = km_bd %>%
   collect() %>%
   left_join(clean_sample %>%
               filter(sample_type == "bd"), by = c("bd_swab_id" = "sample_name")) %>%
-  rename(sample_name_bd = "bd_swab_id",
+  rename(sample_name_bd = bd_swab_id,
          average_ct = quant_cycle,
          comments_qpcr = notes,
          qpcr_dilution_factor = dilution) %>%
