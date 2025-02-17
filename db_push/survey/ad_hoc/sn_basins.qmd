@@ -1,0 +1,51 @@
+---
+title: "sn_basins"
+format: html
+---
+
+```{r}
+
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+# connect to database
+dbcon = hopToDB("wibbitr")
+amcon = hopToDB("amphibians")
+
+```
+# pull_data
+```{r}
+am_sites = tbl(amcon, "site")
+db_sites = tbl(dbcon, Id("survey_data", "site"))
+
+am_basins = am_sites %>%
+  mutate(site = as.character(id)) %>%
+  select(site,
+         name,
+         drainage) %>%
+  collect()
+
+site_ids = am_basins %>%
+  pull(site)
+
+sn_sites = db_sites %>%
+  filter(site %in% site_ids) %>%
+  collect()
+
+```
+
+
+```{r}
+update_sites = sn_sites %>%
+  left_join(am_basins, by ="site") %>%
+  mutate(geographic_area = drainage,
+         geographic_area_type = "drainage",
+         site_name_alt = ifelse(name == "", NA_character_, name)) %>%
+  select(-name,
+         -drainage)
+
+db_sites = db_sites %>%
+  rows_update(update_sites, by = "site_id", unmatched = "ignore", in_place = TRUE, copy = TRUE)
+
+```

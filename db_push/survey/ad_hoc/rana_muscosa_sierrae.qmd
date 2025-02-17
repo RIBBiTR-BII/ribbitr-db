@@ -1,0 +1,304 @@
+---
+title: "sn_basins"
+format: html
+---
+
+```{r}
+
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr, , sf)
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+# connect to database
+dbcon = hopToDB("wibbitr")
+
+```
+# pull_data
+```{r}
+mdc = tbl(dbcon, "all_columns") %>%
+  collect()
+
+# observation_tables
+db_aural = tbl(dbcon, Id("survey_data", "aural"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_ves = tbl(dbcon, Id("survey_data", "ves"))
+db_cmr = tbl(dbcon, Id("survey_data", "cmr"))
+
+# lookup tables
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+
+# taxa table
+db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
+```
+
+# identify rana muscosa sites
+```{r}
+ca_sites = db_site %>%
+  left_join(db_region, by = "region_id") %>%
+  filter(region == "california") %>%
+  collect()
+
+rm = ca_sites %>%
+  filter(grepl("^kaweah", geographic_area) |
+           grepl("^kern", geographic_area) |
+           grepl("^kings_sf", geographic_area)) %>%
+  pull(site_id)
+
+rs = ca_sites %>%
+  filter(!(site_id %in% rm))
+
+rr_sites = ca_sites %>%
+  mutate(rm = site_id %in% rm,
+         rs = site_id %in% rs)
+
+# write_csv(map_out, here("staging", "sn_sites.csv"))
+
+```
+
+# revise observation tables
+```{r}
+
+revised_aural = db_aural %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  filter(region == "california",
+         taxon_aural == "rana_muscosa") %>%
+  select(all_of(colnames(db_aural)),
+         site_id) %>%
+  collect() %>%
+  left_join(rr_sites, by = "site_id") %>%
+  mutate(taxon_aural = ifelse(rm,
+                              "rana_muscosa",
+                              "rana_sierrae")) %>%
+  select(any_of(colnames(db_aural)))
+
+revised_capture = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  filter(region == "california",
+         taxon_capture == "rana_muscosa") %>%
+  select(all_of(colnames(db_capture)),
+         site_id) %>%
+  collect() %>%
+  left_join(rr_sites, by = "site_id") %>%
+  mutate(taxon_capture = ifelse(rm,
+                              "rana_muscosa",
+                              "rana_sierrae")) %>%
+  select(any_of(colnames(db_capture)))
+
+revised_ves = db_ves %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  filter(region == "california",
+         taxon_ves == "rana_muscosa") %>%
+  select(all_of(colnames(db_ves)),
+         site_id) %>%
+  collect() %>%
+  left_join(rr_sites, by = "site_id") %>%
+  mutate(taxon_ves = ifelse(rm,
+                              "rana_muscosa",
+                              "rana_sierrae")) %>%
+  select(any_of(colnames(db_ves)))
+
+old_cmr = db_cmr %>%
+  collect() %>%
+  inner_join(revised_capture, by = "cmr_id") %>%
+  select(any_of(colnames(db_cmr)),
+         taxon_capture) %>%
+  distinct()
+
+revised_cmr = old_cmr %>%
+  mutate(taxon_cmr = taxon_capture) %>%
+  select(-taxon_capture) %>%
+  select(any_of(colnames(db_cmr)))
+
+# patch
+revised_cmr$cmr_id[revised_cmr$cmr_id == "079d7822-ba30-4c5e-971c-891e387b7cf9" & revised_cmr$taxon_cmr == "rana_sierrae"] = "56aeec60-83f1-4d25-a30c-a2f4d3558c6b"
+revised_capture$cmr_id[!is.na(revised_capture$cmr_id) & 
+                         revised_capture$cmr_id == "079d7822-ba30-4c5e-971c-891e387b7cf9" & 
+                         !is.na(revised_capture$taxon_capture) & 
+                         revised_capture$taxon_capture == "rana_sierrae"] = "56aeec60-83f1-4d25-a30c-a2f4d3558c6b"
+
+revised_cmr$cmr_id[revised_cmr$cmr_id == "3a12f696-dd5f-45dd-8d1b-bcd8d053f36b" & revised_cmr$taxon_cmr == "rana_sierrae"] ="3575b1d7-f959-4898-9951-dca0078693ef"
+revised_capture$cmr_id[!is.na(revised_capture$cmr_id) & 
+                         revised_capture$cmr_id == "3a12f696-dd5f-45dd-8d1b-bcd8d053f36b" & 
+                         !is.na(revised_capture$taxon_capture) & 
+                         revised_capture$taxon_capture == "rana_sierrae"] = "3575b1d7-f959-4898-9951-dca0078693ef"
+
+revised_cmr$cmr_id[revised_cmr$cmr_id == "55553181-e244-43e2-a07b-8e138d1019f2" & revised_cmr$taxon_cmr == "rana_sierrae"] = "f9588e2d-a96f-42da-8fbc-a2457c8d0954"
+revised_capture$cmr_id[!is.na(revised_capture$cmr_id) & 
+                         revised_capture$cmr_id == "55553181-e244-43e2-a07b-8e138d1019f2" & 
+                         !is.na(revised_capture$taxon_capture) & 
+                         revised_capture$taxon_capture == "rana_sierrae"] = "f9588e2d-a96f-42da-8fbc-a2457c8d0954"
+
+revised_cmr$cmr_id[revised_cmr$cmr_id == "a79c4b33-dc2b-45cb-9bba-9d1b089d6d08" & revised_cmr$taxon_cmr == "rana_sierrae"] = "64656702-bc8c-46f9-840e-e8d566b6d32e"
+revised_capture$cmr_id[!is.na(revised_capture$cmr_id) & 
+                         revised_capture$cmr_id == "a79c4b33-dc2b-45cb-9bba-9d1b089d6d08" & 
+                         !is.na(revised_capture$taxon_capture) & 
+                         revised_capture$taxon_capture == "rana_sierrae"] ="64656702-bc8c-46f9-840e-e8d566b6d32e"
+
+revised_taxa = revised_capture %>%
+  select(taxon_capture) %>%
+  rename(taxon_id = taxon_capture) %>%
+  left_join(db_taxa %>% collect, by = "taxon_id") %>%
+  distinct()
+
+```
+
+# compare/qc & update
+```{r}
+
+tray = compare_for_staging(db_capture %>% collect(), revised_capture, "capture_id", report = "capture")
+update_capture = tray$update
+
+tray = compare_for_staging(db_cmr %>% collect(), revised_cmr, "cmr_id", report = "cmr")
+upsert_cmr = bind_rows(tray$update,
+                       tray$insert)
+
+get_dupes(revised_cmr, cmr_id)
+
+tray = compare_for_staging(db_ves %>% collect(), revised_ves, "ves_id", report = "ves")
+update_ves = tray$update
+
+tray = compare_for_staging(db_taxa %>% collect(), revised_taxa, "taxon_id", report = "taxa")
+insert_taxa = tray$insert
+```
+
+# update & insert
+```{r}
+# update capture
+dbBegin(dbcon)
+
+tryCatch(
+  {
+    
+    temp_taxa = stage_to_temp(dbcon, db_taxa, insert_taxa)
+    pointer = tbl(dbcon, temp_taxa)
+    rows_insert(db_taxa, pointer, by="taxon_id", in_place=TRUE, conflict = "ignore")
+    
+    temp_cmr = stage_to_temp(dbcon, db_cmr, upsert_cmr)
+    pointer = tbl(dbcon, temp_cmr)
+    rows_upsert(db_cmr, pointer, by="cmr_id", in_place=TRUE)
+    
+    temp_capture = stage_to_temp(dbcon, db_capture, update_capture)
+    pointer = tbl(dbcon, temp_capture)
+    rows_update(db_capture, pointer, by="capture_id", in_place=TRUE, unmatched = "ignore")
+    
+    temp_ves = stage_to_temp(dbcon, db_ves, update_ves)
+    pointer = tbl(dbcon, temp_ves)
+    rows_update(db_ves, pointer, by="ves_id", in_place=TRUE, unmatched = "ignore")
+    
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful!")
+    
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
+
+```
+
+# visualize all translocations
+```{r}
+uni_id = get_dupes(revised_cmr, cmr_id) %>%
+  select(cmr_id) %>%
+  distinct() %>%
+  pull(cmr_id)
+
+unicorns = db_cmr %>%
+  left_join(db_capture, by = "cmr_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  filter(region == "california") %>%
+  select(cmr_id, local_cmr_id, taxon_capture, date, site_id, site, site_latitude, site_longitude) %>%
+  collect()
+
+unicorn_ids = unicorns %>%
+  group_by(local_cmr_id) %>%
+  summarise(n = n_distinct(site)) %>%
+  filter(n > 1)
+
+true_unicorns = unicorns %>%
+  filter(local_cmr_id %in% unicorn_ids$local_cmr_id) %>%
+  group_by(local_cmr_id, site) %>%
+  summarise(count = n()) %>%
+  left_join(db_site %>%
+              select(site,
+                     site_latitude,
+                     site_longitude) %>%
+              collect(), by = "site")
+
+# write_csv(unicorns, here("staging", "sn_unicorns.csv"))
+
+# Convert the point data to an sf object
+points_sf <- true_unicorns %>%
+  st_as_sf(coords = c("site_longitude", "site_latitude"), crs = 4326)
+
+# Create lines between points with the same cmr_id
+lines_sf <- points_sf %>%
+  group_by(local_cmr_id) %>%
+  summarise(do_union = FALSE) %>%
+  st_cast("LINESTRING")
+
+# Prepare points data
+points_data <- points_sf %>%
+  mutate(geometry_type = "point") %>%
+  select(local_cmr_id, site, count, geometry_type)
+
+# Prepare lines data
+lines_data <- lines_sf %>%
+  mutate(geometry_type = "line",
+         site = NA_character_,
+         count = NA_integer_) %>%
+  select(local_cmr_id, site, count, geometry_type)
+
+# Write points to shapefile
+st_write(points_data, here("staging", "translocation_points_pit.shp"), delete_layer = TRUE)
+
+# Write lines to shapefile
+st_write(lines_data, here("staging", "translocation_lines_pit.shp"), delete_layer = TRUE)
+
+# If you want to save the result as a shapefile
+# st_write(result_sf, "unicorn_points_and_lines.shp")
+
+```
+
+Capture counts per site
+```{r}
+ccs = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  filter(region == "california") %>%
+  select(taxon_capture, date, site_id, site, site_latitude, site_longitude) %>%
+  collect()
+
+ccs_sum = ccs %>%
+  group_by(site, site_latitude, site_longitude) %>%
+  summarise(count = n()) %>%
+  ungroup() %>%
+  filter(!is.na(site_longitude))
+
+points_sf <- ccs_sum %>%
+  st_as_sf(coords = c("site_longitude", "site_latitude"), crs = 4326)
+
+points_data <- points_sf %>%
+  mutate(geometry_type = "point") %>%
+  select(site, count, geometry_type)
+
+st_write(points_data, here("staging", "sn_captures.shp"), delete_layer = TRUE)
+```

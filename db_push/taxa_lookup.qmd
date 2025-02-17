@@ -466,7 +466,7 @@ taxa_revised_unique = sort(na.omit(unique(c(as.character(revised_aural$taxon_aur
 
 # Lookup: run taxonomy lookup all revised taxa
 ```{r}
-lookup_all = FALSE
+lookup_all = TRUE
 
 if (lookup_all) {
   # lookup all
@@ -493,7 +493,7 @@ parent_taxa = sort(tolower(unique(na.omit(unlist(taxa_revised_results[parent_col
 parent_revised_results = taxa_lookup_map(parent_taxa)
 
 # bind all results
-taxa_results_all = bind_rows(taxa_revised_results, parents_results_new)
+taxa_results_all = bind_rows(taxa_revised_results, parent_revised_results)
 
 taxa_revised_clean = taxa_results_all %>%
   rename("itis_tsn" = "itis_tsn_current",
