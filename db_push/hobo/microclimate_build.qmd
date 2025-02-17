@@ -11,7 +11,7 @@ librarian::shelf(tidyverse, dbplyr, here, janitor, dataPreparation, lubridate, R
 # librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 
 ## Connect to DB
-dbcon <- hopToDB()
+dbcon <- hopToDB("wibbitr")
 
 ```
 ```{r}
@@ -284,6 +284,12 @@ subset_sensor = distinct_obs %>%
 
 subset_obs = distinct_obs %>%
   select(timestamptz, value, sensor_id)
+```
+
+# timezone test
+```{r}
+data_test = subset_obs
+
 ```
 
 ## checks
