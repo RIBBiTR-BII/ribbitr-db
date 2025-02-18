@@ -466,19 +466,22 @@ taxa_revised_unique = sort(na.omit(unique(c(as.character(revised_aural$taxon_aur
 
 # Lookup: run taxonomy lookup all revised taxa
 ```{r}
-lookup_all = TRUE
+lookup_all = FALSE
 
 if (lookup_all) {
   # lookup all
   taxa_revised_results = taxa_lookup_map(taxa_revised_unique)
 } else {
-  # lookup new
+  # lookup new or missing itis_tsn
   taxa_existing = db_taxa %>%
+    filter(!is.na(itis_tsn)) %>%
     pull(taxon_id)
   
-  taxa_revised_unique_new = setdiff(taxa_revised_unique, taxa_existing)
+  taxa_revised_unique_new = c("foo",
+                              setdiff(taxa_revised_unique, taxa_existing))
   
-  taxa_revised_results = taxa_lookup_map(taxa_revised_unique_new)
+  taxa_revised_results = taxa_lookup_map(taxa_revised_unique_new) %>%
+    filter(taxon_id != "foo")
 }
 
 parent_cols = c("itis_class",
@@ -493,7 +496,12 @@ parent_taxa = sort(tolower(unique(na.omit(unlist(taxa_revised_results[parent_col
 parent_revised_results = taxa_lookup_map(parent_taxa)
 
 # bind all results
-taxa_results_all = bind_rows(taxa_revised_results, parent_revised_results)
+if (nrow(parent_revised_results) > 0) {
+  taxa_results_all = bind_rows(taxa_revised_results, parent_revised_results)
+} else {
+  taxa_results_all = taxa_revised_results
+}
+
 
 taxa_revised_clean = taxa_results_all %>%
   rename("itis_tsn" = "itis_tsn_current",
@@ -539,7 +547,6 @@ taxa_revised_final = taxa_revised_clean %>%
               select(taxon_id,
                      all_of(setdiff(colnames(db_taxa), colnames(taxa_revised_clean)))) %>%
               collect(), by = "taxon_id")
-
 
 compare_taxa = compare_df_cols(db_taxa %>%
                                  filter(FALSE) %>%
