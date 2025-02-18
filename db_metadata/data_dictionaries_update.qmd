@@ -10,7 +10,7 @@ editor: source
 librarian::shelf(tidyverse, dbplyr, DBI, RPostgres, here, janitor, RIBBiTR-BII/ribbitrrr)
 
 ## Connect to DB
-dbcon <- hopToDB()
+dbcon <- hopToDB("wibbitr")
 ```
 
 ## Define functions to scrape table and column metadata
