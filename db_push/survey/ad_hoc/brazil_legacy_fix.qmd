@@ -53,6 +53,7 @@ raw_sv_area <- read_csv(here(wddir, "clean_sv_sites_latlon.csv"))
 
 raw_cct = import_list(here(wddir, "climate_ct.xlsx"))
 raw_cct = raw_cct$Sheet1
+
 ```
 
 # clean & stats
