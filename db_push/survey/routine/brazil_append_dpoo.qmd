@@ -286,16 +286,6 @@ gelled_data = clean_data %>%
          visit_id = ifelse(is.na(site_id), NA, visit_id),
          survey_id = ifelse(is.na(site_id), NA, survey_id))
 
-dcid = gelled_data %>%
-  select(capture_id) %>%
-  distinct()
-nrow(dcid)
-vidc = gelled_data %>%
-  filter(!is.na(capture_id)) %>%
-  select(visit_id) %>%
-  distinct() %>%
-  arrange(visit_id)
-
 ```
 
 # troubleshoot
@@ -306,19 +296,62 @@ existing_data = db_sample %>%
   left_join(db_visit, by = "visit_id") %>%
   left_join(db_site, by = "site_id") %>%
   filter(sample_type == "bd") %>%
-  select(any_of(c(tbl_pkey("sample", mdc), 
-                tbl_nkey("sample", mdc),
-                tbl_pkey("capture", mdc), 
-                tbl_nkey("capture", mdc),
-                tbl_pkey("survey", mdc), 
-                tbl_nkey("survey", mdc),
-                tbl_pkey("visit", mdc), 
-                tbl_nkey("visit", mdc),
-                tbl_pkey("site", mdc), 
-                tbl_nkey("site", mdc)))) %>%
+  select(all_of(c("taxon_capture",
+                  "svl_mm",
+                  "body_mass_g",
+                  tbl_pkey("sample", mdc), 
+                  tbl_nkey("sample", mdc),
+                  tbl_pkey("capture", mdc), 
+                  tbl_nkey("capture", mdc),
+                  tbl_pkey("survey", mdc), 
+                  tbl_nkey("survey", mdc),
+                  tbl_pkey("visit", mdc), 
+                  tbl_nkey("visit", mdc),
+                  tbl_pkey("site", mdc), 
+                  tbl_nkey("site", mdc)))) %>%
   collect()
 
+
+new_data = gelled_data %>%
+  mutate(sample_type = "bd",
+         sample_name = bd_swab_tube_id,
+         sample_id = NA) %>%
+  select(all_of(colnames(existing_data)))
+
 # join with gelled_data on bd sample name, see where coincides
+joined_data = inner_join(existing_data, new_data, by = "sample_name") %>%
+  select(sample_name,
+         sample_id.x,
+         sample_id.y,
+         capture_id.x,
+         capture_id.y,
+         taxon_capture.x,
+         taxon_capture.y,
+         svl_mm.x,
+         svl_mm.y,
+         body_mass_g.x,
+         body_mass_g.y,
+         survey_id.x,
+         survey_id.y,
+         transect.x,
+         transect.y,
+         detection_type.x,
+         detection_type.y,
+         visit_id.x,
+         visit_id.y,
+         start_time.x,
+         start_time.y,
+         project.x,
+         project.y,
+         date.x,
+         date.y,
+         time_of_day.x,
+         time_of_day.y,
+         site_id.x,
+         site_id.y,
+         site.x,
+         site.y) 
+
 
 ```
 
