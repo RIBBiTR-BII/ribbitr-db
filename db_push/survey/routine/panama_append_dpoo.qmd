@@ -12,7 +12,7 @@ librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr
 # librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 
 ## Connect to DB
-dbcon <- hopToDB()
+dbcon <- hopToDB("wibbitr")
 
 ## Pull metadata from database
 mdc = tbl(dbcon, Id("public", "all_columns")) %>%

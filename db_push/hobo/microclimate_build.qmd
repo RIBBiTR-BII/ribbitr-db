@@ -469,16 +469,11 @@ data_list <- lapply(data_list, function(df) {
   return(data) # Return the manipulated data frame
 })
 
-
-
-
-
 ```
 
 ## convert timezones
 
 ```{r}
-
 
 # Example usage
 gmt_string <- "GMT-04:00"

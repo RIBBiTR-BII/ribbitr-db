@@ -1,0 +1,100 @@
+---
+title: "timestamp_timezone"
+format: html
+---
+
+```{r}
+librarian::shelf(tidyverse, dbplyr, here, janitor, dataPreparation, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr, ggplot2, plotly)
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+## Connect to DB
+dbcon <- hopToDB("wibbitr")
+
+```
+
+# pointers
+
+```{r}
+db_logger = tbl(dbcon, Id("microclimate_data", "logger"))
+db_sensor = tbl(dbcon, Id("microclimate_data", "sensor"))
+db_ts = tbl(dbcon, Id("microclimate_data", "time_series_01_raw"))
+
+db_test = tbl(dbcon, Id("survey_data", "timestamp_test"))
+
+```
+
+```{r}
+peace = db_test %>% collect()
+
+dates = c("2021-01-01",
+          "2022-02-02",
+          "2023-03-03")
+
+times = c("12:00:01",
+          "13:01:01",
+          "14:02:01")
+
+times = c("06:00:01")
+
+tz_name = c("GMT0",
+            "America/New_York",
+            "America/Chicago",
+            "America/Denver",
+            "America/Los_Angeles",
+            "Pacific/Honolulu",
+            "America/Panama",
+            "America/Sao_Paulo")
+
+combos = expand.grid(dates, times, tz_name) %>%
+  mutate(date = as.Date(Var1),
+         time = as_hms(as.character(Var2)),
+         datetime = as_datetime(paste0(as.character(date), " ", as.character(time))),
+         timezone = as.character(Var3),
+         datetime_tz = pmap_vec(list(date, time, timezone),
+                         ~ ymd_hms(paste0(..1, " ", ..2), tz = ..3)),
+         datetime_char = as.character(datetime_tz))
+
+
+# tzlist = unique(combos$timezone)
+# 
+# for (tz in tzlist) {
+#   temp_tab = combos %>%
+#     filter(timezone == tz) %>%
+#     mutate(
+#       timestamptz = ymd_hms(paste0(date, " ", time), tz = tz),
+#       utc = as.character(datetime_tz),
+#       tz = tz) %>%
+#     select(timestamptz,
+#            utc,
+#            tz)
+#   
+#   dbWriteTable(dbcon, Id("survey_data", "timestamp_test"), temp_tab, append = TRUE)
+# }
+
+output = combos %>%
+  rename(timestamptz = datetime_tz,
+         tz = timezone,
+         utc = datetime) %>%
+  select(all_of(colnames(db_test)))
+
+dbWriteTable(dbcon, Id("survey_data", "timestamp_test"), output, append = TRUE)
+```
+
+Retrieve values
+```{r}
+input = dbReadTable(dbcon, Id("survey_data", "timestamp_test"))
+
+input_2 = tbl(dbcon, Id("survey_data", "timestamp_test")) %>%
+  collect()
+
+finally = input_2 %>%
+  rename(tztz = tz) %>%
+  mutate(local_time_tz = pmap(list(timestamptz, tztz), ~with_tz(..1, tzone = ..2)),
+         local_time = pmap_vec(list(timestamptz, tztz), ~format(with_tz(..1, tzone = ..2)), "%Y-%m-%d %H:%M:%S"),
+         local_time_lub = local_time(timestamptz, tztz))
+
+finally$timestamptz
+finally$local_time_tz
+finally$local_time
+
+```
