@@ -7,7 +7,6 @@ format: html
 
 # librarian downloads, if not already downloaded, and reads in needed packages
 librarian::shelf(tidyverse, dbplyr, here, RPostgres, DBI, RIBBiTR-BII/ribbitrrr)
-# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 
 # connect to database
 dbcon = hopToDB("ribbitr")
@@ -37,15 +36,24 @@ data_mucosome = db_sample %>%
   filter(country == "brazil" |
            country == "panama" |
            region == "california",
-         sample_type == "mucosome") %>%
+         sample_type == "mucosome" | sample_type == "bd") %>%
   select(sample_name,
+         sample_type,
          capture_id,
          date,
          site,
          region,
          country) %>%
-  collect()
+  collect() %>%
+  pivot_wider(names_from = sample_type, values_from = sample_name) %>%
+  rename("bd_swab_id" = "bd",
+         "mucosome_id" = "mucosome") %>%
+  filter(!is.na(mucosome_id))
 
-write_csv(data_mucosome, here("staging", "mucosome_ids_2025-02.csv"))
+write_csv(data_mucosome, here("staging", paste0("mucosome_ids_", today(), ".csv")))
+```
 
+```{r}
+# close DB connection
+dbDisconnect(dbcon)
 ```
