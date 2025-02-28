@@ -160,7 +160,6 @@ tray = compare_for_staging(db_survey %>% collect(), survey_calc_df, key_columns 
 peace = compare_updates(tray)
 survey_calc_update = tray$update
 
-
 temp_survey = stage_to_temp(dbcon, db_survey, survey_calc_update)
 pointer = tbl(dbcon, temp_survey)
 rows_update(db_survey, pointer, by = "survey_id", in_place=TRUE, unmatched = "ignore")

@@ -301,7 +301,7 @@ upsert_sensor = bind_rows(tray$update,
                           tray$insert)
 
 subset_obs_temp = distinct_obs %>%
-  filter(sensor_type == "temperature_c") %>%
+  filter(sensor_type == "temperature") %>%
   select(sensor_id, timestamp_utc, value) %>%
   rename(temperature_c_01_raw = value)
 
@@ -311,7 +311,7 @@ upsert_ts_temp = bind_rows(tray$update,
                           tray$insert)
 
 subset_obs_lux = distinct_obs %>%
-  filter(sensor_type == "illuminance_lux") %>%
+  filter(sensor_type == "illuminance") %>%
   select(sensor_id, timestamp_utc, value) %>%
   rename(illuminance_lux_01_raw = value)
 
@@ -322,7 +322,7 @@ upsert_ts_ill = bind_rows(tray$update,
 
 
 subset_obs_rh = distinct_obs %>%
-  filter(sensor_type == "relative_humidity_percent") %>%
+  filter(sensor_type == "relative_humidity") %>%
   select(sensor_id, timestamp_utc, value) %>%
   rename(relative_humidity_percent_01_raw = value)
 
@@ -332,7 +332,7 @@ upsert_ts_rh = bind_rows(tray$update,
                          tray$insert)
 
 subset_obs_dp = distinct_obs %>%
-  filter(sensor_type == "dew_point_c") %>%
+  filter(sensor_type == "dew_point") %>%
   select(sensor_id, timestamp_utc, value) %>%
   rename(dew_point_c_01_raw = value)
 

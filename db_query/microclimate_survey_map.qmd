@@ -30,6 +30,7 @@ db_country = tbl(dbcon, Id("survey_data", "country"))
 
 # define function
 ```{r}
+
 microclimate_subset_presurvey = function(survey_data, buffer, time_series_pointer, time_sensitive = FALSE, output_timezone = NA) {
   
   
@@ -198,7 +199,8 @@ microclimate_subset_presurvey = function(survey_data, buffer, time_series_pointe
     left_join(mc_meta, by = "sensor_id") %>%
     select(survey_id,
            sensor_id,
-           everything())
+           everything()) %>%
+    mutate(timestamp_utc = force_tz(timestamp_utc,tzone = "UTC"))
   
   # reset to initial timezone
   if (!is.na(output_timezone) & time_sensitive) {
