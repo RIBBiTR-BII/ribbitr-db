@@ -51,6 +51,64 @@ db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
 
 ```
 
+# existing brazil data dates
+```{r}
+data_br = db_visit %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(country == "brazil") %>%
+  select(date,
+         site,
+         visit_id,
+         project) %>%
+  collect() %>%
+  arrange(date,
+          site)
+
+visit_of_interest = data_br %>%
+  filter(date > "2023-02-01") %>%
+  pull(visit_id)
+
+data_of_interest = db_sample %>%
+  inner_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  filter(visit_id %in% visit_of_interest) %>%
+    select(sample_name,
+         sample_type,
+         capture_id,
+         life_stage,
+         sex,
+         comments_capture,
+         taxon_capture,
+         transect,
+         time_of_day,
+         date,
+         site) %>%
+    collect() %>%
+  pivot_wider(names_from = "sample_type",
+              values_from = "sample_name") %>%
+  select(capture_id,
+         taxon_capture,
+         life_stage,
+         sex,
+         bd,
+         genetic,
+         comments_capture,
+         transect,
+         time_of_day,
+         date,
+         site) %>%
+  rename(species = taxon_capture,
+         bd_swab_id = bd,
+         genetic_id = genetic) %>%
+  arrange(bd_swab_id)
+
+write.csv(data_of_interest, here("staging", "br_2023_02_conflicting_data.csv"))
+  
+```
 
 ## Load csv files
 
