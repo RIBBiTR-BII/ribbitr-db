@@ -16,7 +16,7 @@ dbcon <- hopToDB("wibbitr")
 ## Point to local data directory
 ddir = Sys.getenv("data_dir")  # data directory
 # Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
-wddir = here(ddir, "sensor", '2024-12-03') # working data directory
+wddir = here(ddir, "microclimate", "sensor", '2024-12-03') # working data directory
 ```
 
 # DB pointers
@@ -26,7 +26,7 @@ db_logger = tbl(dbcon, Id("microclimate_data", "logger"))
 db_sensor = tbl(dbcon, Id("microclimate_data", "sensor"))
 db_ts_temp = tbl(dbcon, Id("microclimate_data", "ts_temperature"))
 db_ts_ill = tbl(dbcon, Id("microclimate_data", "ts_illuminance"))
-db_ts_rh = tbl(dbcon, Id("microclimate_data", "ts_rh"))
+db_ts_rh = tbl(dbcon, Id("microclimate_data", "ts_relative_humidity"))
 db_ts_dp = tbl(dbcon, Id("microclimate_data", "ts_dew_point"))
 ```
 
@@ -206,18 +206,21 @@ clean_obs = bound_obs %>%
          height_cm = as.numeric(str_remove(height_cm, "cm"))) %>%
   select(-date_time) %>%
   rename(site_microclimate = site,
-         illuminance_lux = intensity_lux) %>%
-  pivot_longer(cols = c("temperature_c",
-                        "illuminance_lux",
-                        "relative_humidity_percent",
-                        "dew_point_c"),
+         illuminance = intensity_lux,
+         temperature = temperature_c,
+         relative_humidity = relative_humidity_percent,
+         dew_point = dew_point_c) %>%
+  pivot_longer(cols = c("temperature",
+                        "illuminance",
+                        "relative_humidity",
+                        "dew_point"),
                names_to = "sensor_type",
                values_to = "value") %>%
   mutate(units = case_match(sensor_type,
-                            "temperature_c" ~ "degrees_celsius_c",
-                            "illuminance_lux" ~ "lux_lx",
-                            "relative_humidity_percent" ~ "percent_saturation",
-                            "dew_point_c" ~ "degrees_celsius_c")) %>%
+                            "temperature" ~ "degrees_celsius_c",
+                            "illuminance" ~ "lux_lx",
+                            "relative_humidity" ~ "percent_saturation",
+                            "dew_point" ~ "degrees_celsius_c")) %>%
   filter(!is.na(value),
          !is.na(timestamp_utc))
 
@@ -338,45 +341,6 @@ peace = compare_updates(tray)
 upsert_ts_dp = bind_rows(tray$update,
                          tray$insert)
 
-```
-
-
-## plot
-```{r}
-# Convert to date
-gelled_obs$date <- as.Date(gelled_obs$timestamptz)
-
-all_dates <- expand.grid(date = seq(min(gelled_obs$date), max(gelled_obs$date), by="day"),
-                         sensor_id = unique(gelled_obs$sensor_id))
-
-sample_counts <- gelled_obs %>%
-  group_by(date, sensor_id) %>%
-  summarise(samples_count = n(), .groups = "drop")
-
-# Join with all_dates to check for availability
-summary_data <- all_dates %>%
-  left_join(sample_counts, by = c("date", "sensor_id")) %>%
-  mutate(value_found = ifelse(is.na(samples_count), 0, 1)) %>%
-  left_join(subset_sensor, by = "sensor_id") %>%
-  left_join(subset_logger, by = "logger_id") %>%
-  left_join(db_site, by = "site") %>%
-  left_join(db_region, by = "region_id") %>%
-  left_join(db_country, by = "country_id") %>%
-  filter(country == "panama")
-
-# Create the tile plot with conditional coloring
-ggplot(summary_data, aes(x = date, y = sensor_id)) +
-  geom_tile(aes(fill = ifelse(value_found == 1, sensor_type, NA)), color = "white") + # Fill based on sensor_type if data exists
-  scale_fill_brewer(palette = "Set3", name = "Sensor Type") + # Color palette for sensor types
-  labs(x = "Date", y = "Sensor ID") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  # Set tiles without data to white
-  geom_tile(data = summary_data %>% filter(value_found == 0), aes(fill = factor(0)), color = "white") +
-  scale_fill_manual(values = c("0" = "white"), 
-                    labels = c("No Data"), 
-                    name = "Data Availability", 
-                    guide = "none") # Hide legend for no data fill
 ```
 
 ## write tables

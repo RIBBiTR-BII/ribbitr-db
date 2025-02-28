@@ -66,6 +66,7 @@ Retrieve values
 input = dbReadTable(dbcon, Id("survey_data", "timestamp_test"))
 
 input_2 = tbl(dbcon, Id("survey_data", "timestamp_test")) %>%
+  filter(tz == "America/New_York") %>%
   collect()
 
 finally = input_2 %>%
