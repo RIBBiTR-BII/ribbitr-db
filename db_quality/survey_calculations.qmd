@@ -1,0 +1,168 @@
+---
+title: "survey_calculations"
+format: html
+---
+
+```{r}
+
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+# connect to database
+dbcon = hopToDB("wibbitr")
+
+```
+
+Pull metadata and tables
+```{r}
+mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
+  collect()
+
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_ves = tbl(dbcon, Id("survey_data", "ves"))
+db_env = tbl(dbcon, Id("survey_data", "environmental"))
+
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
+```
+
+# calculate survey start_time end_time
+```{r}
+
+
+find_time_range_lubridate_group <- function(times, start_time = NA, end_time = NA) {
+  # Remove NA values
+  times = c(times, start_time, end_time)
+  times <- times[!is.na(times)]
+  
+  if (length(times) == 0) {
+    return(list(first_time = NA, last_time = NA))
+  }
+  
+  # Convert to hours for calculation
+  hours <- hour(times) + minute(times)/60 + second(times)/3600
+  
+  # Check if times span midnight
+  max_diff <- max(hours) - min(hours)
+  
+  if (max_diff > 12) {
+    # Times span midnight, adjust hours
+    hours_adjusted <- ifelse(hours < 12, hours + 24, hours)
+    
+    # Find min and max in adjusted time
+    first_time <- times[which.min(hours_adjusted)]
+    last_time <- times[which.max(hours_adjusted)]
+  } else {
+    # No midnight spanning
+    first_time <- times[which.min(hours)]
+    last_time <- times[which.max(hours)]
+  }
+  
+  return(list(
+    first_time = first_time,
+    last_time = last_time
+  ))
+}
+
+
+# capture
+survey_capture = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  collect() %>%
+  group_by(survey_id) %>%
+  mutate(
+    start_time = find_time_range_lubridate_group(time_of_capture, start_time, end_time)$first_time,
+    end_time = find_time_range_lubridate_group(time_of_capture, start_time, end_time)$last_time
+  ) %>%
+  ungroup()
+
+survey_capture_revised = survey_capture %>%
+  select(all_of(colnames(db_survey))) %>%
+  distinct()
+
+tray = compare_for_staging(db_survey %>% collect(), survey_capture_revised, key_columns = "survey_id", report = "survey_capture")
+peace = compare_updates(tray)
+survey_capture_update = tray$update
+
+# env
+survey_env = db_env %>%
+  left_join(db_survey, by = "survey_id") %>%
+  collect() %>%
+  group_by(survey_id) %>%
+  mutate(
+    start_time = find_time_range_lubridate_group(c(air_time, water_time), start_time, end_time)$first_time,
+    end_time = find_time_range_lubridate_group(c(air_time, water_time), start_time, end_time)$last_time
+  ) %>%
+  ungroup()
+
+survey_env_revised = survey_env %>%
+  select(all_of(colnames(db_survey))) %>%
+  distinct()
+
+tray = compare_for_staging(db_survey %>% collect(), survey_env_revised, key_columns = "survey_id", report = "survey_env")
+peace = compare_updates(tray)
+survey_env_update = tray$update
+
+survey_update = bind_rows(survey_capture_update,
+                          survey_env_update)
+
+temp_survey = stage_to_temp(dbcon, db_survey, survey_update)
+pointer = tbl(dbcon, temp_survey)
+rows_update(db_survey, pointer, by = "survey_id", in_place=TRUE, unmatched = "ignore")
+
+```
+
+# calculate survey timestamps
+```{r}
+survey_data = db_survey %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  collect()
+
+timestamp_func = function(df, tz) {
+  print(tz)
+
+  df_out = df %>%
+    filter(time_zone == tz) %>%
+    mutate(start_timestamp = force_tz(ymd_hms(paste(date, start_time)), tzone = tz),
+           end_timestamp = force_tz(ymd_hms(paste(date, end_time)), tzone = tz),
+           duration_minutes = as.numeric(difftime(end_timestamp, start_timestamp, units = "mins")),
+           number_observers = map_int(observers_survey, ~ length(unique(na.omit(unlist(str_split(gsub(" ", "", .x), ",")))))),
+           number_observers = ifelse(number_observers == 0, NA, number_observers),
+           end_date = as.Date(date - days(floor(duration_minutes / 1440))),
+           end_timestamp = force_tz(ymd_hms(paste(end_date, end_time)), tzone = tz),
+           duration_minutes = as.integer(round(as.numeric(difftime(end_timestamp, start_timestamp, units = "mins")), digits = 0)),
+           start_timestamp_utc = with_tz(start_timestamp, tzone = "UTC"),
+           end_timestamp_utc = with_tz(end_timestamp, tzone = "UTC"))
+}
+
+tz_list = survey_data %>%
+  select(time_zone) %>%
+  distinct() %>%
+  collect(time_zone) %>%
+  pull(time_zone)
+
+survey_calc = map(tz_list, ~ timestamp_func(survey_data, .x))
+
+survey_calc_df = list_rbind(survey_calc) %>%
+  select(all_of(colnames(db_survey)))
+
+# commit timestamps
+
+compare_survey = compare_df_cols(db_survey %>% filter(FALSE) %>% collect(), survey_calc_df)
+tray = compare_for_staging(db_survey %>% collect(), survey_calc_df, key_columns = "survey_id", report = "survey")
+peace = compare_updates(tray)
+survey_calc_update = tray$update
+
+
+temp_survey = stage_to_temp(dbcon, db_survey, survey_calc_update)
+pointer = tbl(dbcon, temp_survey)
+rows_update(db_survey, pointer, by = "survey_id", in_place=TRUE, unmatched = "ignore")
+
+```
