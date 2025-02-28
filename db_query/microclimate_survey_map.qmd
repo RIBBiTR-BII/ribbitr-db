@@ -20,7 +20,7 @@ db_survey = tbl(dbcon, Id("survey_data", "survey"))
 db_visit = tbl(dbcon, Id("survey_data", "visit"))
 
 # microclimate data
-db_ts01 = tbl(dbcon, Id("microclimate_data", "time_series_01_raw"))
+db_ts_temp = tbl(dbcon, Id("microclimate_data", "ts_temperature"))
 db_sensor = tbl(dbcon, Id("microclimate_data", "sensor"))
 db_logger = tbl(dbcon, Id("microclimate_data", "logger"))
 db_site = tbl(dbcon, Id("survey_data", "site"))
@@ -30,15 +30,9 @@ db_country = tbl(dbcon, Id("survey_data", "country"))
 
 # define function
 ```{r}
-microclimate_subset_presurvey = function(survey_data, buffer, time_sensitive = FALSE, output_timezone = NA) {
+microclimate_subset_presurvey = function(survey_data, buffer, time_series_pointer, time_sensitive = FALSE, output_timezone = NA) {
   
-  if (!is.na(output_timezone)) {
-    message(paste0("Changing session timezone to: ", output_timezone))
-    # retrieve current timezone
-    session_tz = dbGetQuery(dbcon, "SHOW timezone;")[["TimeZone"]]
-    # set to passed time zone
-    tz_query = dbExecute(dbcon, paste0("SET TIME ZONE '",output_timezone , "';"))
-  }
+  
   
   # check data format
   if (is.data.frame(survey_data)) {
@@ -50,9 +44,9 @@ microclimate_subset_presurvey = function(survey_data, buffer, time_sensitive = F
   # time/date check
   if (time_sensitive) {
     # check for timestamp
-    if ("start_timestamp" %in% data_cols & "end_timestamp" %in% data_cols) {
+    if ("start_timestamp_utc" %in% data_cols & "end_timestamp_utc" %in% data_cols) {
       # check format
-      if (!all(c(class(survey_data$start_timestamp) == c("POSIXct", "POSIXt"), class(survey_data$end_timestamp) == c("POSIXct", "POSIXt")))) {
+      if (!all(c(class(survey_data$start_timestamp_utc) == c("POSIXct", "POSIXt"), class(survey_data$end_timestamp_utc) == c("POSIXct", "POSIXt")))) {
         stop("Unexpected format of 'start_timestamp' and 'end_timestamp' columns. Expected c('POSIXct', 'POSIXt')")
       }
     } else {
@@ -118,8 +112,8 @@ microclimate_subset_presurvey = function(survey_data, buffer, time_sensitive = F
   if (time_sensitive) {
     survey_start_end = data_ex %>%
       filter(site_id %in% sites_present) %>%
-      mutate(start = start_timestamp - buffer,
-             end = start_timestamp) %>%
+      mutate(start = start_timestamp_utc - buffer,
+             end = start_timestamp_utc) %>%
       select(survey_id, site_id, start, end)
     
     time_var = "start_timestamp"
@@ -138,7 +132,7 @@ microclimate_subset_presurvey = function(survey_data, buffer, time_sensitive = F
     pull(survey_id)
   
   if (length(invalid_start_end) > 0) {
-    warning(paste0("NA value for survey ", time_var, " for the following surveys:\n\t"),
+    warning(paste0("NA values for survey ", time_var, " for the following surveys:\n\t"),
             paste0(invalid_start_end, sep = "\n\t"),
             "\n")
   }
@@ -154,8 +148,8 @@ microclimate_subset_presurvey = function(survey_data, buffer, time_sensitive = F
     create_row_filter <- function(site_id, start, end) {
       expr(
         (site_id == !!site_id & 
-           timestamptz >= !!start & 
-           timestamptz <= !!end)
+           timestamp_utc >= !!start & 
+           timestamp_utc <= !!end)
       )
     }
     
@@ -169,14 +163,12 @@ microclimate_subset_presurvey = function(survey_data, buffer, time_sensitive = F
     full_filter <- create_full_filter(survey_start_end_valid %>%
                                         select(-survey_id))
     # fetch all data
-    mc_data = db_ts01 %>%
+    mc_data = time_series_pointer %>%
       left_join(db_sensor, by = "sensor_id") %>%
       left_join(db_logger, by = "logger_id") %>%
       filter(!!full_filter) %>%
       select(site_id,
-             sensor_id,
-             timestamptz,
-             value) %>%
+             all_of(colnames(time_series_pointer))) %>%
       collect()
     message("done.")
     
@@ -186,8 +178,8 @@ microclimate_subset_presurvey = function(survey_data, buffer, time_sensitive = F
                       function(survey_id, site_id, start, end) {
                         mc_data %>%
                           filter(site_id == site_id,
-                                 timestamptz >= start,
-                                 timestamptz <= end) %>%
+                                 timestamp_utc >= start,
+                                 timestamp_utc <= end) %>%
                           mutate(survey_id = survey_id) %>%
                           select(-site_id)
                       })
@@ -209,10 +201,9 @@ microclimate_subset_presurvey = function(survey_data, buffer, time_sensitive = F
            everything())
   
   # reset to initial timezone
-  if (!is.na(output_timezone)) {
-    message(paste0("Changing session timezone back to: ", session_tz))
-    # set to passed time zone
-    tz_query = dbExecute(dbcon, paste0("SET TIME ZONE '",session_tz , "';"))
+  if (!is.na(output_timezone) & time_sensitive) {
+    mc_data_final = mc_data_final %>%
+      mutate(timestamp_tz = with_tz(timestamp_utc, tzone = output_timezone))
   }
   
   return(mc_data_final)
@@ -237,8 +228,8 @@ data_ex = db_survey %>%
 
 # call function
 ```{r}
-test_1 = microclimate_subset_presurvey(data_ex, buffer = days(2), time_sensitive = FALSE, output_timezone = NA)
-test_2 = microclimate_subset_presurvey(data_ex, buffer = days(14), time_sensitive = FALSE, output_timezone = NA)
-test_3 = microclimate_subset_presurvey(data_ex, buffer = days(2), time_sensitive = TRUE, output_timezone = NA)
-test_4 = microclimate_subset_presurvey(data_ex, buffer = days(2), time_sensitive = TRUE, output_timezone = "America/Los_Angeles")
+test_1 = microclimate_subset_presurvey(data_ex, buffer = days(2), db_ts_temp, time_sensitive = FALSE, output_timezone = NA)
+test_2 = microclimate_subset_presurvey(data_ex, buffer = days(14), db_ts_temp, time_sensitive = FALSE, output_timezone = NA)
+test_3 = microclimate_subset_presurvey(data_ex, buffer = days(2), db_ts_temp, time_sensitive = TRUE, output_timezone = NA)
+test_4 = microclimate_subset_presurvey(data_ex, buffer = days(2), db_ts_temp, time_sensitive = TRUE, output_timezone = "America/Los_Angeles")
 ```
