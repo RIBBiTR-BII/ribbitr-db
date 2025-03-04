@@ -405,6 +405,10 @@ clean_taxa_dict <- list(
   'uptidactylus_sarajay' = 'leptodactylus_savagei'
 )
 
+clean_taxon_id = function(taxon_id) {
+  return(tolower(gsub(" ", "_", taxon_id)))
+}
+
 revised_aural = db_aural %>%
   select(aural_id,
          taxon_aural,
@@ -415,6 +419,7 @@ revised_aural = db_aural %>%
                                         as.character(comment_taxa_dict[taxon_aural]), 
                                         as.character(paste(comments_aural, comment_taxa_dict[taxon_aural], sep = "; "))),
                                  comments_aural),
+         taxon_aural = clean_taxon_id(taxon_aural),
          taxon_aural = as.character(ifelse(taxon_aural %in% names(clean_taxa_dict),
                               clean_taxa_dict[taxon_aural],
                               taxon_aural)))
@@ -429,6 +434,7 @@ revised_capture = db_capture %>%
                                           as.character(comment_taxa_dict[taxon_capture]), 
                                           as.character(paste(comments_capture, comment_taxa_dict[taxon_capture], sep = "; "))),
                                    comments_capture),
+         taxon_capture = clean_taxon_id(taxon_capture),
          taxon_capture = as.character(ifelse(taxon_capture %in% names(clean_taxa_dict),
                                 clean_taxa_dict[taxon_capture],
                                 taxon_capture)))
@@ -443,6 +449,7 @@ revised_ves = db_ves %>%
                                           as.character(comment_taxa_dict[taxon_ves]), 
                                           as.character(paste(comments_ves, comment_taxa_dict[taxon_ves], sep = "; "))), 
                                comments_ves),
+         taxon_ves = clean_taxon_id(taxon_ves),
          taxon_ves = as.character(ifelse(taxon_ves %in% names(clean_taxa_dict),
                             clean_taxa_dict[taxon_ves],
                             taxon_ves)))
@@ -451,7 +458,8 @@ revised_cmr = db_cmr %>%
   select(cmr_id,
          taxon_cmr) %>%
   collect() %>%
-  mutate(taxon_cmr = as.character(ifelse(taxon_cmr %in% names(clean_taxa_dict),
+  mutate(taxon_cmr = clean_taxon_id(taxon_cmr),
+         taxon_cmr = as.character(ifelse(taxon_cmr %in% names(clean_taxa_dict),
                                 clean_taxa_dict[taxon_cmr],
                                 taxon_cmr)))
 
@@ -541,6 +549,8 @@ taxa_revised_clean = taxa_results_all %>%
 
 # subset data
 ```{r}
+drop_orphans = FALSE
+
 # join with taxa for additional columns
 taxa_revised_final = taxa_revised_clean %>%
   left_join(db_taxa %>%
@@ -611,7 +621,7 @@ tryCatch(
       rows_update(db_cmr, pointer, by="cmr_id", in_place=TRUE, unmatched="ignore")
     }
     
-    if (nrow(taxa_drop) > 0) {
+    if (nrow(taxa_drop) > 0 & drop_orphans) {
       # drop unnecesary taxa
       db_taxa = db_taxa %>%
         rows_delete(taxa_drop, by="taxon_id", unmatched = "ignore", in_place=TRUE)
