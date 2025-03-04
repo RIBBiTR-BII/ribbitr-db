@@ -1,0 +1,196 @@
+---
+title: "microclimate_process_products"
+format: html
+---
+
+
+```{r}
+librarian::shelf(tidyverse, dbplyr, DBI, RPostgres, here, janitor, lubridate, hms, zoo, uuid, RIBBiTR-BII/ribbitrrr, plotly, ggplot2, forecast)
+## Connect to DB
+dbcon <- hopToDB("ribbitr")
+
+```
+
+# database pointers
+```{r}
+db_sensor = tbl(dbcon, Id("microclimate_data", "sensor"))
+db_logger = tbl(dbcon, Id("microclimate_data", "logger"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+
+db_ts_rh = tbl(dbcon, Id("microclimate_data", "ts_relative_humidity"))
+db_ts_dp = tbl(dbcon, Id("microclimate_data", "ts_dew_point"))
+db_ts_temp = tbl(dbcon, Id("microclimate_data", "ts_temperature"))
+db_ts_ill = tbl(dbcon, Id("microclimate_data", "ts_illuminance"))
+```
+
+# reporting
+```{r}
+
+data_ts_temp = db_ts_temp %>%
+  left_join(db_sensor, by = "sensor_id") %>%
+  left_join(db_logger, by = "logger_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  collect()
+
+ts_report = function(data) {
+  data %>%
+    group_by(site,
+             microhabitat,
+             height_cm,
+             sensor_id) %>%
+    summarise(start_timestamp = min(timestamp_utc),
+              end_timestamp = max(timestamp_utc),
+              n = n(),
+              r = n / as.integer(seconds(end_timestamp - start_timestamp)),
+              min = min(temperature_c_01_raw),
+              q05 = quantile(temperature_c_01_raw, .05),
+              q50 = quantile(temperature_c_01_raw, .5),
+              q95 = quantile(temperature_c_01_raw, .95),
+              max = max(temperature_c_01_raw)) %>%
+    arrange(site,
+            microhabitat,
+            height_cm)
+}
+
+ts_visualize = function(report) {
+  
+}
+
+peace = ts_report(data_ts_temp)
+
+sensor_ids = data %>%
+  select(sensor_id) %>%
+  distinct()
+
+```
+
+```{r}
+
+data = data_ts_temp
+sensor_id = sensor_ids[1]
+value_col = "temperature_c_01_raw"
+max_interpolation_window = 3600*4
+
+# Function to process each sensor's data
+process_sensor <- function(data, sensor_id, value_col, max_interpolation_window = 3600, iqr_mask = FALSE) {
+  # Filter data for the specific sensor
+  sensor_data <- data %>%
+    filter(sensor_id == !!sensor_id) %>%
+    arrange(timestamp_utc)
+  
+  # Time series plot
+  p1 <- ggplot(sensor_data, aes(x = timestamp_utc, y = !!sym(value_col))) +
+    geom_line() +
+    ggtitle(paste("Time Series Plot for Sensor", sensor_id)) +
+    theme_minimal()
+  print(p1)
+  
+  # Density plot
+  p2 <- ggplot(sensor_data, aes(x = !!sym(value_col))) +
+    geom_density(fill = "blue", alpha = 0.5) +
+    ggtitle(paste("Density Distribution for Sensor", sensor_id)) +
+    theme_minimal()
+  print(p2)
+  
+  p3 <- ggplot(sensor_data) +
+    aes(x = "", y = !!sym(value_col)) +
+    geom_boxplot(fill = "#0c4c8a") +
+    theme_minimal()
+  print(p3)
+  
+
+  
+  # Outlier detection using tsoutliers
+  ts_data <- ts(sensor_data[[value_col]], frequency = 1)
+  outliers <- tsoutliers(ts_data)
+  
+  # Add outlier information to the original data
+  sensor_data$is_outlier <- FALSE
+  sensor_data$is_outlier[outliers$index] <- TRUE
+  
+  if (iqr_mask) {
+    Q1 <- quantile(sensor_data[[value_col]], 0.25)
+    Q3 <- quantile(sensor_data[[value_col]], 0.75)
+    
+    # Calculate interquartile range
+    IQR <- Q3 - Q1
+    
+    # Define lower and upper bounds
+    lower_bound <- Q1 - 1.5 * IQR
+    upper_bound <- Q3 + 1.5 * IQR
+    
+    # Identify outliers
+    outliers_iqr <- (sensor_data[[value_col]] < lower_bound) | (sensor_data[[value_col]] > upper_bound)
+    
+    # mask
+    sensor_data$is_outlier[outliers_iqr] <- TRUE
+  }
+  
+  
+  sensor_data$masked = sensor_data[[value_col]]
+  sensor_data$masked[sensor_data$is_outlier] = NA
+  
+  # Plot with outliers highlighted
+  p4 <- ggplot(sensor_data, aes(x = timestamp_utc, y = !!sym(value_col), color = is_outlier)) +
+    geom_point() +
+    scale_color_manual(values = c("FALSE" = "black", "TRUE" = "red")) +
+    ggtitle(paste("Outliers Detection for Sensor", sensor_id)) +
+    ylab(value_col) +
+    theme_minimal()
+  print(p4)
+  
+  # Interpolation
+  #sensor_data$value_interpolated <- sensor_data[[value_col]]
+  
+  # Create a regular time sequence
+  time_seq <- seq(min(sensor_data$timestamp_utc), max(sensor_data$timestamp_utc), by = "300 sec")
+  
+  # Interpolate values, respecting the max_interpolation_window
+  interpolated <- zoo(sensor_data$masked, sensor_data$timestamp_utc)
+  interpolated <- na.approx(interpolated, xout = time_seq, maxgap = max_interpolation_window)
+  
+  # Create a new dataframe with interpolated values
+  interpolated_df <- data.frame(
+    timestamp_utc = index(interpolated),
+    value_interpolated = as.numeric(interpolated)
+  )
+  
+  # Merge interpolated data back to the original dataframe
+  sensor_data <- sensor_data %>%
+    left_join(interpolated_df, by = "timestamp_utc")
+  
+  # Plot original and interpolated data
+  p5 <- ggplot(sensor_data) +
+    geom_line(aes(x = timestamp_utc, y = !!sym(value_col)), color = "blue", alpha = 0.5) +
+    geom_line(aes(x = timestamp_utc, y = value_interpolated), color = "red", alpha = 0.5) +
+    ggtitle(paste("Original vs Interpolated Data for Sensor", sensor_id)) +
+    theme_minimal()
+  print(p5)
+  
+  return(sensor_data)
+}
+
+# Main function to process all sensors
+process_all_sensors <- function(data, max_interpolation_window = 3600) {
+  sensor_ids <- unique(data$sensor_id)
+  results <- list()
+  
+  for (id in sensor_ids) {
+    cat("Processing sensor", id, "\n")
+    results[[as.character(id)]] <- process_sensor(data, id, max_interpolation_window)
+  }
+  
+  return(results)
+}
+
+# Example usage:
+# Assuming your data is in a dataframe called 'sensor_data'
+# sensor_data <- read.csv("your_data.csv")
+# sensor_data$timestamp_utc <- as.POSIXct(sensor_data$timestamp_utc)
+# 
+# results <- process_all_sensors(sensor_data, max_interpolation_window = 3600)
+
+sensor_ids = unique(sort(data_ts_temp$sensor_id))
+peace = process_sensor(data_ts_temp, sensor_ids[4], "temperature_c_01_raw", 3600*4, iqr_mask = FALSE)
+
+```
