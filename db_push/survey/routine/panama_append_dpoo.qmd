@@ -52,6 +52,8 @@ wddir = here(ddir, "fulcrum", 'panama', '2024-11-18', "panama_field_3_0") # work
 
 ```{r}
 # pull relevant chain tables from DB
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+
 db_aural = tbl(dbcon, Id("survey_data", "aural"))
 db_capture = tbl(dbcon, Id("survey_data", "capture"))
 db_env = tbl(dbcon, Id("survey_data", "environmental"))
@@ -64,6 +66,7 @@ db_region = tbl(dbcon, Id("survey_data", "region"))
 db_country = tbl(dbcon, Id("survey_data", "country"))
 
 db_cmr = tbl(dbcon, Id("survey_data", "cmr"))
+db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
 
 ```
 
