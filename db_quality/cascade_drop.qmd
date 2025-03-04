@@ -10,7 +10,7 @@ editor: source
 librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
 
 # connect to database
-dbcon = hopToDB()
+dbcon = hopToDB("wibbitr")
 
 ```
 
@@ -37,14 +37,36 @@ db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
 # Visit orphans
 ```{r}
 drop_ids = c(
-"31450e5e-cb89-4a31-8296-bbc242b47f39",
-"4a1c6ac2-ffcb-4149-8c8f-3800ad81e4ab",
-"fdefc621-590f-41e3-9b58-53216a08c0a5",				
-"2d89e471-e06d-48e9-ac2a-a14cf7973d16",
-"df9de723-712c-4daf-a155-8c05354abf17",
-"38033072-39bb-4428-bd29-936c4f871b69",
-"6bc0e6b9-f46b-4722-83db-2b851bbcced5",
-"e9b2462f-a946-4640-8ce3-52651168bd37"
+"5bf440bd-a665-4e81-a76b-caf88674fd01",
+  "0548434e-17ff-46e8-9e3d-542e35d799d3",
+  "ce33cb69-2131-492f-af05-ef83499f2163",
+  "0c4f5565-4e63-4026-b033-695634190433",
+  "0bbb92b6-05c0-42ca-8f90-577031063afe",
+  "e69b458b-a527-41ec-94f9-7075d4e09281",
+  "c4795e65-4146-4caa-b405-98ce17cd17ae",
+  "7eb7d0da-bdef-4e16-8e09-3c32f7cb85eb",
+  "350a0be9-001b-4db4-8b3e-e599ac6e4b5a",
+  "470debe4-4a18-4415-9469-7c0c1c4300a0",
+  "b091287a-1700-4728-9656-ed6ed5918db1",
+  "e2045f2a-93e5-42c8-8ab5-f653f7c1595e",
+  "581d219a-13aa-4d67-acc4-6319feeaa80f",
+  "9c186f0d-25e8-45e6-93e1-26d30d34acb7",
+  "72aa1781-611a-48a1-9857-14f5e0604d08",
+  "e3cecac0-dea3-4466-adf7-ab0689a72da0",
+  "823bc45e-b4bc-45a3-97ee-bebfe30e89da",
+  "0c2b4a64-0a1c-4628-a338-889cfde23161",
+  "9f4fbb6b-0cd3-425b-b6d4-9bcef8947006",
+  "53d6702b-fbbb-4294-8019-446b414edabc",
+  "fef92a3c-c12c-4fd0-a893-03af7c95580c",
+  "71166dc6-b50c-4a0d-a9a7-1231f3b0612a",
+  "1885d06c-5c5b-40c9-973a-9c96d55e40fe",
+  "427db649-31ac-46e4-8e53-79f3b2e8a8e1",
+  "466e39ea-e178-4948-8887-452dd78846d4",
+  "0e140a31-884a-41d6-8a5a-cf7f9cf19f6e",
+  "9d552e2d-26ef-411d-96a5-539f301004a5",
+  "22ec1a50-2f53-40eb-9688-155dd9507b5a",
+  "f4fc0371-7f4d-41c9-9e5c-6073d4d27130",
+  "b92052ec-3902-4d7c-9982-d6e0ad57173c"
 )
 
 drop_visit = db_visit %>%
@@ -113,8 +135,7 @@ tryCatch(
 # survey orphans
 ```{r}
 drop_ids = c(
-  "07c49df3-0a05-4c24-8612-56789d233f97",
-  "5d21a517-4941-425a-8ebe-5b6385b3c877"
+  "a7686f1f-2c5b-417d-8134-2f57aa936444"
 )
 
 drop_survey = db_survey %>%
