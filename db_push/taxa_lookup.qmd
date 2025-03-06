@@ -414,54 +414,27 @@ revised_aural = db_aural %>%
          taxon_aural,
          comments_aural) %>%
   collect() %>%
-  mutate(comments_aural = ifelse(taxon_aural %in% names(comment_taxa_dict), 
-                                 ifelse(is.na(comments_capture), 
-                                        as.character(comment_taxa_dict[taxon_aural]), 
-                                        as.character(paste(comments_aural, comment_taxa_dict[taxon_aural], sep = "; "))),
-                                 comments_aural),
-         taxon_aural = clean_taxon_id(taxon_aural),
-         taxon_aural = as.character(ifelse(taxon_aural %in% names(clean_taxa_dict),
-                              clean_taxa_dict[taxon_aural],
-                              taxon_aural)))
+  ribbitr_clean_taxa(taxon_aural, comments_aural)
 
 revised_capture = db_capture %>%
   select(capture_id,
          taxon_capture,
          comments_capture) %>%
   collect() %>%
-  mutate(comments_capture = ifelse(taxon_capture %in% names(comment_taxa_dict), 
-                                   ifelse(is.na(comments_capture), 
-                                          as.character(comment_taxa_dict[taxon_capture]), 
-                                          as.character(paste(comments_capture, comment_taxa_dict[taxon_capture], sep = "; "))),
-                                   comments_capture),
-         taxon_capture = clean_taxon_id(taxon_capture),
-         taxon_capture = as.character(ifelse(taxon_capture %in% names(clean_taxa_dict),
-                                clean_taxa_dict[taxon_capture],
-                                taxon_capture)))
+  ribbitr_clean_taxa(taxon_capture, comments_capture)
 
 revised_ves = db_ves %>%
   select(ves_id,
          taxon_ves,
          comments_ves) %>%
   collect() %>%
-  mutate(comments_ves = ifelse(taxon_ves %in% names(comment_taxa_dict), 
-                               ifelse(is.na(comments_ves), 
-                                          as.character(comment_taxa_dict[taxon_ves]), 
-                                          as.character(paste(comments_ves, comment_taxa_dict[taxon_ves], sep = "; "))), 
-                               comments_ves),
-         taxon_ves = clean_taxon_id(taxon_ves),
-         taxon_ves = as.character(ifelse(taxon_ves %in% names(clean_taxa_dict),
-                            clean_taxa_dict[taxon_ves],
-                            taxon_ves)))
+  ribbitr_clean_taxa(taxon_ves, comments_ves)
 
 revised_cmr = db_cmr %>%
   select(cmr_id,
          taxon_cmr) %>%
   collect() %>%
-  mutate(taxon_cmr = clean_taxon_id(taxon_cmr),
-         taxon_cmr = as.character(ifelse(taxon_cmr %in% names(clean_taxa_dict),
-                                clean_taxa_dict[taxon_cmr],
-                                taxon_cmr)))
+  ribbitr_clean_taxa(taxon_cmr)
 
 
 # need to update taxa table at the same time!
