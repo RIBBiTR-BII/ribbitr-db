@@ -206,11 +206,11 @@ md_all = bind_rows(md_ves,
 
 # export
 ```{r}
-write_csv(d_capture, here("staging", "edna_comp", paste0("edna_comp_capture_", today(), ".csv")))
-write_csv(d_ves, here("staging", "edna_comp", paste0("edna_comp_ves_", today(), ".csv")))
-write_csv(d_env, here("staging", "edna_comp", paste0("edna_comp_environmental_", today(), ".csv")))
-write_csv(d_taxa, here("staging", "edna_comp", paste0("edna_comp_taxa_lookup_", today(), ".csv")))
-write_csv(md_all, here("staging", "edna_comp", paste0("edna_comp_metadata_", today(), ".csv")))
+write_csv(d_capture, here("staging", "edna_complementary_pull", paste0("edna_comp_capture_", today(), ".csv")))
+write_csv(d_ves, here("staging", "edna_complementary_pull", paste0("edna_comp_ves_", today(), ".csv")))
+write_csv(d_env, here("staging", "edna_complementary_pull", paste0("edna_comp_environmental_", today(), ".csv")))
+write_csv(d_taxa, here("staging", "edna_complementary_pull", paste0("taxa_lookup_", today(), ".csv")))
+write_csv(md_all, here("staging", "edna_complementary_pull", paste0("edna_comp_metadata_", today(), ".csv")))
           
 
 ```
