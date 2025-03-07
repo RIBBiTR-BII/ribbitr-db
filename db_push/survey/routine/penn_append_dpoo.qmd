@@ -543,7 +543,8 @@ gelled_visit = unified_visit %>%
               collect(),
             by = tbl_nkey("visit", mdc)) %>%
   group_by_at(tbl_nkey("visit", mdc)) %>%
-  mutate(visit_id = ifelse(is.na(visit_id), UUIDgenerate(), visit_id)) %>%
+  mutate(uuid_name = paste0(site, date, time_of_day),
+         visit_id = ifelse(is.na(visit_id), UUIDfromName("1aec3647-4fb5-4086-b5ea-66c947562ec6", uuid_name), visit_id)) %>%
   ungroup() %>%
   mutate(project = "ribbitr",
          visit_lab = "rz_lab")
@@ -589,6 +590,14 @@ tray = compare_for_staging(db_visit %>%
                            subset_visit, tbl_pkey('visit', mdc), return_all = TRUE, report = "visit")
 upsert_visit = bind_rows(tray$insert,
                         tray$update)
+
+# # get visit_id
+# vids = subset_visit %>%
+#   select(visit_id) %>%
+#   distinct() %>%
+#   pull(visit_id)
+# 
+# cat(vids, sep = ", ")
 
 # upsert visit?
 x_visit = (nrow(upsert_visit) > 0)
@@ -665,7 +674,7 @@ gelled_env = unified_env %>%
   group_by_at(tbl_nkey("survey", mdc)) %>%
   mutate(duration_minutes = calc_duration(start_time, end_time),
          uuid_name = paste0(temp_survey_id, detection_type),
-         survey_id = ifelse(is.na(survey_id), UUIDfromName("5113bb6e-8cff-4a2d-9910-904403736cfb", uuid_name), survey_id),) %>%
+         survey_id = ifelse(is.na(survey_id), UUIDfromName("5113bb6e-8cff-4a2d-9910-904403736cfb", uuid_name), survey_id)) %>%
   ungroup() %>%
   mutate(uuid_name = paste0(environmental_latitude, environmental_longitude, air_time, water_time),
          environmental_id = ifelse(is.na(environmental_id), UUIDfromName("37929955-baca-4968-9e7c-bc99bd05293c", uuid_name), environmental_id))
@@ -738,7 +747,7 @@ if (x_env) {
     }, error = function(e) {
       # Rollback in case of error
       dbRollback(dbcon)
-      message("Transaction failed: ", e$message)
+      stop("Transaction failed: ", e$message)
     })
 }
 
@@ -853,7 +862,7 @@ if (x_edna) {
     }, error = function(e) {
       # Rollback in case of error
       dbRollback(dbcon)
-      message("Transaction failed: ", e$message)
+      stop("Transaction failed: ", e$message)
     })
 }
 
@@ -1000,7 +1009,7 @@ if (x_aural) {
     }, error = function(e) {
       # Rollback in case of error
       dbRollback(dbcon)
-      message("Transaction failed: ", e$message)
+      stop("Transaction failed: ", e$message)
     })
 }
 
@@ -1140,7 +1149,7 @@ if (x_ves) {
     }, error = function(e) {
       # Rollback in case of error
       dbRollback(dbcon)
-      message("Transaction failed: ", e$message)
+      stop("Transaction failed: ", e$message)
     })
 }
 
@@ -1169,7 +1178,7 @@ unified_capture = clean_capture_obs %>%
   filter(!is.na(site)) %>%  # drop captures which don't have corresponding site data in capture_survey
   select(-fulcrum_parent_id) %>%
   full_join(unified_sample, by=c("site", "date", "time_of_day", "bag_id", "detection_type")) %>%
-  mutate(taxon_capture = coalesce(species_capture, taxon_sample),
+  mutate(taxon_capture = coalesce(taxon_sample, taxon_capture),
          uuid_name = paste0(taxon_capture, svl_mm, body_mass_g, life_stage, sex, time_of_capture),
          capture_id = ifelse(is.na(capture_id), UUIDfromName("2128d8af-bb98-4206-a356-25faa67ac3f9", uuid_name), capture_id)) %>%
   select(-taxon_sample) %>%
@@ -1490,7 +1499,7 @@ if (x_capture) {
     }, error = function(e) {
       # Rollback in case of error
       dbRollback(dbcon)
-      message("Transaction failed: ", e$message)
+      stop("Transaction failed: ", e$message)
     })
 }
 
