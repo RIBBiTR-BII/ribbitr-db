@@ -26,8 +26,9 @@ db_sample = tbl(dbcon, Id("survey_data", "sample"))
 
 db_aural = tbl(dbcon, Id("survey_data", "aural"))
 db_capture = tbl(dbcon, Id("survey_data", "capture"))
-db_ves = tbl(dbcon, Id("survey_data", "ves"))
+db_edna = tbl(dbcon, Id("survey_data", "edna"))
 db_env = tbl(dbcon, Id("survey_data", "environmental"))
+db_ves = tbl(dbcon, Id("survey_data", "ves"))
 
 db_survey = tbl(dbcon, Id("survey_data", "survey"))
 db_visit = tbl(dbcon, Id("survey_data", "visit"))
@@ -41,103 +42,197 @@ db_country = tbl(dbcon, Id("survey_data", "country"))
 # Visit orphans
 ```{r}
 drop_ids = c(
-  "9b36d076-841b-49f9-ae9f-7eadec9baa2c", "90447c3d-bfc6-4581-bf28-beeb86f33da0",
-  "a9050f65-709e-445d-8ca4-a179536d5780", "1bf28e33-e456-4ee3-898a-7580792ab40f",
-  "6904dbef-49c9-4757-8649-ae47f069f350", "cdc104f1-f1aa-484a-b2cf-47bbaca7daa5",
-  "cb99a283-0f06-4567-a450-69766d6898a0", "ca59ae6e-0eb1-40ed-afe7-2b22213662eb",
-  "2b165fce-8ebf-493e-9199-3ae95a14f3f8", "6bed7760-2a80-4623-b65a-6a0d45b24c06",
-  "8c903cec-33d0-4949-adbb-7f642370e4a7", "57a77e48-2a79-4d35-8ce8-4f89dda93e93",
-  "ea3f0e78-d84d-4ec5-8184-3cebb935f211", "51606f94-8a9c-4004-bf15-7ecde1e5e147",
-  "8907e19f-df10-4f3d-ad32-f4dcd25b72db", "1ed9c7cb-9e5b-4e13-b8b5-ab73e29e1833",
-  "aa8bd4ad-a6e2-4725-b80c-362319f840bf", "6d9b3bf0-b51e-41bf-b479-2ed4e5ac8d73",
-  "2d80895f-7813-4d40-b2a1-568a8cb18f77", "1e469027-c59c-4cb5-b34c-8f8235bc893e",
-  "8c50826d-6d12-4940-8298-0d6bb012e10c", "b111a56f-e680-4980-8a53-e9d5f5d6ba87",
-  "1e6911d8-5b04-4117-ad2a-9dadfbea623d", "f06425cd-1121-4d0d-afd3-0f1829bd2028",
-  "00020b77-6418-414c-9828-86ac900fae05", "7e51c957-729f-4a26-a159-27c3ded51c53",
-  "d6d1cd72-6fa6-4b0d-8638-980fa1a8413a", "cd16c545-fdf9-40d4-adb0-690207c1b9cb",
-  "b4e833c8-a41d-408c-a3c5-d6613be63ab6", "74b339ce-eec9-4ec5-91e2-3d3fd10f8231",
-  "9d750c1d-6caa-4426-b99e-41668f7fcf1a", "c3442849-8e7f-440e-ab57-8378fccabae9",
-  "b333a9c9-a171-499e-aaff-840e1d300e47", "47dc04a6-1168-4606-afd2-3d19a77f19a3",
-  "95a47f35-2ead-4888-9897-077a92465ca5", "066ae6da-0e40-4351-9e8a-516c9da3c614",
-  "989921ad-c0ea-4eca-aee2-9ca596ddb5e6", "882e0e6d-2c38-4952-8c68-4b35d1026e09",
-  "c57d83ec-d0c3-498b-bdd6-09b25ce3031c", "7b35ab29-23e3-42d7-b56c-b195e6645da9",
-  "a4f910e2-9cae-4944-a1c6-0c79ce023bf5", "184af03d-7d64-4737-ad42-e5ac10bbb489",
-  "682e1a43-f8eb-4041-9da5-2d08993a3e4a", "29cd4ebf-2032-46a8-be18-ecffa687d402",
-  "6805ee55-7894-429d-96bd-a244e4cdf453", "652f2f1b-332b-4f27-8b52-fbc461da93fe",
-  "b2454748-ea98-45fd-8dbe-ac05d4cbbd0b", "e901af3f-eb4e-4d19-9474-406d65b49567",
-  "d29c1296-39af-4736-a6af-e311ae078a34", "167dd69a-d47b-4f2d-b3d9-eb079c73f6ba",
-  "08898499-b83d-4a18-86aa-3d597cd21066", "863d2131-45b1-4a6e-97c3-8e189e4df290",
-  "bdda0aee-03b2-479e-a3c2-c210501ec3d5", "92084661-78c5-4f04-a9c1-a0b4759b3e1a",
-  "288c17b1-1216-45bf-ba4f-6f7e21c5d81c", "a9e91153-1d04-4372-98a6-9c7ac7055ad1",
-  "a0bc8109-eb1b-4f5b-9ed2-df91d2347bb8", "e5ca0a47-9e83-4786-953e-90209c019aab",
-  "80d4c3c5-a6dc-4f2c-9b8c-5f911d131fed", "f24b0959-f83c-4760-af08-466dbbcb71c1",
-  "b3231720-4ee2-47ed-a405-e714b6ff51d2", "427f7ac7-2171-43d2-8f2e-a45284a6060c",
-  "2e1a62ba-a521-4384-b701-601db136a2b9", "53102c93-f750-4036-b94b-2ae17bd2652d",
-  "34a7fbd9-ea76-4bc4-b7c8-d9982ff989c5", "caf057ca-798f-4e47-94ed-112ea904bb76",
-  "9d690ac2-6a1e-4699-8179-8a4f0844aa2b", "1698aa73-8d0b-430f-a3ad-15f898ea89e5",
-  "417755bf-9669-44e7-adb5-cf8a1072705d", "9902b5de-4ca6-4f67-a812-1c2bd0093a57",
-  "18874d3e-d351-4293-872a-910abb1c3a7f", "83cbd81e-6253-41fb-b746-40554ea4f0c9",
-  "3d20ef49-4550-4bcd-ae2a-32bc959f90dd", "a9ee004a-89ad-4143-a066-ba049ae9defa",
-  "59b955ba-e73f-430b-a467-5a701d3094bc", "4fcebfc2-29cb-49c4-9754-d910e0d0a20f",
-  "b4a3f4ec-0bf5-4216-bff6-b31621673469", "9fb071a2-11f6-4874-ac4c-034888486577",
-  "f880e70c-d7fb-425d-ab9b-66cec6d67ea2", "03654afd-abc3-444c-9baa-5b5313df2f56",
-  "509a6506-14ac-4fc2-93ec-158f55f41421", "38768fca-35ee-4487-938f-d4fbe659f61e",
-  "9f3b57ba-047c-4f8c-8980-0030f0ab134b", "902303ca-768f-44c7-8ad2-4f8384e9aada",
-  "2d46b546-e9bc-4e9f-b66a-1bcde1d0fb67", "2cd129fb-5d81-4053-bb0e-86f6b6c1687a",
-  "8c1cabf6-1e9d-4d3e-b244-8c913d2a2095", "2e82b0ca-d828-4ad5-8914-2d01c3a09ee7",
-  "b1b901a5-bd36-47f2-b73f-f21648fd2f64", "e9e93110-6d35-4d57-9601-a30fba5884fe",
-  "7f2337f1-f445-4aa6-8aed-2b4e1ab5cf63", "1fdbfae6-58ac-49e1-9d8a-3a3d2adcd7f4",
-  "10c70365-34a1-47ad-a934-0e531aef1c41", "70ee04ed-84ba-4c14-8dfb-d7407455859f",
-  "24140125-149d-4576-a2f4-a00a0fca943e", "0051a8cf-808f-4e12-8148-cffbd16934c1",
-  "aa9d76d4-f89b-4cc0-9a29-3ee3dfc77f41", "39f8c6ec-7176-42f4-8a76-b89d96d2ea79",
-  "cebba450-ff33-4bca-8246-7ed275fb05f9", "cc171bc7-bf16-446c-abe1-c145f53ce3fe",
-  "2bea8059-e154-4c8e-969b-acf4a4f5aecd", "84be2b93-46cf-479b-8e0d-63238933f5fd",
-  "7316ef65-84a1-4554-965b-d803ca2d5b1e", "234eeb86-1074-4680-85d4-6b10e0ded920",
-  "bf17dd2a-95aa-4d13-8ae3-d867a6fb361b", "33772018-7a5c-482c-bac1-325751436951",
-  "403a4d61-3aaa-468f-bff4-502477e7457c", "2a46ab3c-b704-4d0d-9085-fbb642c7401c",
-  "ef7d87cd-39b0-4030-aab9-b5a2ea30ea7c", "2feec907-ecfa-4ff8-bd4a-d260cd674433",
-  "88dc81e4-9ce6-4b28-9e9c-9233862e7b25", "76d80f89-12a0-4de7-83b1-7a919bbc9cdc",
-  "3c8c7264-e67f-4387-a757-c46edd57d810", "6973d97a-8f6f-4673-9554-ae717f9ae131",
-  "1c46fa9d-0b72-4abb-92f4-ad36d5f7d582", "c4b3e49f-6ccd-40fb-99df-7f6e7b0b269b",
-  "1d75f5da-5efd-42a0-ad72-8d27104a88f0", "ef340a57-b70e-4080-a105-fb5746081c01",
-  "6c0f50ff-9888-44ef-97da-050a68ff5e1b", "39336cdf-ba33-46dc-b5e3-b1ef8266879d",
-  "ff911bb4-84a1-45f6-ba8c-87db8a2cf700", "b8c29609-8604-45f8-baa3-95bfa5d0e6ab",
-  "ced6c138-5748-4d13-8326-60bd6b907fc8", "8c438318-a082-44bf-944e-d43db519e7d5",
-  "c7e1ae08-4c7f-48ff-b0dd-90c6075abbc8", "49c7ad8a-01a0-4a0a-9de8-eeb1e83a2b95",
-  "34a5d605-b08f-4d69-9558-83c6708e3b9d", "0be671b7-4d6f-4450-8c37-9bc784d135ee",
-  "bf13cf5e-ea48-4150-a17a-4003646ccd67", "cc720f92-9a5d-42d7-b384-2a93027df264",
-  "534ecac4-581f-4e9e-82d1-7cc92504f385", "08f84a58-6343-4bb0-8dff-2ca13468acdc",
-  "054ce393-bf03-4ddc-b652-3c15a7facb6e", "dab6d141-e5b1-4a3b-9294-6ffdcb704295",
-  "336f1b32-8221-4fbf-9b29-12d9ee29d1f9", "735f9099-afd1-4471-b32e-936d13364e58"
+ "cd0e03b5-5e1c-4911-8db9-0c454ca1318e",
+ "6b01ad4f-0451-4b39-a76b-5aee1c58222f",
+ "963f6123-6b4d-46e5-b055-94dea6cd7c83", 
+ "ed6fe5e3-38db-412d-a09a-0e081a3ba5ab",
+ "46ac9252-f3ab-4ca9-8d0b-e16da293a380",
+ "4a0a154f-9f95-4877-825b-24891ef83c39", 
+ "7f9a09d7-f466-4f68-82aa-3d3c42e8a906",
+ "db3ea411-5c03-474f-9bc4-bf745b405858",
+ "0e6d64d8-3e4e-44ba-8e3b-24ebbcf640a4", 
+ "0dbd9a02-2341-40a5-812e-6d627564fb0b",
+ "98d94361-5697-4542-af6c-084002bb2099",
+ "333639e3-efb9-490d-846b-86652fd0894b", 
+ "01a539ed-42d5-4bc2-a0bb-83cc91815207",
+ "083995b7-60f2-4087-a5d4-76b90a7c75fc",
+ "b4b09a71-66f2-424c-afd1-2339d631ab18", 
+ "64fa02bd-7d9d-477b-b17c-d7d6ba588410",
+ "b78f4abb-0427-4c28-b2b9-aaff2265203f",
+ "500cfbf3-fd7d-4313-b5f7-32b452172676", 
+ "32b3cf15-a309-45ab-a7d8-79ebdc9550d0",
+ "c2e668b3-456f-4962-a9f3-1a6c17f925f8",
+ "2c531b9b-4ad3-4711-ad47-731d18c2a0ad", 
+ "46bda532-8a4f-4a06-8d92-5befe93e7638",
+ "071830be-d52a-47ff-ad02-5e7a95d72d2b",
+ "66afd931-ff0b-4919-950d-9a42b20961f3", 
+ "4944425d-fc41-4447-808a-dd049dfce91b",
+ "af6026cf-98d3-42a6-92fc-e46c69f14506",
+ "dddecbb1-a6e3-4e6c-80e8-9ab96b1f654c", 
+ "22430eea-5a1f-4659-9166-8a788e6f4f6b",
+ "1d3e59fb-31da-471f-adc0-1e188350c4f6",
+ "7ae0bb0b-c1bd-4471-8239-17e80b4d189d", 
+ "338e8185-ce0d-4bb4-bce1-8dddc197acec",
+ "f66c22a0-733c-4b94-b3f8-1c53caecb654",
+ "b9ebbb51-b251-4aa4-b797-052bdf21fa43", 
+ "21188e4c-c110-4458-b868-9bd53fc616c1",
+ "64fd840a-b789-4ae7-9dc7-659f760e9da2",
+ "5ae6e57c-4440-4d39-85f9-1b82d96abd8b", 
+ "0cfc728e-5356-4687-b483-7c4988f0e0d7",
+ "44d9be12-53af-4112-a5eb-f10b276e4d14",
+ "b59a94e8-744a-47a4-81e7-a865f302bc07", 
+ "f93c6667-e312-439f-a148-db3293cbf90b",
+ "7b2859ac-e3b0-44d6-80ba-b4051f44f378",
+ "e353168a-1eb1-43cf-877c-80d1678fbacc", 
+ "bd03fd3e-c1cf-45b6-8a56-8ad0487e5bec",
+ "76b969d3-96d9-42f7-ada9-f094d4f71858",
+ "151dfaeb-abc1-4dce-963e-ecaca0e89015", 
+ "16cb7766-40ac-4649-b2be-a3b7e503260e",
+ "4b54c0f5-3e3a-4aa1-95a4-0e054da466dd",
+ "5f329605-72e9-4d95-9338-22a05284fd21", 
+ "b3a9d3ca-5f79-460e-b161-a2f2a29dd333",
+ "f100111e-bfa4-45da-b205-a14f0e41f48f",
+ "073dd7f9-e3c2-4fc0-b545-fe760b429c1b", 
+ "ba243693-a86c-40dc-8d33-3e1e54806565",
+ "499d553f-a8d8-493f-bbc0-0f57ae254371",
+ "61c64536-0a1c-4565-a29d-517d946f161d", 
+ "25731d1a-7206-4efd-8502-e7fd46bc4089",
+ "2c28b859-30b0-4935-b347-b088a4b8b392",
+ "4d2321ff-5eeb-4f9c-aceb-987b0f785afb", 
+ "5726e765-b92e-4887-a85d-a74f3a178f5a",
+ "5e4390e2-cd78-4759-ab7a-4ffc61f6c0de",
+ "66773b40-2444-4d08-bf7f-8eebfdd40346", 
+ "5a56d2e3-aa9c-49ef-ab5f-4458c2b31671",
+ "cea1d872-bd97-47e2-a186-7d4581698866",
+ "05a07720-b758-403f-97df-33eeca50836a", 
+ "41d6492e-fcca-46b9-b8a7-6e426c2815b5",
+ "efeb7746-9568-4771-8f31-5effb382c66a",
+ "1ab74d20-810f-4abc-b8c9-83ebca8a5267", 
+ "ada7760c-f120-4571-b5b8-e1d72e8f3a90",
+ "91017a06-37cc-4cf4-8317-df9fcc6ce543",
+ "0f42950f-22c2-4403-9846-ce881ee1346f", 
+ "97eb72bd-37d2-40c7-8baa-de530ac87bfb",
+ "3004a02c-8b62-41de-9e21-0f17149eed46",
+ "65b37c97-ff18-434b-9e39-06e7fd7f6a8a", 
+ "09aca49b-a4fa-472e-b2b7-aa2b314dfd44",
+ "2d67e8f4-1496-4ec2-a892-8e367fa3b082",
+ "26c53b86-ada5-4418-9836-7d7323680ae0", 
+ "6d6c9bdb-8a27-47a6-8892-179725d94efc",
+ "b3b83532-55b1-4edc-8d40-f89c57a1d367",
+ "19a40891-6609-44fa-9ed6-17ab80623dce", 
+ "294be729-f57e-4fcc-9b16-f0369697afad",
+ "90fa9969-5039-4f7a-beb2-e48ed6603799",
+ "5c45d281-c11b-4640-be5a-643e5557e1f8", 
+ "84cf99e9-a8c3-4e97-a33b-eab1d4e436f5",
+ "26443e6d-bee3-4dad-b537-fd55a0036671",
+ "da01de02-ca18-4084-9639-9bfb10b7c082", 
+ "3d4043f4-0969-4581-a9a5-6a8e03ba8042",
+ "d7469497-6424-4845-a188-0d0d66c73873",
+ "ee376dad-7ecf-44df-86ce-c9c155ae222e", 
+ "cd759f15-1a02-4b76-88af-55b62191881d",
+ "58267801-cbe6-4877-90df-98a40664cfb8",
+ "59965217-5066-4f7b-b253-b90a623bf030", 
+ "b28ae399-aec0-4182-9669-cce947b3ba8f",
+ "b7322f1a-053f-41e5-8594-b9579c847813",
+ "e781a3b3-43df-40f6-b72a-1444abc60d61", 
+ "c7ff63cd-0cb3-4f7f-b742-7c9e44a7b311",
+ "c0c4dc05-5aa6-4da4-b49d-03141c745204",
+ "dfac0061-ffb6-444b-9f7d-402dff91da3c", 
+ "ac06a29f-fe12-4de2-932d-12c8d5f339ee",
+ "e8685d08-4ac5-4e01-b448-0e940d072b09",
+ "65d65a45-8da0-4b8c-bc2d-8956c68122a1", 
+ "8f41b5eb-00f6-4d30-8195-c1667eed64af",
+ "bb90892d-7549-4f6b-af66-c95fecd111aa",
+ "65ca9511-4c42-4819-bb05-407cbe128c57", 
+ "d318f271-3be9-4bb8-995a-75731c953ae3",
+ "3acc7955-2fda-4a25-a388-25324748bff9",
+ "551e9474-03eb-409f-81dc-b194be8b0842", 
+ "015bd48f-5d86-4273-8851-7694f41cffb5",
+ "9541a299-9e1b-4298-9bba-a954acec60cf",
+ "1802f484-ed21-49e6-a568-34cc5450a624", 
+ "4a633576-2f5b-402e-be2e-a23b9c01f31c",
+ "ff8de21d-62c0-4282-8540-9d4487fe5e3f",
+ "81951319-8ec8-4f64-a033-6e55a155c114", 
+ "6fe5e114-362d-4b83-8d50-f77a7a409f60",
+ "1bbd4c41-4abe-4b47-bd19-d8c6f4482a35",
+ "3937d71c-5d7c-4147-9b4a-2b1f94a4947b", 
+ "06097851-7102-4396-a0c3-7f0dd249e14f",
+ "17112594-d1c9-41d5-b0d0-0190cc5cb59f",
+ "8ad0fe0e-2ff6-4eb0-9d08-69615b6ec8b6", 
+ "3898077a-e1c5-404f-896e-c7b998b48276",
+ "50945ffe-3b0a-4401-acb7-6d6bd8bafe2a",
+ "4c9e405e-01f3-4c21-ab6b-051b8fc57c50", 
+ "9d03c642-b483-4f1a-b0fe-b49d786fcc40",
+ "b67e7e7a-87e3-47d5-be7b-c9bc7b4db33b",
+ "4f6b9253-5b4d-440f-8802-84548abd7ae5", 
+ "142cce6a-664c-42d2-917a-a524adf5c6ba",
+ "fe699495-6d9a-4f40-9c08-c70219f2f468",
+ "88441e94-13dd-4392-a393-4fa7d3e4fe08", 
+ "7b788332-7a0f-48f3-8424-77033f2c5ff3",
+ "06d6fdcf-9027-4e37-8537-46cf96f7c5f9",
+ "7f5a6b34-262f-4c1f-94a7-6717a076d07a", 
+ "a7f80d67-c3e9-4f4b-8b80-7429d8b89098",
+ "57c249cd-1057-4b0d-a59f-8eb3e02af958",
+ "3cf18528-2a2a-4b79-a366-d9d66e6e2b07", 
+ "9f9851f1-dbfc-48ac-af96-61712fa6d09a",
+ "c9ee7106-415c-47ec-8c09-36afb439a0ed",
+ "c1676bd2-ad61-4867-9fb7-502a95efff2d", 
+ "4cd33d9d-b569-4924-bb6d-4dfa23bab795"
 )
 
 drop_visit = db_visit %>%
   filter(visit_id %in% drop_ids)
+
+count = as.character(drop_visit %>% count() %>% pull())
+cat("visit:", count)
 
 drop_survey = db_survey %>%
   right_join(drop_visit, by = "visit_id") %>%
   select(all_of(colnames(db_survey))) %>%
   filter(!is.na(survey_id))
 
+count = as.character(drop_survey %>% count() %>% pull())
+cat("survey:", count)
+
 drop_env = db_env %>%
   right_join(drop_survey, by = "survey_id") %>%
   select(all_of(colnames(db_env))) %>%
   filter(!is.na(environmental_id))
+
+count = as.character(drop_env %>% count() %>% pull())
+cat("env:", count)
+
+drop_edna = db_edna %>%
+  right_join(drop_survey, by = "survey_id") %>%
+  select(all_of(colnames(db_edna))) %>%
+  filter(!is.na(edna_id))
+
+count = as.character(drop_edna %>% count() %>% pull())
+cat("edna:", count)
 
 drop_aural = db_aural %>%
   right_join(drop_survey, by = "survey_id") %>%
   select(all_of(colnames(db_aural))) %>%
   filter(!is.na(aural_id))
 
+count = as.character(drop_aural %>% count() %>% pull())
+cat("aural:", count)
+
 drop_ves = db_ves %>%
   right_join(drop_survey, by = "survey_id") %>%
   select(all_of(colnames(db_ves))) %>%
   filter(!is.na(ves_id))
 
+count = as.character(drop_ves %>% count() %>% pull())
+cat("ves:", count)
+
 drop_capture = db_capture %>%
   right_join(drop_survey, by = "survey_id") %>%
   select(all_of(colnames(db_capture))) %>%
   filter(!is.na(capture_id))
+
+count = as.character(drop_capture %>% count() %>% pull())
+cat("capture:", count)
 
 drop_sample_all = db_sample %>%
   right_join(drop_capture, by = "capture_id") %>%
@@ -154,8 +249,16 @@ update_sample = drop_sample_all %>%
   mutate(capture_id = NA) %>%
   collect()
 
+count = as.character(update_sample %>% count() %>% pull())
+cat("sample_update:", count)
+
 drop_sample = drop_sample_all %>%
   anti_join(bd_samples, by = "sample_id")
+
+count = as.character(drop_sample %>% count() %>% pull())
+cat("sample_drop:", count)
+
+
 ```
 
 # cascade drop
@@ -181,6 +284,8 @@ tryCatch(
       rows_delete(drop_ves, by="ves_id", unmatched = "ignore", in_place=TRUE)
     db_env = db_env %>%
       rows_delete(drop_env, by="environmental_id", unmatched = "ignore", in_place=TRUE)
+    db_edna = db_edna %>%
+      rows_delete(drop_edna, by="edna_id", unmatched = "ignore", in_place=TRUE)
     
     db_survey = db_survey %>%
       rows_delete(drop_survey, by="survey_id", unmatched = "ignore", in_place=TRUE)
