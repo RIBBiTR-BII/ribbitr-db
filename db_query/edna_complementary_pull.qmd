@@ -1,0 +1,216 @@
+---
+title: "edna_complementary_pull"
+format: html
+---
+
+```{r}
+
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, here, RPostgres, DBI, RIBBiTR-BII/ribbitrrr)
+
+# connect to database
+dbcon = hopToDB("ribbitr")
+
+```
+# data of interest:
+  * VES, Capture, Environmental data
+  * Panama 2022
+  * Penslvania 2022 & 2023
+  * associated metadata
+
+# table pointers
+```{r}
+# db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+# db_edna = tbl(dbcon, Id("survey_data", "edna"))
+# db_sample = tbl(dbcon, Id("survey_data", "sample"))
+
+db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
+
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_ves = tbl(dbcon, Id("survey_data", "ves"))
+db_env = tbl(dbcon, Id("survey_data", "environmental"))
+
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+```
+
+# data of interest
+```{r}
+q_survey = db_survey %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter((country == "panama" & date >= "2022-01-01" & date < "2023-01-01") |
+           (region == "pennsylvania" & date >= "2022-01-01" & date < "2024-01-01"))
+
+q_capture = db_capture %>%
+  inner_join(q_survey, by = "survey_id") %>%
+  select(taxon_capture,
+         time_of_capture,
+         life_stage,
+         tad_stage,
+         sex,
+         body_mass_g,
+         svl_mm,
+         tail_length_mm,
+         body_temp_c,
+         substrate_temp_c,
+         microhabitat_type,
+         microhabitat_temperature,
+         microhabitat_wet,
+         microhabitat_notes,
+         capture_type,
+         observer_capture,
+         processor,
+         cmr_id,
+         capture_latitude,
+         capture_longitude,
+         comments_capture,
+         survey_id,
+         detection_type,
+         start_time,
+         end_time,
+         time_of_day,
+         transect,
+         comments_survey,
+         visit_id,
+         comments_visit,
+         date,
+         site,
+         site_id,
+         site_latitude,
+         site_longitude,
+         site_elevation_m,
+         region,
+         country,
+         time_zone
+         )
+
+q_env = db_env %>%
+  inner_join(q_survey, by = "survey_id") %>%
+  select(environmental_id,
+         air_time,
+         air_temp_c,
+         wind_speed_m_s,
+         wind,
+         sky,
+         cloud_cover_percent,
+         precip,
+         relative_humidity_percent,
+         pressure_psi,
+         water_time,
+         water_temp_c,
+         p_h,
+         tds_ppm,
+         salinity_ppt,
+         dissolved_o2_percent,
+         conductivity_us_cm,
+         vegetation_cover_percent,
+         comments_environmental,
+         environmental_latitude,
+         environmental_longitude,
+         survey_id,
+         detection_type,
+         start_time,
+         end_time,
+         time_of_day,
+         transect,
+         comments_survey,
+         visit_id,
+         comments_visit,
+         date,
+         site,
+         site_id,
+         site_latitude,
+         site_longitude,
+         site_elevation_m,
+         region,
+         country,
+         time_zone)
+
+q_ves = db_ves %>%
+  inner_join(q_survey, by = "survey_id") %>%
+  select(taxon_ves,
+         count_ves,
+         life_stage,
+         visual_animal_state,
+         sex,
+         microhabitat_type,
+         comments_ves,
+         observer_ves,
+         survey_id,
+         detection_type,
+         start_time,
+         end_time,
+         time_of_day,
+         transect,
+         comments_survey,
+         visit_id,
+         comments_visit,
+         date,
+         site,
+         site_id,
+         site_latitude,
+         site_longitude,
+         site_elevation_m,
+         region,
+         country,
+         time_zone)
+
+d_capture = q_capture %>%
+  collect() %>%
+  arrange(country, date, site)
+
+d_env = q_env %>%
+  collect() %>%
+  arrange(country, date, site)
+
+d_ves = q_ves %>%
+  collect() %>%
+  arrange(country, date, site)
+
+d_taxa = db_taxa %>%
+  collect()
+
+```
+
+# metadata!
+```{r}
+md_ves <- get_query_metadata(dbcon, q_ves)
+md_capture <- get_query_metadata(dbcon, q_capture)
+md_env <- get_query_metadata(dbcon, q_env)
+md_taxa = get_query_metadata(dbcon, db_taxa)
+
+md_all = bind_rows(md_ves,
+                   md_capture,
+                   md_env,
+                   md_taxa) %>%
+  distinct() %>%
+  select(table_name,
+         column_name,
+         definition,
+         units,
+         accuracy,
+         scale,
+         format,
+         data_type,
+         is_nullable) %>%
+  arrange(table_name,
+          column_name)
+
+```
+
+# export
+```{r}
+write_csv(d_capture, here("staging", "edna_comp", paste0("edna_comp_capture_", today(), ".csv")))
+write_csv(d_ves, here("staging", "edna_comp", paste0("edna_comp_ves_", today(), ".csv")))
+write_csv(d_env, here("staging", "edna_comp", paste0("edna_comp_environmental_", today(), ".csv")))
+write_csv(d_taxa, here("staging", "edna_comp", paste0("edna_comp_taxa_lookup_", today(), ".csv")))
+write_csv(md_all, here("staging", "edna_comp", paste0("edna_comp_metadata_", today(), ".csv")))
+          
+
+```
