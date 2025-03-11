@@ -35,9 +35,8 @@ db_country = tbl(dbcon, Id("survey_data", "country"))
 ```{r}
 
 
-find_time_range_lubridate_group <- function(times, start_time = NA, end_time = NA) {
+find_time_range <- function(times, max_range = 12) {
   # Remove NA values
-  times = c(times, start_time, end_time)
   times <- times[!is.na(times)]
   
   if (length(times) == 0) {
@@ -50,9 +49,9 @@ find_time_range_lubridate_group <- function(times, start_time = NA, end_time = N
   # Check if times span midnight
   max_diff <- max(hours) - min(hours)
   
-  if (max_diff > 12) {
+  if (max_diff > max_range) {
     # Times span midnight, adjust hours
-    hours_adjusted <- ifelse(hours < 12, hours + 24, hours)
+    hours_adjusted <- ifelse(hours < max_range, hours + 24, hours)
     
     # Find min and max in adjusted time
     first_time <- times[which.min(hours_adjusted)]
@@ -76,10 +75,11 @@ survey_capture = db_capture %>%
   collect() %>%
   group_by(survey_id) %>%
   mutate(
-    start_time = find_time_range_lubridate_group(time_of_capture, start_time, end_time)$first_time,
-    end_time = find_time_range_lubridate_group(time_of_capture, start_time, end_time)$last_time
+    start_time = find_time_range(c(time_of_capture, start_time, end_time))$first_time,
+    end_time = find_time_range(c(time_of_capture, start_time, end_time))$last_time
   ) %>%
   ungroup()
+
 
 survey_capture_revised = survey_capture %>%
   select(all_of(colnames(db_survey))) %>%
@@ -125,21 +125,57 @@ survey_data = db_survey %>%
   left_join(db_region, by = "region_id") %>%
   collect()
 
+start_timestamp_local = function(date, start_time, tz) {
+  force_tz(ymd_hms(paste(date, start_time)), tzone = tz)
+}
+
+start_timestamp_utc = function(date, start_time, tz) {
+  stl = start_timestamp_local(date, start_time, tz)
+  return(with_tz(stl, tzone = "UTC"))
+}
+
+end_timestamp_local = function(date, start_time, end_time, tz) {
+  start = force_tz(ymd_hms(paste(date, start_time)), tzone = tz)
+  end_1 = force_tz(ymd_hms(paste(date, end_time)), tzone = tz)
+  dur_1 = as.numeric(difftime(end_1, start, units = "mins"))
+  end_date = as.Date(date - days(floor(dur_1 / 1440)))
+  end_timestamp = force_tz(ymd_hms(paste(end_date, end_time)), tzone = tz)
+  return(end_timestamp)
+}
+
+end_timestamp_utc = function(date, start_time, end_time, tz) {
+  etl = end_timestamp_local(date, start_time, end_time, tz)
+  return(with_tz(etl, tzone = "UTC"))
+}
+
+duration_minutes = function(start_timestamp, end_timestamp) {
+  return(as.integer(round(as.numeric(difftime(end_timestamp, start_timestamp, units = "mins")), digits = 0)))
+}
+
+count_observers = function(observers) {
+  c_obs = length(unique(na.omit(unlist(str_split(gsub(" ", "", observers), ",")))))
+  c_obs[c_obs == 0] = NA
+  return(c_obs)
+}
+
+clean_survey_times = function(df, tz) {
+  df_out = df %>%
+    mutate(start_timestamp_utc = start_timestamp_utc(date, start_time, tz),
+           end_timestamp_utc = end_timestamp_utc(date, start_time, end_time, tz),
+           duration_minutes = duration_minutes(start_timestamp_utc, end_timestamp_utc))
+}
+
+df_out = survey_data %>%
+  clean_survey_times("America/Panama") %>%
+  mutate(number_observers = count_observers(observers))
+
 timestamp_func = function(df, tz) {
   print(tz)
 
   df_out = df %>%
     filter(time_zone == tz) %>%
-    mutate(start_timestamp = force_tz(ymd_hms(paste(date, start_time)), tzone = tz),
-           end_timestamp = force_tz(ymd_hms(paste(date, end_time)), tzone = tz),
-           duration_minutes = as.numeric(difftime(end_timestamp, start_timestamp, units = "mins")),
-           number_observers = map_int(observers_survey, ~ length(unique(na.omit(unlist(str_split(gsub(" ", "", .x), ",")))))),
-           number_observers = ifelse(number_observers == 0, NA, number_observers),
-           end_date = as.Date(date - days(floor(duration_minutes / 1440))),
-           end_timestamp = force_tz(ymd_hms(paste(end_date, end_time)), tzone = tz),
-           duration_minutes = as.integer(round(as.numeric(difftime(end_timestamp, start_timestamp, units = "mins")), digits = 0)),
-           start_timestamp_utc = with_tz(start_timestamp, tzone = "UTC"),
-           end_timestamp_utc = with_tz(end_timestamp, tzone = "UTC"))
+    clean_survey_times(tz) %>%
+    mutate(number_observers = count_observers(observers))
 }
 
 tz_list = survey_data %>%
