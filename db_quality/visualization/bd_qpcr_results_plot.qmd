@@ -1,0 +1,57 @@
+---
+title: "bd_qpcr_results_plot"
+format: html
+---
+
+```{r}
+librarian::shelf(tidyverse, dbplyr, lubridate, RPostgres, DBI, RIBBiTR-BII/ribbitrrr, ggplot2)
+
+## Connect to DB
+dbcon <- hopToDB("ribbitr")
+
+sncon <- hopToDB("qpcr")
+```
+
+# data pointers
+```{r}
+db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+
+sn_res = tbl(sncon, Id("public", "results"))
+
+sn_resi = tbl(sncon, Id("public", "results_snarl_import"))
+```
+
+# plotting
+```{r}
+data_bd = db_bd %>%
+  collect()
+
+data_sn = data_bd %>%
+  filter(qpcr_lab == "snarl")
+
+data_res = sn_res %>%
+  collect()
+
+unique(data_res$target)
+
+data_resi = sn_resi %>%
+  collect()
+
+unique(data_resi$standard_type)
+
+ggplot(data=data_bd, aes(x=log(average_target_quant), y=log(target_quant_per_swab), color=standard_target_type)) +
+      geom_point()
+
+ggplot(data=data_sn, aes(x=log(average_target_quant), y=log(target_quant_per_swab), color=standard_target_type)) +
+      geom_point()
+
+ggplot(data=data_resi, aes(x=log(start_quant), y=log(bd_load), color=standard_type)) +
+      geom_point()
+
+some_calc = data_resi %>%
+  mutate(factor = bd_load/ start_quant)
+
+samp = data_res %>%
+  filter(sample_id == "RKS18685")
+
+```
