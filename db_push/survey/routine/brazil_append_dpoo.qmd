@@ -37,6 +37,7 @@ db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
 
 db_aural = tbl(dbcon, Id("survey_data", "aural"))
 db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_edna = tbl(dbcon, Id("survey_data", "edna"))
 db_env = tbl(dbcon, Id("survey_data", "environmental"))
 db_ves = tbl(dbcon, Id("survey_data", "ves"))
 
@@ -106,7 +107,7 @@ data_of_interest = db_sample %>%
          genetic_id = genetic) %>%
   arrange(bd_swab_id)
 
-write.csv(data_of_interest, here("staging", "br_2023_02_conflicting_data.csv"))
+# write.csv(data_of_interest, here("staging", "br_2023_02_conflicting_data.csv"))
   
 ```
 
@@ -199,12 +200,11 @@ clean_tissue = raw_tissue %>%
            species) %>%
   mutate(bd_swab_tube_id = ifelse(bd_swab_tube_id == "NA", NA_character_, bd_swab_tube_id),
          bacterial_swab_tube_id = ifelse(bacterial_swab_tube_id == "NA", NA_character_, bacterial_swab_tube_id),
-         mic_swab_tube_id = ifelse(mic_swab_tube_id == "NA", NA_character_, mic_swab_tube_id),
-         capture_id_temp = UUIDgenerate()) %>%
+         mic_swab_tube_id = ifelse(mic_swab_tube_id == "NA", NA_character_, mic_swab_tube_id)) %>%
   ungroup() %>%
   mutate(is_duplicate = is.na(bd_swab_tube_id))
 
-clean_data = bind_rows(clean_focal,
+clean_capture = bind_rows(clean_focal,
                        clean_nonfocal,
                        clean_tissue) %>%
   rename(observer_capture = observer,
@@ -233,14 +233,6 @@ clean_data = bind_rows(clean_focal,
          sex = ifelse(grepl("female", capture_comments, ignore.case = TRUE), "female", sex),
          taxon_capture = tolower(gsub(" ", "_", taxon_capture)),
          taxon_capture = gsub("_sp.", "", taxon_capture),
-         taxon_capture = case_match(taxon_capture,
-                              "ischnocnema__henselii" ~ "ischnocnema_henselii",
-                              "na" ~ NA_character_,
-                              "controle" ~ NA_character_,
-                              "hyllodes_phyllodes" ~ "hylodes_phyllodes",
-                              "hadadus_binotatus" ~ "haddadus_binotatus",
-                              "scinax_crospedopilus" ~ "scinax_crospedospilus",
-                              .default = taxon_capture),
          site = coalesce(new_transect_id, transect_id),
          site = tolower(site),
          site = ifelse(site == "na", NA_character_, site),
@@ -284,7 +276,8 @@ clean_data = bind_rows(clean_focal,
          relative_humidity_percent = as.numeric(rel_humidity),
          air_temp_c = round(as.numeric(air_temp_c), digits = 1),
          p_h = round(as.numeric(water_ph), digits = 1),
-         water_temp_c = round(as.numeric(water_temperature_c), digits = 1))
+         water_temp_c = round(as.numeric(water_temperature_c), digits = 1)) %>%
+  ribbitr_clean_taxa(taxon_capture, comments_capture)
 
 ```
 
@@ -293,7 +286,7 @@ clean_data = bind_rows(clean_focal,
 
 ```{r}
 
-gelled_data = clean_data %>%
+gelled_capture = clean_capture %>%
   # inherit/assign site_id
   left_join(db_site %>%
               select(site,
@@ -307,7 +300,8 @@ gelled_data = clean_data %>%
                      site_id) %>%
               collect(), by = c("date", "time_of_day", "site_id")) %>%
   group_by_at(c("date", "time_of_day", "site_id")) %>%
-  mutate(visit_id = ifelse(is.na(visit_id), UUIDgenerate(), visit_id)) %>%
+  mutate(uuid_name_visit = paste0(site, date, time_of_day),
+         visit_id = ifelse(is.na(visit_id), UUIDfromName("b16032a6-76a0-428a-808a-50a969ba87de", uuid_name_visit), visit_id)) %>%
   ungroup() %>%
   # inherit/assign survey_id
   left_join(db_survey %>%
@@ -321,7 +315,8 @@ gelled_data = clean_data %>%
           detection_type) %>%
   mutate(start_time = as_hms(min(time_of_capture, na.rm = TRUE)),
          end_time = as_hms(max(time_of_capture, na.rm = TRUE)),
-         survey_id = ifelse(is.na(survey_id), UUIDgenerate(), survey_id),
+         uuid_name_survey = paste0(visit_id, transect, start_time, detection_type),
+         survey_id = ifelse(is.na(survey_id), UUIDfromName("e3c835a4-4c8d-491c-9970-011aba853686", uuid_name_survey), survey_id),
          observers_survey = paste(unique(unlist(strsplit(observer_capture, ", "))), collapse = ", "),
          number_observers = lengths(strsplit(observers_survey, ",")),
          observers_survey = ifelse(observers_survey == "NA", NA_character_, observers_survey),
@@ -340,9 +335,12 @@ gelled_data = clean_data %>%
               collect(), by = c("survey_id", "bd_swab_tube_id", "svl_mm", "body_mass_g")) %>%
   mutate(start_time = as_hms(ifelse(start_time == Inf, NA, start_time)),
          end_time = as_hms(ifelse(end_time == -Inf, NA, end_time)),
-         capture_id_temp = map_chr(capture_id_temp, ~ ifelse(is.na(.x), UUIDgenerate(), .x)),
+         uuid_name_capture = paste0(survey_id, svl_mm, body_mass_g, bd_swab_tube_id, time_of_capture),
+         capture_id = UUIDfromName("e3c835a4-4c8d-491c-9970-011aba853686", uuid_name_capture),
          visit_id = ifelse(is.na(site_id), NA, visit_id),
          survey_id = ifelse(is.na(site_id), NA, survey_id))
+
+peace = get_dupes(gelled_capture, capture_id)
 
 ```
 
