@@ -1,0 +1,127 @@
+---
+title: "brazil_sample_conflict_2023-02"
+format: html
+---
+
+```{r}
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, rio, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+## Connect to DB
+dbcon <- hopToDB("wibbitr")
+
+## Pull metadata from database
+mdc = tbl(dbcon, Id("public", "all_columns")) %>%
+  filter(table_schema == "survey_data") %>%
+  collect()
+
+## Point to local data directory
+ddir = Sys.getenv("data_dir")  # data directory
+# Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
+wddir = here(ddir, "brazil", '2025-01-27') # working data directory
+
+```
+
+# 1 - Import data
+
+## Pointers to relevant tables
+
+```{r}
+# pull relevant chain tables from DB
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+
+db_aural = tbl(dbcon, Id("survey_data", "aural"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_edna = tbl(dbcon, Id("survey_data", "edna"))
+db_env = tbl(dbcon, Id("survey_data", "environmental"))
+db_ves = tbl(dbcon, Id("survey_data", "ves"))
+
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
+db_cmr = tbl(dbcon, Id("survey_data", "cmr"))
+db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
+
+```
+
+
+# existing brazil data dates
+```{r}
+data_br = db_visit %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(country == "brazil") %>%
+  select(date,
+         site,
+         visit_id,
+         project) %>%
+  collect() %>%
+  arrange(date,
+          site)
+
+visit_of_interest = data_br %>%
+  filter(date > "2023-02-01") %>%
+  pull(visit_id)
+
+data_of_interest = db_sample %>%
+  inner_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  filter(visit_id %in% visit_of_interest) %>%
+    select(sample_name,
+         sample_type,
+         capture_id,
+         life_stage,
+         sex,
+         comments_capture,
+         taxon_capture,
+         transect,
+         time_of_day,
+         date,
+         site) %>%
+    collect() %>%
+  pivot_wider(names_from = "sample_type",
+              values_from = "sample_name") %>%
+  select(capture_id,
+         taxon_capture,
+         life_stage,
+         sex,
+         bd,
+         genetic,
+         comments_capture,
+         transect,
+         time_of_day,
+         date,
+         site) %>%
+  rename(species = taxon_capture,
+         bd_swab_id = bd,
+         genetic_id = genetic) %>%
+  arrange(bd_swab_id)
+
+samples_of_interest = data_of_interest = db_sample %>%
+  inner_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  filter(visit_id %in% visit_of_interest) %>%
+    select(all_of(colnames(db_sample))) %>%
+    collect()
+
+revised_sample = samples_of_interest %>%
+  mutate(sample_name_conflict = sample_name,
+         sample_name = paste0(sample_name, "_ts"))
+
+```
+
+```{r}
+temp_sample = stage_to_temp(dbcon, db_sample, revised_sample)
+pointer = tbl(dbcon, temp_sample)
+db_sample = rows_update(db_sample, pointer, by="sample_id", in_place=TRUE, unmatched = "ignore")
+
+```
