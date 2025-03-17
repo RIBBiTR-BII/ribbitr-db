@@ -1214,7 +1214,7 @@ gelled_sample = clean_sample %>%
               select(-capture_id) %>%
               collect(), by = c("sample_name", "sample_type")) %>%
   mutate(uuid_name = paste0(sample_name, sample_type),
-         visit_id = ifelse(is.na(sample_id), UUIDfromName("1208e62f-d3a1-462c-984f-0bf1f43f5837", uuid_name), sample_id))
+         sample_id = ifelse(is.na(sample_id), UUIDfromName("1208e62f-d3a1-462c-984f-0bf1f43f5837", uuid_name), sample_id))
 
 ```
 
