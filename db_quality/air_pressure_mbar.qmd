@@ -1,0 +1,29 @@
+---
+title: "air_pressure_mbar"
+format: html
+---
+
+```{r}
+
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, uuid, RIBBiTR-BII/ribbitrrr)
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+# connect to database
+dbcon = hopToDB("wibbitr")
+```
+
+```{r}
+db_env = tbl(dbcon, Id("survey_data", "environmental"))
+
+update_env = db_env %>%
+  mutate(air_pressure_mbar = round(pressure_psi * 68.9476, digits = 1))
+
+db_env = db_env %>%
+  rows_update(update_env, by = "environmental_id", unmatched = "ignore", in_place = TRUE)
+
+```
+
+```{r}
+dbDisconnect(dbcon)
+```
