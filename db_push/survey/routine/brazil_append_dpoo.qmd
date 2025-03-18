@@ -134,6 +134,8 @@ raw_edna_2024 = in_edna[["2024"]]
 raw_tissue = import_list(here(wddir, "Boraceia_species tissues_2024.xlsx"))[["Sheet1"]]
 raw_loggers = read_csv(here(wddir, "RIBBiTR_Brazil_Dataloggers_2024_clean.csv"))
 
+
+local_tz = "America/Sao_Paulo"
 ```
 # 2 - Clean data
 
@@ -273,8 +275,6 @@ clean_capture = bind_rows(clean_focal,
          capture_latitude = ifelse(capture_longitude > -30, NA, capture_latitude),
          capture_longitude = ifelse(capture_longitude > -30, NA, capture_longitude),
          capture_latitude = ifelse(capture_latitude == -23.35632 & capture_longitude == -45.88978, -23.65632, capture_latitude),
-         project = "ribbitr",
-         visit_lab = "becker_lab",
          time_of_day = survey_time,
          transect = transect_type,
          observer_capture = gsub("_", ",", observer_capture),
@@ -288,31 +288,421 @@ clean_capture = bind_rows(clean_focal,
          water_temp_c = round(as.numeric(water_temperature_c), digits = 1)) %>%
   ribbitr_clean_taxa(taxon_capture, comments_capture)
 
-peace = compare_df_cols(
+compare_edna_raw = compare_df_cols(
   raw_edna_2022,
   raw_edna_2023,
   raw_edna_2024)
 
 clean_edna = bind_rows(raw_edna_2022 %>%
                          clean_names() %>%
-                         mutate(collect_time = as.hms(as.numeric(collect_time)*24*60*60)),
+                         rename(country = location) %>%
+                         mutate(collect_time = as_hms(as.numeric(collect_time)*24*60*60)),
                        raw_edna_2023 %>%
                          clean_names() %>%
-                         mutate(collect_time = as.hms(as.numeric(collect_time)*24*60*60)),
+                         rename(wind_speed_m_s = wind_speed_ms,
+                                air_pressure_in_hg = pressure) %>%
+                         mutate(collect_time = as_hms(as.numeric(collect_time)*24*60*60)),
                        raw_edna_2024 %>%
                          clean_names() %>%
-                         rename(air_pressure_) %>%
-                         mutate(collect_time = as.hms(collect_time),
+                         rename(air_pressure_in_hg = bar) %>%
+                         mutate(collect_time = as_hms(collect_time),
                                 control = as.logical(control),
-                                edna_volume_ml = as.numeric(edna_volume_ml)))
+                                edna_volume_ml = as.numeric(edna_volume_ml))) %>%
+  rename(edna_latitude = latitude,
+         edna_longitude = longitude,
+         collection_type = active_passive,
+         date = date_ymd,
+         edna_sample_name = edna_sample_id,
+         edna_transect_m = location_m,
+         edna_elevation_m = elevation_m,
+         collection_time = collect_time) %>%
+  unite("comments_edna", c("comments_based_renatos_spreadsheet", "notes"), sep = "; ", na.rm = TRUE) %>%
+  mutate(detection_type = "edna",
+         new_transect_id = ifelse(new_transect_id == "NA", NA_character_, new_transect_id),
+         transect_id = ifelse(transect_id == "NA", NA_character_, transect_id),
+         edna_latitude = round(as.numeric(ifelse(edna_latitude == "NA", NA, edna_latitude)), digits = 6),
+         edna_longitude = round(as.numeric(ifelse(edna_longitude == "NA", NA, edna_longitude)), digits = 6),
+         edna_elevation_m = as.numeric(edna_elevation_m),
+         date = as.Date(date),
+         filter_date = date,
+         filter_start_time = as_hms(filter_start_time),
+         filter_end_time = as_hms(filter_end_time),
+         air_temp_c = round(as.numeric(air_temp_c), digits = 1),
+         water_temp_c = round(as.numeric(water_temp_c), digits = 1),
+         wind_speed_m_s = as.numeric(wind_speed_m_s),
+         relative_humidity_percent = as.numeric(humidity),
+         p_h = round(as.numeric(p_h), digits = 1),
+         air_pressure_mbar = as.numeric(air_pressure_in_hg) * 33.8639,
+         edna_elevation_m = as.numeric(edna_elevation_m),
+         site = tolower(coalesce(new_transect_id, transect_id)),
+         time_of_day = case_when(collection_time >= as_hms("08:00:00") & collection_time < as_hms("20:00:00") ~ "day",
+                                 collection_time < as_hms("08:00:00") | collection_time >= as_hms("20:00:00") ~ "night",
+                                 .default = NA_character_))
 ```
 
-# 3 Checks
-## gel
+## unify visit
+```{r}
+unified_visit = bind_rows(clean_edna,
+                          clean_capture) %>%
+  filter(!is.na(date),
+         !is.na(time_of_day),
+         !is.na(site)) %>%
+  select(date,
+         time_of_day,
+         site) %>%
+  distinct()
+```
+
+## gel visit
+```{r}
+gelled_visit = unified_visit %>%
+  inner_join(db_site %>%
+              select(tbl_keys("site", mdc)) %>%
+              collect(),
+            by = "site") %>%
+  left_join(db_visit %>%
+              select(tbl_keys("visit", mdc)) %>%
+              collect(),
+            by = tbl_nkey("visit", mdc)) %>%
+  mutate(uuid_name = paste0(site, date, time_of_day),
+         visit_id = ifelse(is.na(visit_id), UUIDfromName("2f5bf5f7-d325-4b93-9c46-821f5b5178e8", uuid_name), visit_id),
+         project = "ribbitr",
+         visit_lab = "becker_lab")
+```
+
+## Generate stats for log
+```{r}
+dblog = list()
+dblog$date_min = min(gelled_visit$date)
+dblog$date_max = max(gelled_visit$date)
+dblog$site = gelled_visit$site %>% unique()
+dblog$site_id = gelled_visit$site_id %>% unique()
+dblog$region = db_site %>%
+  left_join(db_region, by = "region_id") %>%
+  filter(site %in% dblog$site) %>%
+  pull(region) %>%
+  unique()
+
+```
+
+## subset visit
+```{r}
+subset_visit = gelled_visit %>%
+  select(any_of(colnames(db_visit))) %>%
+  distinct() %>%
+  drop_na(visit_id)
+
+compare_visit = compare_df_cols(db_visit %>%
+                                  filter(FALSE) %>%
+                                  collect(), subset_visit)
+
+tray = compare_for_staging(db_visit %>%
+                             filter(date >= dblog$date_min,
+                                    site_id %in% dblog$site_id) %>%
+                             collect(),
+                           subset_visit, tbl_pkey('visit', mdc), return_all = TRUE, report = "visit")
+
+upsert_visit = bind_rows(tray$insert,
+                         tray$update)
+
+# # get visit_id
+# vids = subset_visit %>%
+#   select(visit_id) %>%
+#   distinct() %>%
+#   pull(visit_id)
+# 
+# dput(vids)
+
+# upsert visit?
+x_visit = (nrow(upsert_visit) > 0)
+
+```
+
+## upsert visits
+
+```{r}
+if (x_visit) {
+  temp_visit = stage_to_temp(dbcon, db_visit, upsert_visit)
+  pointer = tbl(dbcon, temp_visit)
+  db_visit = rows_upsert(db_visit, pointer, by="visit_id", in_place=TRUE)
+}
+
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+
+```
+
+# environmental
+```{r}
+unified_env = bind_rows(clean_edna %>%
+                          rename(obs_time = collection_time),
+                        clean_capture %>%
+                          rename(obs_time = time_of_capture,
+                                 observers_survey = observer_capture)) %>%
+  select(date,
+         site,
+         time_of_day,
+         transect,
+         obs_time,
+         observers_survey,
+         any_of(colnames(db_env))) %>%
+  distinct() %>%
+  mutate(detection_type = "environmental") %>%
+  left_join(db_site %>%
+              select(tbl_keys("site", mdc)) %>%
+              collect(),
+            by = "site") %>%
+  left_join(db_visit %>%
+              select(tbl_keys("visit", mdc)) %>%
+              collect(),
+            by = tbl_nkey("visit", mdc))
+```
+
+```{r}
+gelled_env = unified_env %>%
+  group_by(site,
+           date,
+           time_of_day,
+           transect) %>%
+  mutate(start_time = find_time_range(obs_time)$first_time,
+         end_time = find_time_range(obs_time)$last_time) %>%
+  ungroup() %>%
+  left_join(db_survey %>%
+              select(tbl_keys("survey", mdc)) %>%
+              filter(!is.na(visit_id)) %>%
+              collect(),
+            by = tbl_nkey("survey", mdc)) %>%
+  group_by(site,
+           date,
+           time_of_day,
+           detection_type,
+           transect,
+           start_time) %>%
+  mutate(start_timestamp_utc = start_timestamp_utc(date, start_time, local_tz),
+         end_timestamp_utc = end_timestamp_utc(date, start_time, end_time, local_tz),
+         duration_minutes = duration_minutes(start_timestamp_utc, end_timestamp_utc),
+         uuid_name = paste0(visit_id, transect, start_time, detection_type),
+         survey_id = ifelse(is.na(survey_id), UUIDfromName("c02ab86e-9e5a-4ac2-a1a6-bfa6c32ab614", uuid_name), survey_id),
+         observers_survey = str_flatten_comma(unique(na.omit(unlist(str_split(observers_survey, ",\\s*")))), na.rm = TRUE),
+         number_observers = count_observers(paste(observers_survey, collapse = ","))) %>%
+  ungroup() %>%
+  group_by(visit_id,
+           transect,
+           start_time,
+           detection_type,
+           survey_id,
+           wind_speed_m_s,
+           air_temp_c,
+           water_temp_c,
+           air_pressure_mbar,
+           p_h,
+           relative_humidity_percent) %>%
+  slice_head(n = 1) %>%
+  ungroup() %>%
+  mutate(uuid_name_env = paste0(survey_id, start_time, wind_speed_m_s, air_temp_c, water_temp_c, p_h, relative_humidity_percent),
+         environmental_id = UUIDfromName("f2fdbf80-0197-4821-b125-d589424e19c8", uuid_name_env),
+         water_time = as_hms(ifelse(!is.na(water_temp_c) | !is.na(p_h), start_time, NA)),
+         air_time = as_hms(ifelse(!is.na(wind_speed_m_s) | !is.na(air_temp_c) | !is.na(relative_humidity_percent), start_time, NA))) %>%
+  filter(!(is.na(water_temp_c) & is.na(p_h) & is.na(wind_speed_m_s) & is.na(air_temp_c) & is.na(relative_humidity_percent)))
+
+```
+
+### 5 - Subset env tables
 
 ```{r}
 
-gelled_capture = clean_capture %>%
+# survey
+subset_env_survey = gelled_env %>%
+  select(any_of(colnames(db_survey))) %>%
+  distinct() %>%
+  drop_na(survey_id)
+
+# compare columns
+compare_env_survey = compare_df_cols(db_survey %>%
+                                  filter(FALSE) %>%
+                                  collect(), subset_env_survey)
+
+peace = get_dupes(subset_env_survey, survey_id)
+
+tray = compare_for_staging(db_survey %>% collect(), subset_env_survey, tbl_nkey("survey", mdc), return_all = TRUE, report = "env_survey")
+peace = compare_updates(tray)
+upsert_env_survey = bind_rows(tray$insert,
+                             tray$update)
+
+# aural
+subset_env = gelled_env%>%
+  select(any_of(colnames(db_env))) %>%
+  distinct() %>%
+  drop_na(environmental_id)
+
+# compare columns
+compare_env = compare_df_cols(db_env %>%
+                                  filter(FALSE) %>%
+                                  collect(), subset_env)
+
+tray = compare_for_staging(db_env %>% collect(), subset_env, "environmental_id", return_all = TRUE, report = "env")
+upsert_env = bind_rows(tray$insert,
+                        tray$update)
+
+# anything to upsert?
+x_env = (nrow(upsert_env_survey) > 0) | (nrow(upsert_env) > 0)
+
+```
+
+### Stage and commit env tables
+
+```{r}
+
+if (x_env) {
+  # begin transaction temp
+  dbBegin(dbcon)
+  
+  tryCatch(
+    {
+      temp_env_survey = stage_to_temp(dbcon, db_survey, upsert_env_survey)
+      pointer = tbl(dbcon, temp_env_survey)
+      rows_upsert(db_survey, pointer, by="survey_id", in_place=TRUE)
+      
+      temp_env = stage_to_temp(dbcon, db_env, upsert_env)
+      pointer = tbl(dbcon, temp_env)
+      rows_upsert(db_env, pointer, by="environmental_id", in_place=TRUE)
+      
+      # Commit the transaction if successful
+      dbCommit(dbcon)
+      print("Transaction successful!")
+      
+    }, error = function(e) {
+      # Rollback in case of error
+      dbRollback(dbcon)
+      message("Transaction failed: ", e$message)
+    })
+}
+
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_env = tbl(dbcon, Id("survey_data", "environmental"))
+```
+
+# eDNA
+```{r}
+unified_edna = clean_edna %>%
+  mutate(transect = NA) %>%
+  group_by(site,
+           date,
+           time_of_day,
+           transect) %>%
+  mutate(start_time = find_time_range(collection_time)$first_time,
+         end_time = find_time_range(collection_time)$last_time) %>%
+  ungroup() %>%
+  left_join(db_site %>%
+              select(tbl_keys("site", mdc)) %>%
+              collect(),
+            by = "site") %>%
+  left_join(db_visit %>%
+              select(tbl_keys("visit", mdc)) %>%
+              collect(),
+            by = tbl_nkey("visit", mdc)) %>%
+  left_join(db_survey %>%
+              select(tbl_keys("survey", mdc)) %>%
+              filter(!is.na(visit_id)) %>%
+              collect(),
+            by = tbl_nkey("survey", mdc)) %>%
+  filter(!is.na(site),
+         !is.na(date))
+
+if (nrow(unified_edna %>% filter(is.na(site_id))) > 0) {
+  stop("Unknown sites returned, consider importing first.")
+}
+
+```
+
+```{r}
+gelled_edna = unified_edna %>%
+  mutate(filter_date = date) %>%
+  group_by_at(tbl_nkey("survey", mdc)) %>%
+  mutate(start_timestamp_utc = start_timestamp_utc(date, start_time, local_tz),
+         end_timestamp_utc = end_timestamp_utc(date, start_time, end_time, local_tz),
+         uuid_name = paste0(visit_id, start_time, transect, detection_type),
+         survey_id = ifelse(is.na(survey_id),
+                            UUIDfromName("c02ab86e-9e5a-4ac2-a1a6-bfa6c32ab614", uuid_name),
+                            survey_id)) %>%
+  ungroup() %>%
+  mutate(uuid_name = paste0(survey_id, edna_sample_name, edna_latitude, collection_time, collection_type),
+         edna_id = UUIDfromName("e4d345d4-6433-40d2-9997-1b4ee8b1a627", uuid_name))
+```
+
+
+# subset edna
+```{r}
+# survey
+subset_edna_survey = gelled_edna %>%
+  select(any_of(colnames(db_survey))) %>%
+  distinct() %>%
+  filter(!is.na(survey_id))
+
+# compare columns
+compare_edna_survey = compare_df_cols(db_survey %>%
+                                  filter(FALSE) %>%
+                                  collect(), subset_edna_survey)
+
+tray = compare_for_staging(db_survey %>% collect(), subset_edna_survey, "survey_id", return_all = TRUE, report = "edna_survey")
+upsert_edna_survey = bind_rows(tray$insert,
+                               tray$update)
+
+# edna
+subset_edna = gelled_edna %>%
+  select(any_of(colnames(db_edna))) %>%
+  distinct() %>%
+  filter(!is.na(edna_id))
+
+# compare columns
+compare_edna = compare_df_cols(db_edna %>%
+                                  filter(FALSE) %>%
+                                  collect(), subset_edna)
+
+tray = compare_for_staging(db_edna %>% collect(), subset_edna, "edna_id", return_all = TRUE, report = "edna")
+upsert_edna = bind_rows(tray$insert,
+                        tray$update)
+
+# anything to upsert?
+x_edna = (nrow(upsert_edna_survey) > 0) | (nrow(upsert_edna) > 0)
+
+```
+
+# stage and commit edna
+```{r}
+
+if (x_edna) {
+  # begin transaction temp
+  dbBegin(dbcon)
+  
+  tryCatch(
+    {
+      temp_edna_survey = stage_to_temp(dbcon, db_survey, upsert_edna_survey)
+      pointer = tbl(dbcon, temp_edna_survey)
+      rows_upsert(db_survey, pointer, by="survey_id", in_place=TRUE)
+      
+      temp_edna = stage_to_temp(dbcon, db_edna, upsert_edna)
+      pointer = tbl(dbcon, temp_edna)
+      rows_upsert(db_edna, pointer, by="edna_id", in_place=TRUE)
+      
+      # Commit the transaction if successful
+      dbCommit(dbcon)
+      print("Transaction successful!")
+      
+    }, error = function(e) {
+      # Rollback in case of error
+      dbRollback(dbcon)
+      stop("Transaction failed: ", e$message)
+    })
+}
+
+# refresh
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_edna = tbl(dbcon, Id("survey_data", "edna"))
+```
+
+# Capture
+```{r}
+unified_capture = clean_capture %>%
   # inherit/assign site_id
   left_join(db_site %>%
               select(site,
@@ -326,8 +716,6 @@ gelled_capture = clean_capture %>%
                      site_id) %>%
               collect(), by = c("date", "time_of_day", "site_id")) %>%
   group_by_at(c("date", "time_of_day", "site_id")) %>%
-  mutate(uuid_name_visit = paste0(site, date, time_of_day),
-         visit_id = ifelse(is.na(visit_id), UUIDfromName("b16032a6-76a0-428a-808a-50a969ba87de", uuid_name_visit), visit_id)) %>%
   ungroup() %>%
   # inherit/assign survey_id
   left_join(db_survey %>%
@@ -335,23 +723,25 @@ gelled_capture = clean_capture %>%
                      visit_id,
                      transect,
                      detection_type) %>%
-              collect(), by = c("visit_id", "transect", "detection_type")) %>%
-  group_by(visit_id,
-          transect,
-          detection_type) %>%
-  mutate(start_time = as_hms(min(time_of_capture, na.rm = TRUE)),
-         end_time = as_hms(max(time_of_capture, na.rm = TRUE)),
+              collect(), by = c("visit_id", "transect", "detection_type"))
+
+```
+
+```{r}
+
+gelled_capture = unified_capture %>%
+group_by(visit_id,
+         transect,
+         detection_type) %>%
+  mutate(start_time = find_time_range(time_of_capture)$first_time,
+         end_time = find_time_range(time_of_capture)$last_time,
          uuid_name_survey = paste0(visit_id, transect, start_time, detection_type),
          survey_id = ifelse(is.na(survey_id), UUIDfromName("e3c835a4-4c8d-491c-9970-011aba853686", uuid_name_survey), survey_id),
          observers_survey = paste(unique(unlist(strsplit(observer_capture, ", "))), collapse = ", "),
          number_observers = lengths(strsplit(observers_survey, ",")),
          observers_survey = ifelse(observers_survey == "NA", NA_character_, observers_survey),
          number_observers = ifelse(is.na(observers_survey), NA, number_observers)) %>%
-  ungroup() %>%
-  mutate(start_time = as_hms(ifelse(start_time == Inf, NA, start_time)),
-         end_time = as_hms(ifelse(end_time == -Inf, NA, end_time)),
-         visit_id = ifelse(is.na(site_id), NA, visit_id),
-         survey_id = ifelse(is.na(site_id), NA, survey_id))
+  ungroup()
 
 peace = get_dupes(gelled_capture, capture_id)
 
@@ -401,74 +791,10 @@ sample_gelled = gelled_capture %>%
 
 ```
 
-# environmental
-```{r}
-gelled_env = gelled_capture %>%
-  select(visit_id,
-         transect,
-         start_time,
-         time_of_capture,
-         any_of(colnames(db_env))) %>%
-  distinct() %>%
-  mutate(detection_type = "environmental") %>%
-  group_by(visit_id,
-           transect,
-           start_time,
-           detection_type) %>%
-  mutate(uuid_name = paste0(visit_id, transect, start_time, detection_type),
-         survey_id = ifelse(is.na(survey_id), UUIDfromName("f7b367fb-bbb6-40a8-85db-07d2760e7b95", uuid_name), survey_id)) %>%
-  ungroup() %>%
-  group_by(visit_id,
-           transect,
-           start_time,
-           detection_type,
-           survey_id,
-           wind_speed_m_s,
-           air_temp_c,
-           water_temp_c,
-           p_h,
-           relative_humidity_percent) %>%
-  slice_head(n = 1) %>%
-  ungroup() %>%
-  mutate(uuid_name_env = paste0(survey_id, start_time, wind_speed_m_s, air_temp_c, water_temp_c, p_h, relative_humidity_percent),
-         environmental_id = UUIDfromName("37929955-baca-4968-9e7c-bc99bd05293c", uuid_name_env),
-         water_time = as_hms(ifelse(!is.na(water_temp_c) | !is.na(p_h), start_time, NA)),
-         air_time = as_hms(ifelse(!is.na(wind_speed_m_s) | !is.na(air_temp_c) | !is.na(relative_humidity_percent), start_time, NA))) %>%
-  filter(!(is.na(water_temp_c) & is.na(p_h) & is.na(wind_speed_m_s) & is.na(air_temp_c) & is.na(relative_humidity_percent)))
 
-```
 
 # subset & compare
 ```{r}
-subset_site = gelled_capture %>%
-  select(any_of(colnames(db_site))) %>%
-  distinct() %>%
-  drop_na(site_id)
-
-compare_site = compare_df_cols(db_site %>%
-                                  filter(FALSE) %>%
-                                  collect(), subset_site)
-tray = compare_for_staging(db_site %>% collect(), subset_site, "site_id", report = "site")
-
-subset_visit = gelled_capture %>%
-  select(any_of(colnames(db_visit))) %>%
-  distinct() %>%
-  drop_na(visit_id)
-
-compare_visit = compare_df_cols(db_visit %>%
-                                  filter(FALSE) %>%
-                                  collect(), subset_visit)
-tray = compare_for_staging(db_visit %>% collect(), subset_visit, "visit_id", report = "visit")
-upsert_visit = bind_rows(tray$insert,
-                         tray$update)
-
-# # get visit_id
-# vids = subset_visit %>%
-#   select(visit_id) %>%
-#   distinct() %>%
-#   pull(visit_id)
-# 
-# dput(vids)
 
 subset_survey_capture = gelled_capture %>%
   select(any_of(colnames(db_survey))) %>%
@@ -478,33 +804,10 @@ subset_survey_capture = gelled_capture %>%
 compare_survey_capture = compare_df_cols(db_survey %>%
                                   filter(FALSE) %>%
                                   collect(), subset_survey_capture)
-tray_capt = compare_for_staging(db_survey %>% collect(), subset_survey_capture, "survey_id", report = "survey_capture")
+tray = compare_for_staging(db_survey %>% collect(), subset_survey_capture, "survey_id", report = "survey_capture")
 
-subset_survey_env = gelled_env %>%
-  select(any_of(colnames(db_survey))) %>%
-  distinct() %>%
-  drop_na(survey_id)
-
-compare_survey_env = compare_df_cols(db_survey %>%
-                                  filter(FALSE) %>%
-                                  collect(), subset_survey_env)
-tray_env = compare_for_staging(db_survey %>% collect(), subset_survey_env, "survey_id", report = "survey_env")
-upsert_survey = bind_rows(tray_capt$insert,
-                          tray_capt$update,
-                          tray_env$insert,
-                          tray_env$update)
-
-subset_env = gelled_env %>%
-  select(any_of(colnames(db_env)))
-
-compare_env = compare_df_cols(db_env %>%
-                                  filter(FALSE) %>%
-                                  collect(), subset_env)
-
-tray = compare_for_staging(db_env %>% collect(), subset_env, "environmental_id", report = "env")
-upsert_env = bind_rows(tray$insert,
-                       tray$update)
-
+upsert_survey_capture = bind_rows(tray$insert,
+                                  tray$update)
 
 subset_capture = gelled_capture %>%
   filter(!is_duplicate) %>%
