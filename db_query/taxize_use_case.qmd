@@ -1,0 +1,59 @@
+---
+title: "taxize_use_case"
+format: html
+---
+
+
+```{r}
+# load packages
+librarian::shelf(dplyr, purrr, taxize)
+```
+
+# define taxa
+```{r}
+# scientific names/common names (possibly dirty) as character vector
+taxa_oi = c(
+  "Rana muscosa",
+  "Rana boylii subsp. muscosa",
+  "caddisflies",
+  "Trichoptera",
+  "Desmona bethula",
+  "Desmona bethulai",
+  "Nemouridae",
+  "Malenka",
+  "unknown")
+```
+
+# identify data source(s)
+
+Taxize provides functions to query a broad library of taxon databases through a common set of R functions. We can identify the different supported databases with the following function:
+```{r}
+data_sources = taxize::gna_data_sources()
+```
+
+# process names
+```{r}
+# parsing
+taxa_parsed = taxize::gna_parse(taxa_oi)
+
+# search scientific names in specified database, pulling ID from data_sources
+taxa_ncbi = taxize::gna_verifier(taxa_oi, data_sources = c(4))
+taxa_itis = taxize::gna_verifier(taxa_oi, data_sources = c(3))
+```
+
+# some itis-specific functions
+```{r}
+# pull current tsn from taxa_itis
+tsn_current = unique(na.omit(taxa_itis$currentRecordId))
+
+# return itis hierarchy
+taxa_itis_hierarchy = taxize::itis_hierarchy(tsn_current)
+
+# return itis rank
+taxa_itis_rank = map_chr(tsn_current, ~taxize::itis_taxrank(.x))
+
+# search common names in itis
+taxa_itis_common = taxize::comm2sci(taxa_oi, db = "itis")
+
+```
+
