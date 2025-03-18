@@ -199,7 +199,7 @@ clean_survey_info = raw_survey_info %>%
          environmental_utmn = as.numeric(environmental_utmn),
          environmental_utm_zone = 17,
          environmental_elevation_m = as.numeric(environmental_elevation_m)) %>%
-  mutate(pressure_psi = pressureinhg * 0.491154) %>%
+  mutate(air_pressure_mbar = pressureinhg * 33.8639) %>%
   select(-any_of(to_drop)) %>%
   filter(!if_all(everything(), is.na))
 

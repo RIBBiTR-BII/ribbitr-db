@@ -163,7 +163,7 @@ clean_survey_info <- raw_survey_info %>%
          wind_speed_m_s = wind_speed_ms,
          sky = sky_conditions,
          relative_humidity_percent = humidity,
-         pressure_psi = pressure,
+         air_pressure_psi = pressure,
          dissolved_o2_percent = dissolved_oxygen,
          tds_ppm = total_dissolved_solids,
          p_h = ph,
@@ -180,6 +180,7 @@ clean_survey_info <- raw_survey_info %>%
          time_of_day = str_to_lower(time_of_day),
          comments_visit = str_replace_all(comments_visit, "\\n", ". "),
          pressure_psi = ifelse(pressure_psi == 0, NA, pressure_psi),
+         air_pressure_mbar = air_pressure_psi * 68.9476,
          number_observers = as.integer(str_count(observers_survey, ",") + 1)) %>%
   select(-any_of(to_drop),
          -start_time,
