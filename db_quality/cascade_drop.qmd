@@ -41,21 +41,77 @@ db_country = tbl(dbcon, Id("survey_data", "country"))
 
 # Visit orphans
 ```{r}
-drop_ids = c("0d4cb376-7898-4464-8c21-6e64f511bc8b", "25a32474-2a25-4464-aee4-f9290665060e", 
-"38c61b26-d118-42b0-84f9-7793b89ed3aa", "39db5f06-5a62-47d3-80a5-caf30deab765", 
-"463d0951-af6e-4208-b17f-bf6d466f2685", "47b4523f-d087-49f0-9863-b9f8dd90c932", 
-"4fcb3daf-eb2b-4672-9a0e-4e26e32c494e", "56490b05-8740-49f4-a2a8-813f67d04f2d", 
-"79d7f76a-b522-46a8-9822-7a243efd2dba", "7c5d504c-dd7b-4828-880c-ce0d4bde871c", 
-"94a41a95-c477-4961-bf1a-2134297d56b3", "94f6a1c9-de07-4d76-84ab-e74c24aef72e", 
-"a1f7c7ef-24d0-498c-9159-e944b7dcf5c2", "a6e7b2e8-b506-4610-89a3-13983488bfda", 
-"ad1dfccf-716c-4312-98cb-ce813feda58f", "c1b08d06-c9d6-4b90-b25d-0a76ade6e2d2", 
-"eb3b7b42-a688-4452-9d5a-aa86b8ffef29")
+drop_ids = c("7305d7aa-793d-5f24-b62f-092452e48011", "e6fd2874-7dae-530c-b2f8-e441d6cc9eb3", 
+"3b39e4d5-4c07-5fb2-8404-41787224b499", "f6b90d1d-ce62-5e25-9976-b41d98320bc1", 
+"992bd8c0-00af-52f4-ac43-9ea14f2003a3", "4b6d2ea3-74b5-5d81-a9e0-d137b2b6771d", 
+"3473d90c-bac3-5d54-92df-1bad5fb29d7b", "6d93c1a4-bc11-56d1-99b0-279a003fee76", 
+"29e4171f-402a-576b-8886-2e792d30c894", "50bced41-bd5f-54a2-a0bb-88dd4a2dc503", 
+"24fe6899-113d-56bf-9be7-1431d093721f", "68ecef16-1a15-5015-a961-56869d590993", 
+"1b4c9251-4a61-573b-85ef-94d4cd860c95", "db0c1f0f-97cb-5c5c-888a-82c2391ffd22", 
+"b70f7d1a-b5dc-536d-9956-b28452ab4d5b", "842151d2-3dbc-5062-b5e8-b577c7416963", 
+"e1c35c9f-183e-51b3-a1a7-2736c99de8f5", "4358132e-c123-5dbe-a725-03f7f346de4f", 
+"47b4523f-d087-49f0-9863-b9f8dd90c932", "79d7f76a-b522-46a8-9822-7a243efd2dba", 
+"38c61b26-d118-42b0-84f9-7793b89ed3aa", "94f6a1c9-de07-4d76-84ab-e74c24aef72e", 
+"4fcb3daf-eb2b-4672-9a0e-4e26e32c494e", "463d0951-af6e-4208-b17f-bf6d466f2685", 
+"ad1dfccf-716c-4312-98cb-ce813feda58f", "56490b05-8740-49f4-a2a8-813f67d04f2d", 
+"a6e7b2e8-b506-4610-89a3-13983488bfda", "eb3b7b42-a688-4452-9d5a-aa86b8ffef29", 
+"25a32474-2a25-4464-aee4-f9290665060e", "39db5f06-5a62-47d3-80a5-caf30deab765", 
+"0d4cb376-7898-4464-8c21-6e64f511bc8b", "94a41a95-c477-4961-bf1a-2134297d56b3", 
+"a1f7c7ef-24d0-498c-9159-e944b7dcf5c2", "7c5d504c-dd7b-4828-880c-ce0d4bde871c", 
+"c1b08d06-c9d6-4b90-b25d-0a76ade6e2d2", "b545854e-d767-5fab-973c-81be47b6b120", 
+"62a98893-5349-5439-9026-54071d2a94ec", "0cca94b5-c68b-54bb-8bf6-306e5790bbf5", 
+"6874f1d7-d249-549d-b64a-df170af13cc4", "e8d4b40d-2662-57b8-b399-4b66eb231b11", 
+"910aa2b0-b49d-5171-b5d5-2b42d250649e", "5877528b-0dcd-5c7d-b2a6-e8a7c795724e", 
+"d703e95b-1d40-5e08-8eba-695209d01d60", "70056bfa-117d-554f-9dc2-abad4464cc41", 
+"3c99d2fc-0862-54c2-9bc6-bdab8af53710", "4033b9ef-8f38-5aeb-b125-c858a4a23b64", 
+"b2d40cef-e55c-5d6b-9754-6cb8474167e6", "70c9dbd0-49f1-5622-9d03-2e896c96be5a", 
+"f401db07-e066-5990-9d76-81b3cf1c016c", "08dda31e-fbf3-5fb6-8522-affa377073d7", 
+"815861fc-c62d-5434-b3c4-794fd0f055d3", "8121a1e7-0053-52ea-b06d-8dd134616e9b", 
+"67996a95-5524-58e7-b5bc-504a5afd31d0", "0b9a1364-731b-5899-9edd-09bac6b6ceb0", 
+"197bf322-ee8b-5eeb-984a-8f3e4fe24d79", "c6d3085b-9cc3-589a-b38b-cf5c5b7d7431", 
+"971d780b-e436-596e-8b8c-e0d3633235b5", "12b3bcd4-27a4-5df4-a98b-640c6b84c00c", 
+"c4b5e230-4316-53e8-84ac-be8d4a363b68", "7b212976-1cf5-50c9-a017-a0375d9581df", 
+"82a130f9-2775-5663-bbae-59e4a0c9fd38", "9c478e56-766b-5541-babe-cd7b98ea4b91", 
+"47eacc61-b32b-5108-907d-ef7705f20fe5", "6907f8aa-2114-537d-98d7-69149711ab98", 
+"795f484f-588d-557a-9689-02fed048e74d", "656f1c32-2355-5c1d-a722-26f4611d7acb", 
+"34daf59c-2890-51b0-931f-d1a7864ba884", "5c17ca43-55fa-5f1f-affd-9eacfe060b1f", 
+"a1ee3c1b-d9ca-5e96-b470-cf7df4234331", "7dd133de-5e60-5295-8c99-5ffea5557d45", 
+"fa6536cf-aab5-59f1-8942-e93d404e7dbe", "6a569e92-e77f-573e-9f47-6637feeba65c", 
+"a3b6fa56-254e-5303-b894-bf88f156f268", "8b8215d6-9bc2-5146-92e4-7ad9678ffa11", 
+"91d24631-9770-5f3f-b8fb-8bf87bec08fd", "df9ea6f0-5c3e-5d5c-90a7-ef933a6f0c53", 
+"948c6db5-750d-50c5-bcdf-245e3e6db949", "c50d5a1a-bfce-525e-bbb3-628439c78ebd", 
+"a34810fb-d0d5-59a9-87fa-277836c34b03", "4174be36-90bb-5640-be25-adea7bc0e0f6", 
+"adff287e-670e-5844-a579-a6ea726747a9", "ad26cad7-51c0-5e32-a44f-a19676354427", 
+"5f441742-7611-5578-abdd-98532f8b51bf", "e3e6b02b-0c74-5ade-a623-fdc75f07826d", 
+"5f2a5183-e12c-503f-9781-be9064c373ce", "1e1be79f-2501-5c2c-bdf4-b5cfe0585693", 
+"a5f6ce69-2352-56b0-addf-194be5583e13", "e54507ec-684a-5100-9b5e-9468cf6d292a", 
+"0bc1cce8-7012-5d25-852e-0b36e4c85b90", "255b2895-97cd-5ec2-8fde-81b9f05f8459", 
+"84999793-82c3-5407-9dd2-e3b6102c1db8", "9780fea4-cd27-5aef-b678-d8b077a2a635", 
+"5c034361-4c1f-5c9c-af58-22e05f05d3d9", "6a8ac2f3-7a75-5ac4-b77c-bd68573ba2bc", 
+"e244b665-b3df-59ef-be92-75d317519e1d", "fd2833dc-ec06-5cb4-9625-71c88da0ef14", 
+"ede8cd3b-d37f-5186-bf31-d4198a70fe67", "6dffd8a2-06ef-565b-b78d-a0377c6f6728", 
+"bce39af1-9062-55af-b568-fb92065c796c", "c1a15587-7de6-5154-b808-5527f0f8c62e", 
+"b389878b-261a-5e69-85b0-6e4b65c1c8dc", "d7816ef9-9096-5350-84fe-03b99e141ae3", 
+"f4eb1598-aa4a-5acb-b32a-108339db64e3", "0c3ef83a-f7f8-57ac-9e55-cd6d2a3483fc", 
+"50ce5c3b-b8e0-5a33-a2db-6f89936a82b6", "21e84ba5-04e1-54ef-8c59-4e16ca7dd51c", 
+"66dd2367-fcaa-5035-a33f-86625db96999", "0fe44660-cbf4-5cc7-ba00-b287f1a6ccd8", 
+"1a76c198-c9fb-56a3-a02e-50168c927e3d", "e8f02ef8-1a15-55ff-9291-ef2dade7195a", 
+"0c0af809-f136-5734-ae23-03d7d4fe8951", "5d970efa-e77c-50d0-ab13-685f49f80e97", 
+"a66c2a25-23ba-5f39-9af6-2f812be43432", "a0966ac3-1cf7-5484-895c-9515e4d680d6", 
+"2a017bc0-551f-5b35-b9dc-3d68805be735", "d407c3c5-0605-5a17-85f9-c33f6a7c255d", 
+"19fb41b9-06e0-565e-9b23-5cb098b18a43", "7ff465f0-efb6-5209-a488-1c7592e2475d", 
+"c7a91b95-8902-58be-86be-53703c855fbb", "d05d8c8a-65cb-53ee-8996-93db7e3389f6", 
+"188124ce-14d8-54c2-953e-397a72df92ad", "67c7627b-58c6-5e97-8ecc-e021d475f25e", 
+"26415284-de22-540a-ad36-a859b50fc84b", "2575d26a-9c99-50c9-a364-7a1397f6d2ad", 
+"3cc76537-1f62-551a-939b-689d7cf8aa3c", "3f33a868-ee20-56be-adb0-88f1d88f3602", 
+"abb67245-a874-58a4-8800-bf38958cbb83", "7d2eacf7-5df1-54c8-b85b-83d5394c85b0"
+)
 
 drop_visit = db_visit %>%
   filter(visit_id %in% drop_ids)
 
 count = as.character(drop_visit %>% count() %>% pull())
-cat("visit:", count)
+cat("visit:", count, "\n")
 
 drop_survey = db_survey %>%
   right_join(drop_visit, by = "visit_id") %>%
@@ -68,7 +124,7 @@ peace = drop_survey %>%
   collect()
 
 count = as.character(drop_survey %>% count() %>% pull())
-cat("survey:", count)
+cat("survey:", count, "\n")
 
 drop_env = db_env %>%
   right_join(drop_survey, by = "survey_id") %>%
@@ -76,7 +132,7 @@ drop_env = db_env %>%
   filter(!is.na(environmental_id))
 
 count = as.character(drop_env %>% count() %>% pull())
-cat("env:", count)
+cat("env:", count, "\n")
 
 drop_edna = db_edna %>%
   right_join(drop_survey, by = "survey_id") %>%
@@ -84,7 +140,7 @@ drop_edna = db_edna %>%
   filter(!is.na(edna_id))
 
 count = as.character(drop_edna %>% count() %>% pull())
-cat("edna:", count)
+cat("edna:", count, "\n")
 
 drop_aural = db_aural %>%
   right_join(drop_survey, by = "survey_id") %>%
@@ -92,7 +148,7 @@ drop_aural = db_aural %>%
   filter(!is.na(aural_id))
 
 count = as.character(drop_aural %>% count() %>% pull())
-cat("aural:", count)
+cat("aural:", count, "\n")
 
 drop_ves = db_ves %>%
   right_join(drop_survey, by = "survey_id") %>%
@@ -100,7 +156,7 @@ drop_ves = db_ves %>%
   filter(!is.na(ves_id))
 
 count = as.character(drop_ves %>% count() %>% pull())
-cat("ves:", count)
+cat("ves:", count, "\n")
 
 drop_capture = db_capture %>%
   right_join(drop_survey, by = "survey_id") %>%
@@ -108,7 +164,7 @@ drop_capture = db_capture %>%
   filter(!is.na(capture_id))
 
 count = as.character(drop_capture %>% count() %>% pull())
-cat("capture:", count)
+cat("capture:", count, "\n")
 
 drop_sample_all = db_sample %>%
   right_join(drop_capture, by = "capture_id") %>%
@@ -126,13 +182,13 @@ update_sample = drop_sample_all %>%
   collect()
 
 count = as.character(update_sample %>% count() %>% pull())
-cat("sample_update:", count)
+cat("sample_update:", count, "\n")
 
 drop_sample = drop_sample_all %>%
   anti_join(bd_samples, by = "sample_id")
 
 count = as.character(drop_sample %>% count() %>% pull())
-cat("sample_drop:", count)
+cat("sample_drop:", count, "\n")
 
 
 ```
