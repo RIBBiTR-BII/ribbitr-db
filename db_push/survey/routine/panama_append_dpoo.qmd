@@ -1282,6 +1282,11 @@ peace = compare_updates(tray)
 upsert_sample = bind_rows(tray$insert,
                           tray$update)
 
+
+if (nrow(tray$update) > 0) {
+  warning("Sample updates may indicate duplicate capture_ids. Investigation recommended")
+}
+
 x_capture = (nrow(upsert_capture_survey) > 0) | (nrow(insert_capture_taxa) > 0) | (nrow(upsert_capture) > 0 | nrow(upsert_cmr) > 0 | nrow(upsert_sample) > 0)
 
 
