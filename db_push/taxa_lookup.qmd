@@ -7,7 +7,6 @@ format: html
 
 # librarian downloads, if not already downloaded, and reads in needed packages
 librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, uuid, RIBBiTR-BII/ribbitrrr, EML, ropensci/bold, ropensci/taxize, EDIorg/taxonomyCleanr)
-
 # librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 
 # connect to database
@@ -25,16 +24,6 @@ db_capture = tbl(dbcon, Id("survey_data", "capture"))
 db_ves = tbl(dbcon, Id("survey_data", "ves"))
 db_cmr = tbl(dbcon, Id("survey_data", "cmr"))
 db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
-
-
-# db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
-# db_env = tbl(dbcon, Id("survey_data", "environmental"))
-# db_survey = tbl(dbcon, Id("survey_data", "survey"))
-# db_visit = tbl(dbcon, Id("survey_data", "visit"))
-# db_site = tbl(dbcon, Id("survey_data", "site"))
-# db_region = tbl(dbcon, Id("survey_data", "region"))
-# db_country = tbl(dbcon, Id("survey_data", "country"))
-# db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
 ```
 
 # define taxonomy lookup functions
@@ -185,37 +174,37 @@ taxa_lookup_map = function(taxa_list) {
     mutate("amphibiaweb_species" = ifelse(is.na(aw_species), NA, paste(aw_genus, aw_species)),
            "amphibiaweb_class" = ifelse(is.na(aw_species), NA, "Amphibia"),
            "aw_url" = gsub("_ws\\?", "_query?", aw_url)) %>%
-    rename("taxon_id" = "taxa_raw",
-           "taxon" = "taxa_search",
-           "amphibiaweb_id" = "aw_amphib_id",
-           "amphibiaweb_order" = "aw_order",
-           "amphibiaweb_family" = "aw_family",
-           "amphibiaweb_subfamily" = "aw_subfamily",
-           "amphibiaweb_genus" = "aw_genus",
-           "amphibiaweb_common" = "aw_common_name",
-           "amphibiaweb_url" = "aw_url",
-           "itis_tsn_matched" = "itis_recordId",
-           "itis_canonical_matched" = "itis_matchedCanonicalSimple",
-           "itis_status_matched" = "itis_taxonomicStatus",
-           "itis_match_type" = "itis_matchType",
-           "itis_tsn_current" = "itis_currentRecordId",
-           "itis_canonical_current" = "itis_currentCanonicalSimple",
-           "itis_rank_current" = "itis_rankname",
-           "ncbi_id_matched" = "ncbi_recordId",
-           "ncbi_canonical_matched" = "ncbi_matchedCanonicalSimple",
-           "ncbi_status_matched" = "ncbi_taxonomicStatus",
-           "ncbi_id_current" = "ncbi_currentRecordId",
-           "ncbi_canonical_current" = "ncbi_currentCanonicalSimple",
-           "gbif_id_matched" = "gbif_recordId",
-           "gbif_canonical_matched" = "gbif_matchedCanonicalSimple",
-           "gbif_status_matched" = "gbif_taxonomicStatus",
-           "gbif_id_current" = "gbif_currentRecordId",
-           "gbif_canonical_current" = "gbif_currentCanonicalSimple",
-           "iucn_tsn_matched" = "iucn_recordId",
-           "iucn_canonical_matched" = "iucn_matchedCanonicalSimple",
-           "iucn_status_matched" = "iucn_taxonomicStatus",
-           "iucn_tsn_current" = "iucn_currentRecordId",
-           "iucn_canonical_current" = "iucn_currentCanonicalSimple") %>%
+    rename(any_of(c("taxon_id" = "taxa_raw",
+                    "taxon" = "taxa_search",
+                    "amphibiaweb_id" = "aw_amphib_id",
+                    "amphibiaweb_order" = "aw_order",
+                    "amphibiaweb_family" = "aw_family",
+                    "amphibiaweb_subfamily" = "aw_subfamily",
+                    "amphibiaweb_genus" = "aw_genus",
+                    "amphibiaweb_common" = "aw_common_name",
+                    "amphibiaweb_url" = "aw_url",
+                    "itis_tsn_matched" = "itis_recordId",
+                    "itis_canonical_matched" = "itis_matchedCanonicalSimple",
+                    "itis_status_matched" = "itis_taxonomicStatus",
+                    "itis_match_type" = "itis_matchType",
+                    "itis_tsn_current" = "itis_currentRecordId",
+                    "itis_canonical_current" = "itis_currentCanonicalSimple",
+                    "itis_rank_current" = "itis_rankname",
+                    "ncbi_id_matched" = "ncbi_recordId",
+                    "ncbi_canonical_matched" = "ncbi_matchedCanonicalSimple",
+                    "ncbi_status_matched" = "ncbi_taxonomicStatus",
+                    "ncbi_id_current" = "ncbi_currentRecordId",
+                    "ncbi_canonical_current" = "ncbi_currentCanonicalSimple",
+                    "gbif_id_matched" = "gbif_recordId",
+                    "gbif_canonical_matched" = "gbif_matchedCanonicalSimple",
+                    "gbif_status_matched" = "gbif_taxonomicStatus",
+                    "gbif_id_current" = "gbif_currentRecordId",
+                    "gbif_canonical_current" = "gbif_currentCanonicalSimple",
+                    "iucn_tsn_matched" = "iucn_recordId",
+                    "iucn_canonical_matched" = "iucn_matchedCanonicalSimple",
+                    "iucn_status_matched" = "iucn_taxonomicStatus",
+                    "iucn_tsn_current" = "iucn_currentRecordId",
+                    "iucn_canonical_current" = "iucn_currentCanonicalSimple"))) %>%
     select(any_of(c("taxon_id",
                     "taxon",
                     "amphibiaweb_id",
@@ -253,7 +242,9 @@ taxa_lookup_map = function(taxa_list) {
                     "iucn_canonical_matched",
                     "iucn_status_matched",
                     "iucn_tsn_current",
-                    "iucn_canonical_current")))
+                    "iucn_canonical_current",
+                    "cites_id",
+                    "cites_appendix")))
   
   # return(list(taxa_lm,
   #             taxa_lm_clean))
@@ -295,7 +286,7 @@ taxa_unique = sort(na.omit(unique(c(taxa_aural,
 
 # Diagnostic: run taxonomy lookup all current taxa
 ```{r}
-taxa_results_current = taxa_lookup_map(taxa_unique)
+taxa_results_current = ribbitr_taxa_lookup(taxa_unique)
 
 taxa_results_current_build = taxa_results_current %>%
   rename("itis_tsn" = "itis_tsn_current",
@@ -334,80 +325,9 @@ taxa_results_current_build = taxa_results_current %>%
 
 # dbWriteTable(dbcon, Id("survey_data", "taxonomy"), taxa_results_current_build, overwrite = TRUE)
 ```
-# clean taxa in database
+
+# revise taxa
 ```{r}
-comment_taxa_dict = list("chiasmocleis_cf._atlantica" = "chiasmocleis_cf._atlantica",
-                         'ischnocnema_sp._02_(aff._lactea)' = 'ischnocnema_sp._02_(aff._lactea)',
-                         'ololygon_aff._brieni' = 'ololygon_aff._brieni',
-                         'ololygon_aff._littoralis' = 'ololygon_aff._littoralis',
-                         'ololygon_cf_litoralis' = 'ololygon_cf_litoralis',
-                         "pristimantis_sp._potential_new_sp" = "potential new species",
-                         'Rana_catesbeiana_x_Rana_clamitans_(possibly)' = 'Rana_catesbeiana or Rana_clamitans',
-                         "tadpole_species_1" = "tadpole species 1",
-                         "tad_spp_2" = "tadpole species 2")
-
-clean_taxa_dict <- list(
-  'boana_platenera' = 'boana_platanera',
-  'bolitoglossa_spp' = 'bolitoglossa',
-  'boana_bandeirante' = 'boana_bandeirantes',
-  'brachycephalus_sp' = 'brachycephalus',
-  'brachycephalus_sp.' = 'brachycephalus',
-  'bufo_americanus' = 'anaxyrus_americanus',
-  'bufo_sp.' = 'bufo',
-  'caecilia_spp' = 'caecilia',
-  'chiasmocleis_cf._atlantica' = 'chiasmocleis',
-  'cochranella_spp' = 'cochranella',
-  'colostethus_panamensis' = 'colostethus_panamansis',
-  'craugastor_spp' = 'craugastor',
-  'cycloramphus_sp.' = 'cycloramphus',
-  'dendrophryniscus_haddadi' = 'dendropsophus_haddadi',
-  'desmog_spp' = 'desmognathus',
-  'desmog_spp.' = 'desmognathus',
-  'desmoganthus_sp.' = 'desmognathus',
-  'desmognathus_so' = 'desmognathus',
-  'Desmognathaus_sp.' = 'desmognathus',
-  'desmognathus_sp.' = 'desmognathus',
-  'desmongnathus_sp' = 'desmognathus',
-  'diasporus_spp' = 'diasporus',
-  'diasporus_spp.' = 'diasporus',
-  'duellmanohyla_spp' = 'duellmanohyla',
-  'esparadana_prosoblepon' = 'espadarana_prosoblepon',
-  'eurycea_bislaneata' = 'eurycea_bislineata',
-  'hyalinobatrachium_fleishmanni' = 'hyalinobatrachium_fleischmanni',
-  'hyalinobatrachium_spp' = 'hyalinobatrachium',
-  'hyliola_regilla' = 'pseudacris_regilla',
-  'ischnocnema_sp' = 'ischnocnema',
-  'ischnocnema_sp._02_(aff._lactea)' = 'ischnocnema',
-  'larval_salamander_sp.' = 'caudata',
-  'leptodactylus_marmoratus' = 'adenomera_marmorata',
-  'leptodactylus_spp' = 'leptodactylus',
-  'lithobates_sylvaticus' = 'rana_sylvatica',
-  'ololygon_aff._brieni' = 'ololygon',
-  'ololygon_aff._littoralis' = 'ololygon',
-  'ololygon_cf_litoralis' = 'ololygon',
-  'physalaemus_sp' = 'physalaemus',
-  'plethodon_glutinosis' = 'plethodon_glutinosus',
-  'pristimantis_sp._potential_new_sp' = 'pristimantis',
-  'pristimantis_spp' = 'pristimantis',
-  'Rana_catesbeiana_x_Rana_clamitans_(possibly)' = 'rana',
-  'Rana_sp' = 'rana',
-  'rana_spp' = 'rana',
-  'red_backed_salamander' = 'plethodon_cinereus',
-  'see_notes'= NA_character_,
-  'silverstoneia_spp' = 'silverstoneia',
-  'scinax_crospedopilus' = 'scinax_crospedospilus',
-  'smilisca_spp' = 'smilisca',
-  'tad_spp_2' = 'anura',
-  'tadpole_species_1' = 'anura',
-  'toad_sp.' = 'bufonidae',
-  'unknown' = NA_character_,
-  'unknown_species' = NA_character_,
-  'uptidactylus_sarajay' = 'leptodactylus_savagei'
-)
-
-clean_taxon_id = function(taxon_id) {
-  return(tolower(gsub(" ", "_", taxon_id)))
-}
 
 revised_aural = db_aural %>%
   select(aural_id,
@@ -451,73 +371,77 @@ lookup_all = FALSE
 
 if (lookup_all) {
   # lookup all
-  taxa_revised_results = taxa_lookup_map(taxa_revised_unique)
+  taxa_revised_results = ribbitr_taxa_lookup(taxa_revised_unique, cites = TRUE, cites_token = Sys.getenv("cites_token"), format = "simplified")
 } else {
   # lookup new or missing itis_tsn
   taxa_existing = db_taxa %>%
     filter(!is.na(itis_tsn)) %>%
     pull(taxon_id)
   
-  taxa_revised_unique_new = c("foo",
-                              setdiff(taxa_revised_unique, taxa_existing))
+  taxa_revised_unique_new = setdiff(taxa_revised_unique, taxa_existing)
   
-  taxa_revised_results = taxa_lookup_map(taxa_revised_unique_new) %>%
-    filter(taxon_id != "foo")
-}
-
-parent_cols = c("itis_class",
-                "itis_order",
-                "itis_family",
-                "itis_genus")
-
-parent_taxa = sort(tolower(unique(na.omit(unlist(taxa_revised_results[parent_cols]))))) %>%
-  setdiff(taxa_revised_unique)
-
-
-parent_revised_results = taxa_lookup_map(parent_taxa)
-
-# bind all results
-if (nrow(parent_revised_results) > 0) {
-  taxa_results_all = bind_rows(taxa_revised_results, parent_revised_results)
-} else {
-  taxa_results_all = taxa_revised_results
-}
-
-
-taxa_revised_clean = taxa_results_all %>%
-  rename("itis_tsn" = "itis_tsn_current",
-         "itis_taxon" = "itis_canonical_current",
-         "itis_rank" = "itis_rank_current",
-         "ncbi_id" = "ncbi_id_matched",
-         "ncbi_taxon" = "ncbi_canonical_matched",
-         "gbif_id" = "gbif_id_current",
-         "gbif_taxon" = "gbif_canonical_current",
-         "iucn_tsn" = "iucn_tsn_current",
-         "iucn_taxon" = "iucn_canonical_current",
-         "amphibiaweb_common_name" = "amphibiaweb_common") %>%
-  select(all_of(c("taxon_id",
-                  "taxon",
-                  "amphibiaweb_id",
-                  "amphibiaweb_class",
-                  "amphibiaweb_order",
-                  "amphibiaweb_family",
-                  "amphibiaweb_genus",
-                  "amphibiaweb_species",
-                  "amphibiaweb_common_name",
-                  "amphibiaweb_url",
-                  "itis_tsn",
-                  "itis_rank",
-                  "itis_class",
+  if (length(taxa_revised_unique_new) == 0) {
+    taxa_revised_clean = NULL
+  } else {
+    taxa_revised_results = ribbitr_taxa_lookup(taxa_revised_unique_new, cites = TRUE, cites_token = Sys.getenv("cites_token"), format = "simplified")
+  }
+  
+  parent_cols = c("itis_class",
                   "itis_order",
                   "itis_family",
-                  "itis_genus",
-                  "itis_species",
-                  "ncbi_id",
-                  "ncbi_taxon",
-                  "gbif_id",
-                  "gbif_taxon",
-                  "iucn_tsn",
-                  "iucn_taxon")))
+                  "itis_genus")
+  
+  parent_taxa = sort(tolower(unique(na.omit(unlist(taxa_revised_results[parent_cols]))))) %>%
+    setdiff(taxa_revised_unique)
+  
+  
+  parent_revised_results = ribbitr_taxa_lookup(parent_taxa, format = "simplified")
+  
+  # bind all results
+  if (nrow(parent_revised_results) > 0) {
+    taxa_results_all = bind_rows(taxa_revised_results, parent_revised_results)
+  } else {
+    taxa_results_all = taxa_revised_results
+  }
+  
+  
+  taxa_revised_clean = taxa_results_all %>%
+    rename(any_of(c("itis_tsn" = "itis_tsn_current",
+                    "itis_taxon" = "itis_canonical_current",
+                    "itis_rank" = "itis_rank_current",
+                    "ncbi_id" = "ncbi_id_matched",
+                    "ncbi_taxon" = "ncbi_canonical_matched",
+                    "gbif_id" = "gbif_id_current",
+                    "gbif_taxon" = "gbif_canonical_current",
+                    "iucn_tsn" = "iucn_tsn_current",
+                    "iucn_taxon" = "iucn_canonical_current",
+                    "amphibiaweb_common_name" = "amphibiaweb_common"))) %>%
+    select(any_of(c("taxon_id",
+                    "taxon",
+                    "amphibiaweb_id",
+                    "amphibiaweb_class",
+                    "amphibiaweb_order",
+                    "amphibiaweb_family",
+                    "amphibiaweb_genus",
+                    "amphibiaweb_species",
+                    "amphibiaweb_common_name",
+                    "amphibiaweb_url",
+                    "itis_tsn",
+                    "itis_rank",
+                    "itis_class",
+                    "itis_order",
+                    "itis_family",
+                    "itis_genus",
+                    "itis_species",
+                    "ncbi_id",
+                    "ncbi_taxon",
+                    "gbif_id",
+                    "gbif_taxon",
+                    "iucn_tsn",
+                    "iucn_taxon")))
+}
+
+# taxa_revised_clean = data.frame(taxon_id = character(0))
 ```
 
 # subset data
