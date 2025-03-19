@@ -431,6 +431,101 @@ db_visit = tbl(dbcon, Id("survey_data", "visit"))
 
 ```
 
+### investigate related observations
+```{r}
+obs_capture = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id")
+
+obs_ves = db_ves %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id")
+
+obs_capture_rel = obs_capture %>%
+  filter(visit_id %in% vids) %>%
+  select(region,
+         site,
+         date,
+         time_of_day,
+         transect,
+         start_time,
+         detection_type,
+         taxon_capture,
+         svl_mm,
+         body_mass_g,
+         life_stage,
+         sex,
+         observer_capture,
+         comments_capture) %>%
+  collect() %>%
+  arrange(date, time_of_day, site)
+
+obs_ves_rel = obs_ves %>%
+  filter(visit_id %in% vids) %>%
+  select(region,
+         site,
+         date,
+         time_of_day,
+         transect,
+         start_time,
+         detection_type,
+         taxon_ves,
+         count_ves,
+         life_stage,
+         observer_ves,
+         comments_ves) %>%
+  collect() %>%
+  arrange(date, time_of_day, site)
+
+obs_capture_range = obs_capture %>%
+  filter(region %in% dblog$region,
+         date >= dblog$date_min,
+         date <= dblog$date_max) %>%
+  select(region,
+         site,
+         date,
+         time_of_day,
+         transect,
+         start_time,
+         detection_type,
+         taxon_capture,
+         svl_mm,
+         body_mass_g,
+         life_stage,
+         sex,
+         observer_capture,
+         comments_capture) %>%
+  collect() %>%
+  arrange(date, time_of_day, site)
+
+obs_ves_range = obs_ves %>%
+  filter(region %in% dblog$region,
+         date >= dblog$date_min,
+         date <= dblog$date_max) %>%
+  select(region,
+         site,
+         date,
+         time_of_day,
+         transect,
+         start_time,
+         detection_type,
+         taxon_ves,
+         count_ves,
+         life_stage,
+         observer_ves,
+         comments_ves) %>%
+  collect() %>%
+  arrange(date, time_of_day, site)
+
+```
+
+
 # environmental
 ```{r}
 unified_env = bind_rows(clean_edna %>%
@@ -543,6 +638,8 @@ tray = compare_for_staging(db_env %>% collect(), subset_env, "environmental_id",
 upsert_env = bind_rows(tray$insert,
                         tray$update)
 
+peace = compare_updates(tray)
+
 # anything to upsert?
 x_env = (nrow(upsert_env_survey) > 0) | (nrow(upsert_env) > 0)
 
@@ -625,7 +722,7 @@ gelled_edna = unified_edna %>%
                             UUIDfromName("c02ab86e-9e5a-4ac2-a1a6-bfa6c32ab614", uuid_name),
                             survey_id)) %>%
   ungroup() %>%
-  mutate(uuid_name = paste0(survey_id, edna_sample_name, edna_latitude, collection_time, collection_type),
+  mutate(uuid_name = paste0(survey_id, edna_sample_name, edna_latitude, collection_time, collection_type, filter_start_time),
          edna_id = UUIDfromName("e4d345d4-6433-40d2-9997-1b4ee8b1a627", uuid_name))
 ```
 
@@ -646,7 +743,6 @@ compare_edna_survey = compare_df_cols(db_survey %>%
 tray = compare_for_staging(db_survey %>% collect(), subset_edna_survey, "survey_id", return_all = TRUE, report = "edna_survey")
 upsert_edna_survey = bind_rows(tray$insert,
                                tray$update)
-
 # edna
 subset_edna = gelled_edna %>%
   select(any_of(colnames(db_edna))) %>%
@@ -657,6 +753,8 @@ subset_edna = gelled_edna %>%
 compare_edna = compare_df_cols(db_edna %>%
                                   filter(FALSE) %>%
                                   collect(), subset_edna)
+
+peace = get_dupes(subset_edna, edna_id)
 
 tray = compare_for_staging(db_edna %>% collect(), subset_edna, "edna_id", return_all = TRUE, report = "edna")
 upsert_edna = bind_rows(tray$insert,
@@ -735,13 +833,17 @@ group_by(visit_id,
          detection_type) %>%
   mutate(start_time = find_time_range(time_of_capture)$first_time,
          end_time = find_time_range(time_of_capture)$last_time,
+         start_timestamp_utc = start_timestamp_utc(date, start_time, local_tz),
+         end_timestamp_utc = end_timestamp_utc(date, start_time, end_time, local_tz),
+         duration_minutes = duration_minutes(start_timestamp_utc, end_timestamp_utc),
          uuid_name_survey = paste0(visit_id, transect, start_time, detection_type),
          survey_id = ifelse(is.na(survey_id), UUIDfromName("e3c835a4-4c8d-491c-9970-011aba853686", uuid_name_survey), survey_id),
          observers_survey = paste(unique(unlist(strsplit(observer_capture, ", "))), collapse = ", "),
          number_observers = lengths(strsplit(observers_survey, ",")),
          observers_survey = ifelse(observers_survey == "NA", NA_character_, observers_survey),
          number_observers = ifelse(is.na(observers_survey), NA, number_observers)) %>%
-  ungroup()
+  ungroup() %>%
+  filter(!is.na(site))
 
 peace = get_dupes(gelled_capture, capture_id)
 
@@ -757,7 +859,7 @@ peace = get_dupes(gelled_capture, capture_id)
 #          sample_name = genetic_id) %>%
 #   mutate(sample_type = "genetic")
 
-sample_gelled = gelled_capture %>%
+gelled_sample = gelled_capture %>%
   select(capture_id,
          bd_swab_tube_id,
          mic_swab_tube_id,
@@ -785,6 +887,7 @@ sample_gelled = gelled_capture %>%
   filter(!is.na(sample_name),
          sample_name != "NA") %>%
   left_join(db_sample %>%
+              select(sample_id, sample_name, sample_type) %>%
               collect(), by = c("sample_name", "sample_type")) %>%
   mutate(uuid_name = paste0(sample_name, sample_type),
          sample_id = ifelse(is.na(sample_id), UUIDfromName("1208e62f-d3a1-462c-984f-0bf1f43f5837", uuid_name), sample_id))
@@ -796,17 +899,17 @@ sample_gelled = gelled_capture %>%
 # subset & compare
 ```{r}
 
-subset_survey_capture = gelled_capture %>%
+subset_capture_survey = gelled_capture %>%
   select(any_of(colnames(db_survey))) %>%
   distinct() %>%
   drop_na(survey_id)
 
-compare_survey_capture = compare_df_cols(db_survey %>%
+compare_capture_survey = compare_df_cols(db_survey %>%
                                   filter(FALSE) %>%
-                                  collect(), subset_survey_capture)
-tray = compare_for_staging(db_survey %>% collect(), subset_survey_capture, "survey_id", report = "survey_capture")
+                                  collect(), subset_capture_survey)
+tray = compare_for_staging(db_survey %>% collect(), subset_capture_survey, "survey_id", report = "survey_capture")
 
-upsert_survey_capture = bind_rows(tray$insert,
+upsert_capture_survey = bind_rows(tray$insert,
                                   tray$update)
 
 subset_capture = gelled_capture %>%
@@ -830,15 +933,27 @@ subset_taxa = gelled_capture %>%
   drop_na(taxon_id)
 
 tray = compare_for_staging(db_taxa %>% collect(), subset_taxa, "taxon_id", report = "taxa")
-insert_taxa = tray$insert
+insert_capture_taxa = tray$insert
+
+subset_sample = gelled_sample %>%
+  select(any_of(colnames(db_sample))) %>%
+  distinct()
 
 compare_sample = compare_df_cols(db_sample %>%
                                   filter(FALSE) %>%
-                                  collect(), sample_gelled)
+                                  collect(), subset_sample)
 
-tray = compare_for_staging(db_sample %>% collect(), sample_gelled, "sample_id", report = "sample")
-insert_sample = tray$insert
+tray = compare_for_staging(db_sample %>% collect(), subset_sample, "sample_id", report = "sample")
+upsert_sample = bind_rows(tray$insert,
+                          tray$update)
 
+peace = compare_updates(tray)
+
+if (nrow(tray$update) > 0) {
+  warning("Sample updates may indicate duplicate capture_ids. Investigation recommended.")
+}
+
+x_capture = (nrow(upsert_capture_survey) > 0) | (nrow(insert_capture_taxa) > 0) | (nrow(upsert_capture) > 0 | nrow(upsert_sample) > 0)
 ```
 
 
@@ -849,29 +964,21 @@ dbBegin(dbcon)
 
 tryCatch(
   {
-    temp_taxa = stage_to_temp(dbcon, db_taxa, insert_taxa)
+    temp_taxa = stage_to_temp(dbcon, db_taxa, insert_capture_taxa)
     pointer = tbl(dbcon, temp_taxa)
     rows_insert(db_taxa, pointer, by="taxon_id", in_place=TRUE, conflict = "ignore")
     
-    temp_visit = stage_to_temp(dbcon, db_visit, insert_visit)
-    pointer = tbl(dbcon, temp_visit)
-    rows_insert(db_visit, pointer, by="visit_id", in_place=TRUE, conflict = "ignore")
+    temp_capture_survey = stage_to_temp(dbcon, db_survey, upsert_capture_survey)
+    pointer = tbl(dbcon, temp_capture_survey)
+    rows_upsert(db_survey, pointer, by="survey_id", in_place=TRUE)
     
-    temp_survey = stage_to_temp(dbcon, db_survey, insert_survey)
-    pointer = tbl(dbcon, temp_survey)
-    rows_insert(db_survey, pointer, by="survey_id", in_place=TRUE, conflict = "ignore")
-    
-    temp_capture = stage_to_temp(dbcon, db_capture, insert_capture)
+    temp_capture = stage_to_temp(dbcon, db_capture, upsert_capture)
     pointer = tbl(dbcon, temp_capture)
-    rows_insert(db_capture, pointer, by="capture_id", in_place=TRUE, conflict = "ignore")
-
-    temp_env = stage_to_temp(dbcon, db_env, insert_env)
-    pointer = tbl(dbcon, temp_env)
-    rows_insert(db_env, pointer, by="environmental_id", in_place=TRUE, conflict = "ignore")
+    rows_upsert(db_capture, pointer, by="capture_id", in_place=TRUE)
     
-    temp_sample = stage_to_temp(dbcon, db_sample, insert_sample)
+    temp_sample = stage_to_temp(dbcon, db_sample, upsert_sample)
     pointer = tbl(dbcon, temp_sample)
-    rows_insert(db_sample, pointer, by="sample_id", in_place=TRUE, conflict = "ignore")
+    rows_upsert(db_sample, pointer, by="sample_id", in_place=TRUE)
     
     # Commit the transaction if successful
     dbCommit(dbcon)
