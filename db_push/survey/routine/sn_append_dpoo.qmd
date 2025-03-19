@@ -1,0 +1,129 @@
+---
+title: "sn_append_dpoo"
+format: html
+---
+
+# Setup
+
+```{r}
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+## Connect to RIBBiTR DB
+dbcon <- hopToDB("ribbitr")
+
+## Connect to SN amphibians DB
+sncon <- hopToDB("amphibians")
+
+## Pull metadata from database
+mdc = tbl(dbcon, Id("public", "all_columns")) %>%
+  filter(table_schema == "survey_data") %>%
+  collect()
+
+## Point to local data directory
+ddir = Sys.getenv("data_dir")  # data directory
+# Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
+wddir = here(ddir, "sierra", '2025-03-18') # working data directory
+
+```
+
+# table pointers
+```{r}
+# pull relevant chain tables from RIBBiTR DB
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+
+db_aural = tbl(dbcon, Id("survey_data", "aural"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_edna = tbl(dbcon, Id("survey_data", "edna"))
+db_env = tbl(dbcon, Id("survey_data", "environmental"))
+db_ves = tbl(dbcon, Id("survey_data", "ves"))
+
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
+db_cmr = tbl(dbcon, Id("survey_data", "cmr"))
+db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
+
+# pull relevant chain tables from amphibians DB
+sn_site = tbl(sncon, "site")
+```
+
+# files
+```{r}
+# list.files(path = here(wddir))
+
+# lookup tables
+raw_visit = read_csv(here(wddir, "visit.csv"))
+raw_survey = read_csv(here(wddir, "survey.csv"))
+raw_observer = read_csv(here(wddir, "survey_surveyor.csv"))
+raw_relocate = read_csv(here(wddir, "relocate.csv"))
+
+# observation tables
+raw_capture = read_csv(here(wddir, "capture_survey.csv"))
+raw_ves = read_csv(here(wddir, "visual_survey.csv"))
+raw_relocate_frog = read_csv(here(wddir, "relocate_frog.csv"))
+
+# bd qpcr sample results
+raw_bd_plates = read_csv(here(wddir, "final_plates.csv"))
+raw_bd_qc = read_csv(here(wddir, "final_qc.csv"))
+raw_bd_results = read_csv(here(wddir, "final_results.csv"), col_types = cols(well_notes = "c"))
+
+local_tz = "America/Los_Angeles"
+
+```
+
+# clean data
+
+```{r}
+clean_visit = raw_visit %>%
+  rename(sn_visit_id = id,
+         site = site_id,
+         date = visit_date,
+         comments_visit = comment) %>%
+  mutate(visit_lab = "snarl",
+         project = "ribbitr",
+         time_of_day = "day")
+
+clean_survey = raw_survey %>%
+  rename(sn_survey_id = id,
+         detection_type = survey_type,
+         air_temp_c = air_temp,
+         water_temp_c = water_temp,
+         comments_survey = comment) %>%
+  mutate(detection_type = case_match(detection_type,
+                                     "visual" ~ "visual",
+                                     "swab" ~ "capture",
+                                     "cmr" ~ "capture"))
+
+clean_capture = raw_capture %>%
+  rename(capture_id = id,
+         sn_survey_id = survey_id,
+         local_cmr_id = pit_tag_ref,
+         life_stage = capture_life_stage,
+         capture_utme = utme,
+         capture_utmn = utmn,
+         svl_mm = length,
+         body_mass_g = weight,
+         bd = swab_id,
+         comments_capture = comment) %>%
+  mutate(taxon_capture = case_match(species,
+                                    "buca" ~ "anaxyrus_canorus",
+                                    "hyre" ~ "pseudacris_regilla",
+                                    "ramu" ~ "rana_muscosa",))
+
+clean_ves = raw_ves %>%
+  rename(ves_id = id,
+         sn_survey_id = survey_id,
+         life_stage = visual_life_stage,
+         count_ves = count,
+         comments_ves = comment) %>%
+  mutate(taxon_ves = case_match(species,
+                                "buca" ~ "anaxyrus_canorus",
+                                "hyre" ~ "pseudacris_regilla",
+                                "ramu" ~ "rana_muscosa",
+                                "thel" ~ "thamnophis_elegans"))
+
+```
