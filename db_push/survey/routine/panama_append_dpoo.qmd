@@ -536,26 +536,6 @@ db_visit = tbl(dbcon, Id("survey_data", "visit"))
 
 ### Unify env data
 ```{r}
-
-env_cols = c("sample_location_description",
-             "environmental_utm_zone",
-             "environmental_utme",
-             "environmental_utmn",
-             "environmental_elevation_m",
-             "pressureinhg",
-             "relative_humidity_percent",
-             "wind_speed_m_s",
-             "air_temp_c",
-             "water_temp_c" ,
-             "p_h",
-             "conductivity_us_cm",
-             "tds_ppm",
-             "salinity_ppt",
-             "soil_humidity_m3m3",
-             "cloud_cover_percent",
-             "precipitation_during_visit",
-             "precipitation_other")
-
 unified_env = clean_visit_info %>%
   left_join(clean_survey_info, by = c("temp_visit_id" = "visit_fulcrum_id")) %>%
   distinct() %>%
@@ -581,11 +561,6 @@ unified_env = clean_visit_info %>%
   ungroup() %>%
   filter(!is.na(site),
          !is.na(date))
-
-if (nrow(unified_env %>% filter(is.na(site_id))) > 0) {
-  stop("Unknown sites returned, consider importing first.")
-}
-
 
 ```
 
@@ -939,7 +914,7 @@ db_aural = tbl(dbcon, Id("survey_data", "aural"))
 ```
 
 ## VES chain
-- ves / survey / visit / site / region / location
+- ves / survey / visit / site / region / country
 
 ### Unify ves data
 ```{r}
@@ -1040,7 +1015,7 @@ x_ves = (nrow(upsert_ves_survey) > 0) | (nrow(insert_ves_taxa) > 0) | (nrow(upse
 
 ```
 
-### Stage and commit aural tables
+### Stage and commit ves tables
 
 ```{r}
 if (x_ves) {
@@ -1175,7 +1150,7 @@ gelled_capture = unified_capture %>%
 ### Samples capture
 
 ```{r}
-clean_sample = gelled_capture %>%
+unified_sample = gelled_capture %>%
   rename(bd = bd_swab_id,
          genetic = genetic_id,
          microbiome = microbiome_swab_id,
@@ -1209,7 +1184,7 @@ clean_sample = gelled_capture %>%
   select(-dupe,
          -row_num)
 
-gelled_sample = clean_sample %>%
+gelled_sample = unified_sample %>%
   left_join(db_sample %>%
               select(-capture_id) %>%
               collect(), by = c("sample_name", "sample_type")) %>%
