@@ -1208,9 +1208,6 @@ compare_capture_survey = compare_df_cols(db_survey %>%
                                   filter(FALSE) %>%
                                   collect(), subset_capture_survey)
 
-peace = get_dupes(subset_capture_survey, detection_type, transect, visit_id, start_time)
-tbl_nkey('survey', mdc)
-
 tray = compare_for_staging(db_survey %>% collect(), subset_capture_survey, tbl_pkey('survey', mdc), return_all = TRUE, report = "capture_survey")
 upsert_capture_survey = bind_rows(tray$insert,
                                   tray$update)
