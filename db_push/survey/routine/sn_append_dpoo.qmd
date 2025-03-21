@@ -680,16 +680,21 @@ gelled_capture = unified_capture %>%
   left_join(unified_cmr %>%
               select(local_cmr_id, cmr_id),
             by = "local_cmr_id") %>%
-  group_by(transect,
+  arrange(date, site, start_time, survey_quality) %>%
+  group_by(visit_id,
            detection_type,
+           transect,
            start_time,
-           visit_id) %>%
-  mutate(start_timestamp_utc = start_timestamp_utc(date, start_time, local_tz),
+           observers_survey) %>%
+  mutate(end_time = as_hms(max(end_time)),
+         start_timestamp_utc = start_timestamp_utc(date, start_time, local_tz),
          end_timestamp_utc = end_timestamp_utc(date, start_time, end_time, local_tz),
          duration_minutes = duration_minutes(start_timestamp_utc, end_timestamp_utc),
          number_observers = count_observers(paste(observers_survey, collapse = ",")),
          comments_survey = str_c(comments_survey, collapse = ", "),
-         uuid_name = paste0(visit_id, detection_type, transect, start_time),
+         survey_quality = first(survey_quality),
+         description = str_c(description, collapse = ", "),
+         uuid_name = paste0(visit_id, detection_type, transect, start_time, observers_survey),
          survey_id = ifelse(is.na(survey_id),
                             UUIDfromName("831e1d81-169a-4574-911a-a6cf3792cc0c", uuid_name),
                             survey_id)) %>%
@@ -725,86 +730,127 @@ gelled_sample = unified_sample %>%
   mutate(uuid_name = paste0(sample_name, sample_type),
          sample_id = ifelse(is.na(sample_id), UUIDfromName("1208e62f-d3a1-462c-984f-0bf1f43f5837", uuid_name), sample_id))
 
-sample_dupes_new = gelled_sample %>%
-  filter(dupe)
-
-if (nrow(sample_dupes_new > 0)) {
-  stop("Sample name(s) conflict within new data. Stopping. See `sample_dupes_new` for conflicts.")
-}
-
-sample_dupes_existing = gelled_sample %>%
-  filter(!is.na(capture_id_old),
-         capture_id != capture_id_old)
-
-if (nrow(sample_dupes_existing > 0)) {
-  stop("Sample name(s) conflict with exisiting record in db_sample. Stopping. See `sample_dupes_existing` for conflicts.")
-}
+constrained_sample = gelled_sample %>%
+  resolve_sample_conflicts(db_sample)
 
 ```
 
-## resolve sample colfilcts
+### 5 - Subset capture tables
+
 ```{r}
-cids_conflict = unique(c(sample_dupes_new$capture_id, sample_dupes_existing$capture_id, sample_dupes_existing$capture_id_old))
+# survey
+subset_capture_survey = gelled_capture %>%
+  select(any_of(colnames(db_survey))) %>%
+  distinct() %>%
+  filter(!is.na(survey_id))
 
-sample_conflicts_existing = db_capture %>%
-  left_join(db_survey, by = "survey_id") %>%
-  left_join(db_visit, by = "visit_id") %>%
-  left_join(db_site, by = "site_id") %>%
-  filter(capture_id %in% cids_conflict) %>%
-  collect()
+# compare columns
+compare_capture_survey = compare_df_cols(db_survey %>%
+                                  filter(FALSE) %>%
+                                  collect(), subset_capture_survey)
 
-sn_conflicts = sn_capture %>%
-  filter(id %in% cids_conflict) %>%
-  collect()
+tray = compare_for_staging(db_survey %>% collect(), subset_capture_survey, "survey_id", return_all = TRUE, report = "capture_survey")
+upsert_capture_survey = bind_rows(tray$insert,
+                                  tray$update)
 
-sample_conflicts_new = gelled_capture %>%
-  filter(capture_id %in% cids_conflict)
+# taxa
+subset_capture_taxa = gelled_capture %>%
+  select(taxon_capture) %>%
+  drop_na(taxon_capture) %>%
+  distinct() %>%
+  rename(taxon_id = taxon_capture) %>%
+  left_join(db_taxa %>% collect(), by = "taxon_id")
 
-sample_conflicts = bind_rows(sample_conflicts_existing,
-                             sample_conflicts_new) %>%
-  select(capture_id,
-         svl_mm,
-         body_mass_g,
-         taxon_capture,
-         sex,
-         life_stage,
-         tad_stage,
-         date,
-         site) %>%
-  left_join(sample_dupes_existing %>%
-              select(capture_id,
-                     sample_name),
-            by = "capture_id") %>%
-  left_join(sample_dupes_existing %>%
-              select(capture_id_old,
-                     sample_name),
-            by = c("capture_id" = "capture_id_old")) %>%
-  mutate(sample_name = coalesce(sample_name.x, sample_name.y)) %>%
-  select(sample_name,
-         everything(),
-         -sample_name.x,
-         -sample_name.y,) %>%
-  arrange(sample_name)
+tray = compare_for_staging(db_taxa %>% collect(), subset_capture_taxa, "taxon_id", return_all = TRUE, report = "capture_taxa")
+insert_capture_taxa = tray$insert
 
-# write_csv(sample_conflicts, here("staging", paste0("sn_bd_swab_conflicts_", today(), ".csv")))
+# capture
+subset_capture = gelled_capture %>%
+  select(any_of(colnames(db_capture))) %>%
+  distinct() %>%
+  filter(!is.na(capture_id))
 
-samp_conf_new = db_sample %>%
-  filter(capture_id %in% cids_conflict) %>%
-  collect()
+# compare columns
+compare_capture = compare_df_cols(db_capture %>%
+                                  filter(FALSE) %>%
+                                  collect(), subset_capture)
 
-samp_conf_resolved = samp_conf_new %>%
-  mutate(sample_name_conflict = sample_name,
-           sample_name = paste0(sample_name, "_a"))
 
-gelled_sample = gelled_sample %>%
-  mutate(sample_name_conflict = ifelse(capture_id %in% cids_conflict,
-                                       sample_name,
-                                       NA),
-         sample_name = ifelse(capture_id %in% cids_conflict,
-                                       paste0(sample_name, "_a"),
-                                       NA),
-         uuid_name = paste0(sample_name, sample_type),
-         sample_name = ifelse(capture_id %in% cids_conflict,
-                                       UUIDfromName("1208e62f-d3a1-462c-984f-0bf1f43f5837", uuid_name),
-                                       NA))
+tray = compare_for_staging(db_capture %>% collect(), subset_capture, tbl_pkey('capture', mdc), return_all = TRUE, report = "capture")
+upsert_capture = bind_rows(tray$insert,
+                           tray$update)
+
+subset_sample = checked_sample %>%
+  select(any_of(colnames(db_sample))) %>%
+  distinct() %>%
+  filter(!is.na(sample_id))
+
+compare_sample = compare_df_cols(db_sample %>%
+                                  filter(FALSE) %>%
+                                  collect(), subset_sample)
+
+
+tray = compare_for_staging(db_sample %>% collect(), subset_sample, "sample_id", return_all = TRUE, report = "sample")
+upsert_sample = bind_rows(tray$insert,
+                          tray$update)
+
+
+if (nrow(tray$update) > 0) {
+  warning("Sample updates may indicate duplicate capture_ids. Investigation recommended")
+}
+
+x_capture = (nrow(upsert_capture_survey) > 0) | (nrow(insert_capture_taxa) > 0) | (nrow(upsert_capture) > 0 | nrow(upsert_cmr) > 0 | nrow(upsert_sample) > 0)
+```
+
+### Stage and commit capture tables
+
+```{r}
+if (x_capture) {
+  # begin transaction temp
+  dbBegin(dbcon)
+  
+  tryCatch(
+    {
+      temp_cmr = stage_to_temp(dbcon, db_cmr, upsert_cmr)
+      pointer = tbl(dbcon, temp_cmr)
+      rows_upsert(db_cmr, pointer, by="cmr_id", in_place=TRUE)
+      
+      temp_capture_survey = stage_to_temp(dbcon, db_survey, upsert_capture_survey)
+      pointer = tbl(dbcon, temp_capture_survey)
+      rows_upsert(db_survey, pointer, by="survey_id", in_place=TRUE)
+      
+      temp_capture_taxa = stage_to_temp(dbcon, db_taxa, insert_capture_taxa)
+      pointer = tbl(dbcon, temp_capture_taxa)
+      rows_insert(db_taxa, pointer, by="taxon_id", in_place=TRUE, conflict = "ignore")
+      
+      temp_capture = stage_to_temp(dbcon, db_capture, upsert_capture)
+      pointer = tbl(dbcon, temp_capture)
+      rows_upsert(db_capture, pointer, by="capture_id", in_place=TRUE)
+      
+      temp_sample = stage_to_temp(dbcon, db_sample, upsert_sample)
+      pointer = tbl(dbcon, temp_sample)
+      rows_upsert(db_sample, pointer, by="sample_id", in_place=TRUE)
+      
+      # Commit the transaction if successful
+      dbCommit(dbcon)
+      print("Transaction successful!")
+      
+    }, error = function(e) {
+      # Rollback in case of error
+      dbRollback(dbcon)
+      message("Transaction failed: ", e$message)
+    })
+}
+
+# reload
+db_cmr = tbl(dbcon, Id("survey_data", "cmr"))
+db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+```
+
+```{r}
+dbDisconnect(dbcon)
+dbDisconnect(sncon)
 ```
