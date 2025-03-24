@@ -1,5 +1,5 @@
 ---
-title: "bd qPCR push"
+title: "bd qPCR push Richards-Zawacki"
 format: html
 editor: source
 ---
@@ -11,7 +11,7 @@ librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, rio, RPostgres, st
 # librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 
 ## Connect to DB
-dbcon <- hopToDB()
+dbcon <- hopToDB("wibbitr")
 
 ## Point to local data directory
 ddir = Sys.getenv("data_dir")  # data directory
@@ -84,6 +84,8 @@ raw_pe_2023_01 = import_list(here(wddir, "penn", "2023", "RIBBiTR_qPCR_Penn2023_
 raw_pe_2023_02 = import_list(here(wddir, "penn", "2023", "RIBBiTR_qPCR_Penn2023_17August2023_Plate2_RESULTS.xls"))
 raw_pe_2023_03 = import_list(here(wddir, "penn", "2023", "RIBBiTR_qPCR_Penn2023_18August2023_Plate3_Results.xlsx"))
 
+tz_local = "America/New_York"
+
 ```
 
 ## scrape xls files
@@ -104,8 +106,8 @@ scrape_qpcr_xls <- function(raw_xls) {
         !str_detect(qpcr_plate_name, "RERUN") ~ 1L,
         str_detect(qpcr_plate_name, "RERUN(?!\\d)") ~ 2L,
         TRUE ~ as.integer(str_extract(qpcr_plate_name, "RERUN(\\d+)") %>% str_replace("RERUN", "")) + 1L),
-      qpcr_date = parse_date_time(str_extract(qpcr_plate_name, "\\d{8}"), orders = "mdY"),
-      extraction_date = parse_date_time(str_extract(extraction_plate_name, "\\d{8}"), orders = "mdY"),
+      qpcr_date = as.Date(parse_date_time(str_extract(qpcr_plate_name, "\\d{8}"), orders = "mdY")),
+      extraction_date = as.Date(parse_date_time(str_extract(extraction_plate_name, "\\d{8}"), orders = "mdY")),
       master_mix = chemistry
     )
   
@@ -225,7 +227,7 @@ clean_results = bind_results %>%
                               bd_pos_neg == "Negative" ~ 0,
                               TRUE ~ NA_real_),
          replicate_results = ifelse(detected, "p", "n"),
-         replicate = "singley",
+         replicate = "singlet",
          replicate_count = 1,
          qpcr_lab = "rz_lab",
          extract_lab = "rz_lab",
@@ -245,6 +247,9 @@ clean_results = bind_results %>%
          !str_detect(sample_name, "^Pisces"),
          target_name == "Bd" | is.na(target_name),
          ipc == "Pass")
+
+
+
 
 ```
 
@@ -275,7 +280,8 @@ violations_unique = get_dupes(clean_results, sample_name)
 gelled_results = clean_results %>%
   left_join(db_sample %>% collect(), by = c("sample_name", "sample_type")) %>%
   group_by(sample_name, sample_type) %>%
-  mutate(sample_id = ifelse(is.na(sample_id), UUIDgenerate(), sample_id)) %>%
+  mutate(uuid_name = paste0(sample_name_bd, sample_type),
+         sample_id = ifelse(is.na(sample_id), UUIDfromName("1208e62f-d3a1-462c-984f-0bf1f43f5837", uuid_name), sample_id)) %>%
   ungroup() %>%
   mutate(sample_name_bd = sample_name) %>%
   left_join(db_bd %>% 
@@ -289,7 +295,8 @@ gelled_results = clean_results %>%
   group_by(sample_name_bd,
            qpcr_plate_name,
            qpcr_well) %>%
-  mutate(result_id = ifelse(is.na(result_id), UUIDgenerate(), result_id)) %>%
+  mutate(uuid_name = paste0(sample_name_bd, qpcr_well, qpcr_plate_name, qpcr_plate_run),
+         result_id = ifelse(is.na(result_id), UUIDfromName("d41b1f58-5576-49b6-a303-0bddcc94a0f2", uuid_name), result_id)) %>%
   ungroup()
 
 ```
