@@ -1,6 +1,5 @@
 ---
 title: "ribbitr_db: Bd swab & microclimate query"
-author: "Cob Staines"
 format: html
 editor: visual
 ---
