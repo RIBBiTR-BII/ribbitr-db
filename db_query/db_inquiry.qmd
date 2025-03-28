@@ -15,7 +15,31 @@ if (!require(librarian)){
 librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
 
 # connect to database
-dbcon = hopToDB(prefix = "ribbitr")
+dbcon = hopToDB("ribbitr")
+
+```
+
+## Pointers to relevant tables
+
+```{r}
+# pull relevant chain tables from DB
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+
+db_aural = tbl(dbcon, Id("survey_data", "aural"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_edna = tbl(dbcon, Id("survey_data", "edna"))
+db_env = tbl(dbcon, Id("survey_data", "environmental"))
+db_ves = tbl(dbcon, Id("survey_data", "ves"))
+
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
+db_cmr = tbl(dbcon, Id("survey_data", "cmr"))
+db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
 
 ```
 
@@ -66,38 +90,83 @@ bd_results = tbl(dbcon, Id("survey_data", "qpcr_bd_results")) %>%
   
 ```
 
+# 1 - Import data
 
 ```{r}
-# pull relevant chain tables from DB
-db_aural = tbl(dbcon, Id("survey_data", "aural"))
-db_capture = tbl(dbcon, Id("survey_data", "capture"))
-db_ves = tbl(dbcon, Id("survey_data", "ves"))
-db_survey = tbl(dbcon, Id("survey_data", "survey"))
-db_visit = tbl(dbcon, Id("survey_data", "visit"))
-db_site = tbl(dbcon, Id("survey_data", "site"))
-db_region = tbl(dbcon, Id("survey_data", "region"))
-db_location = tbl(dbcon, Id("survey_data", "location"))
+data_capture = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id" ) %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  mutate(year = year(date)) %>%
+  filter(country == "brazil") %>%
+  group_by(region, year) %>%
+  summarise(count = n()) %>%
+  collect() %>%
+  arrange(year, region) %>%
+  select(year, region, count)
 
-```
+data_ves = db_ves %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id" ) %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  mutate(year = year(date)) %>%
+  filter(country == "brazil") %>%
+  group_by(region, year) %>%
+  summarise(count = n()) %>%
+  collect() %>%
+  arrange(year, region) %>%
+  select(year, region, count)
 
-```{r}
 
-mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
+obs_ves = db_ves %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id" ) %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  mutate(year = year(date)) %>%
+  filter(country == "brazil") %>%
   collect()
 
-visit_chain = tbl_chain("visit", mdc)
-db_visit_chain = tbl_join(dbcon, visit_chain, tbl=db_visit)
-tbl_nkey("visit", mdc)
+b22cap = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id" ) %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  mutate(year = year(date)) %>%
+  filter(region == "boraceia",
+         year == "2022") %>%
+  collect() %>%
+  arrange(taxon_capture, date)
 
-peace = db_visit_chain %>%
-  group_by("site", "date", "survey_time") %>%
-  filter(is.na(date)) %>% collect()
+b22ves = db_ves %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id" ) %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  mutate(year = year(date)) %>%
+  filter(region == "boraceia",
+         year == "2022") %>%
+  collect() %>%
+  arrange(taxon_ves, date)
 
-null_vis_date = db_survey %>%
-  inner_join(peace, by="visit_id") %>%
-  collect()
-
-peace = db_visit %>%
-  filter(is.null(date)) %>% collect()
+all22cap = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id" ) %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  mutate(year = year(date)) %>%
+  filter(year == "2022",
+         country == "brazil") %>%
+  collect() %>%
+  group_by(site, date) %>%
+  summarise(count = n())
 
 ```
