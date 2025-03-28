@@ -42,7 +42,13 @@ unique(data_resi$standard_type)
 ggplot(data=data_bd, aes(x=log(average_target_quant), y=log(target_quant_per_swab), color=standard_target_type)) +
       geom_point()
 
-ggplot(data=data_sn, aes(x=log(average_target_quant), y=log(target_quant_per_swab), color=standard_target_type)) +
+ggplot(data=data_bd, aes(x=log(average_target_quant), y=log(target_quant_per_swab), color=standard)) +
+      geom_point()
+
+ggplot(data=data_bd, aes(x=log(average_target_quant), y=log(target_quant_per_swab), color=qpcr_lab)) +
+      geom_point()
+
+ggplot(data=data_sn, aes(x=log(average_target_quant), y=log(target_quant_per_swab), color=standard)) +
       geom_point()
 
 ggplot(data=data_resi, aes(x=log(start_quant), y=log(bd_load), color=standard_type)) +
