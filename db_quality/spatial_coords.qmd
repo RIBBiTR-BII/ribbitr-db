@@ -11,17 +11,67 @@ librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr
 # librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 
 # connect to database
-dbcon = hopToDB()
+dbcon = hopToDB("wibbitr")
 ```
-# Calculate Lat/Lon from UTM
+# Calculate Lat/Lon from UTM, and vice verse, where these values are null.
 
-## site
+## define functions
 ```{r}
-calc_q = "UPDATE survey_data.site
-SET site_latitude = ST_Y(ST_Transform(ST_SetSRID(ST_MakePoint(site_utme, site_utmn), 32600 + site_utm_zone), 4326)),
-    site_longitude = ST_X(ST_Transform(ST_SetSRID(ST_MakePoint(site_utme, site_utmn), 32600 + site_utm_zone), 4326));"
 
-dbExecute(dbcon, calc_q)
+calculate_lat_lon = function(dbcon, schema_table, prefix) {
+  calc_ll_q = 
+  paste0("UPDATE ", schema_table, "
+SET ", prefix, "_latitude = ST_Y(ST_Transform(ST_SetSRID(ST_MakePoint(", prefix, "_utme, ", prefix, "_utmn), 32600 + ", prefix, "_utm_zone), 4326)),
+    ", prefix, "_longitude = ST_X(ST_Transform(ST_SetSRID(ST_MakePoint(", prefix, "_utme, ", prefix, "_utmn), 32600 + ", prefix, "_utm_zone), 4326))
+WHERE 
+  ", prefix, "_latitude IS NULL AND ", prefix, "_longitude IS NULL;")
+  
+  dbExecute(dbcon, calc_ll_q)
+}
+
+calculate_utm = function (dbcon, schema_table, prefix) {
+  calc_utm_q = 
+  paste0("UPDATE ", schema_table, "
+SET 
+  ", prefix, "_utm_zone = FLOOR((", prefix, "_longitude + 180) / 6) + 1,
+  ", prefix, "_utme = ST_X(ST_Transform(
+    ST_SetSRID(ST_MakePoint(", prefix, "_longitude, ", prefix, "_latitude), 4326), 
+    (CASE 
+      WHEN ", prefix, "_latitude >= 0 THEN 32600 
+      ELSE 32700 
+    END + FLOOR((", prefix, "_longitude + 180) / 6) + 1
+  )::integer)),
+  ", prefix, "_utmn = ST_Y(ST_Transform(
+    ST_SetSRID(ST_MakePoint(", prefix, "_longitude, ", prefix, "_latitude), 4326), 
+    (CASE 
+      WHEN ", prefix, "_latitude >= 0 THEN 32600 
+      ELSE 32700 
+    END + FLOOR((", prefix, "_longitude + 180) / 6) + 1
+  )::integer))
+WHERE 
+  ", prefix, "_utme IS NULL AND ", prefix, "_utmn IS NULL;")
+  
+  dbExecute(dbcon, calc_utm_q)
+}
+```
+
+## calculations
+```{r}
+# site
+calculate_lat_lon(dbcon, "survey_data.site", "site")
+calculate_utm(dbcon, "survey_data.site", "site")
+
+# capture
+calculate_lat_lon(dbcon, "survey_data.capture", "capture")
+calculate_utm(dbcon, "survey_data.capture", "capture")
+
+# edna
+calculate_lat_lon(dbcon, "survey_data.edna", "edna")
+calculate_utm(dbcon, "survey_data.edna", "edna")
+
+# environmental
+calculate_lat_lon(dbcon, "survey_data.environmental", "environmental")
+calculate_utm(dbcon, "survey_data.environmental", "environmental")
 
 ```
 
@@ -45,52 +95,76 @@ dbExecute(dbcon, calc_q)
 
 ```
 
-# reformat utm_zone site
-```{r}
-db_site = tbl(dbcon, Id("survey_data", "site"))
-
-numeric_zone = db_site %>%
-  collect() %>%
-  mutate(utm_zone = gsub("[^0-9]", "", utm_zone))
-
-temp_site = stage_to_temp(dbcon, db_site, numeric_zone)
-pointer = tbl(dbcon, temp_site)
-rows_update(db_site, pointer, by="site_id", in_place=TRUE, unmatched = "ignore")
-
-```
-
-# reformat utm_zone env
-```{r}
-db_env = tbl(dbcon, Id("survey_data", "environmental"))
-
-numeric_zone = db_env %>%
-  collect() %>%
-  mutate(sample_location_utm_zone = gsub("[^0-9]", "", sample_location_utm_zone))
-
-temp_env = stage_to_temp(dbcon, db_env, numeric_zone)
-pointer = tbl(dbcon, temp_env)
-rows_update(db_env, pointer, by="environmental_id", in_place=TRUE, unmatched = "ignore")
-
-```
-
 # inherit utm_zone
 ```{r}
 db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_edna = tbl(dbcon, Id("survey_data", "edna"))
+db_env = tbl(dbcon, Id("survey_data", "environmental"))
 db_survey = tbl(dbcon, Id("survey_data", "survey"))
 db_visit = tbl(dbcon, Id("survey_data", "visit"))
 db_site = tbl(dbcon, Id("survey_data", "site"))
 
-inherit_zone = db_capture %>%
+capture_zone = db_capture %>%
   left_join(db_survey, by = "survey_id") %>%
   left_join(db_visit, by = "visit_id") %>%
   left_join(db_site, by = "site_id") %>%
-  filter(!is.na(capture_utme)) %>%
-  collect() %>%
-  mutate(capture_utm_zone = site_utm_zone) %>%
+  mutate(capture_utm_zone = ifelse(!is.na(site_utm_zone), site_utm_zone, capture_utm_zone),
+         capture_utm_zone = ifelse(is.na(capture_utme), NA, capture_utm_zone)) %>%
   select(all_of(colnames(db_capture)))
 
-temp_capture = stage_to_temp(dbcon, db_capture, inherit_zone)
-pointer = tbl(dbcon, temp_capture)
-rows_update(db_capture, pointer, by="capture_id", in_place=TRUE, unmatched = "ignore")
+rows_update(db_capture, capture_zone, by="capture_id", in_place=TRUE, unmatched = "ignore")
+
+edna_zone = db_edna %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  mutate(edna_utm_zone = ifelse(!is.na(site_utm_zone), site_utm_zone, edna_utm_zone),
+         edna_utm_zone = ifelse(is.na(edna_utme), NA, edna_utm_zone)) %>%
+  select(all_of(colnames(db_edna)))
+
+rows_update(db_edna, edna_zone, by="edna_id", in_place=TRUE, unmatched = "ignore")
+
+env_zone = db_env %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  mutate(environmental_utm_zone = ifelse(!is.na(site_utm_zone), site_utm_zone, environmental_utm_zone),
+         environmental_utm_zone = ifelse(is.na(environmental_utme), NA, environmental_utm_zone)) %>%
+  select(all_of(colnames(db_env)))
+
+rows_update(db_env, env_zone, by="environmental_id", in_place=TRUE, unmatched = "ignore")
+
+```
+
+# rounding to signiicant digits
+```{r}
+rounded_site = db_site %>%
+  mutate(site_utme = round(site_utme, 0),
+         site_utmn = round(site_utmn, 0),
+         site_latitude = round(site_latitude, 5),
+         site_longitude = round(site_longitude, 5))
+
+rounded_capture = db_capture %>%
+  mutate(capture_utme = round(capture_utme, 0),
+         capture_utmn = round(capture_utmn, 0),
+         capture_latitude = round(capture_latitude, 5),
+         capture_longitude = round(capture_longitude, 5))
+
+rounded_edna = db_edna %>%
+  mutate(edna_utme = round(edna_utme, 0),
+         edna_utmn = round(edna_utmn, 0),
+         edna_latitude = round(edna_latitude, 5),
+         edna_longitude = round(edna_longitude, 5))
+
+rounded_env = db_env %>%
+  mutate(environmental_utme = round(environmental_utme, 0),
+         environmental_utmn = round(environmental_utmn, 0),
+         environmental_latitude = round(environmental_latitude, 5),
+         environmental_longitude = round(environmental_longitude, 5))
+
+rows_update(db_site, rounded_site, by="site_id", in_place=TRUE, unmatched = "ignore")
+rows_update(db_capture, rounded_capture, by="capture_id", in_place=TRUE, unmatched = "ignore")
+rows_update(db_edna, rounded_edna, by="edna_id", in_place=TRUE, unmatched = "ignore")
+rows_update(db_env, rounded_env, by="environmental_id", in_place=TRUE, unmatched = "ignore")
 
 ```
