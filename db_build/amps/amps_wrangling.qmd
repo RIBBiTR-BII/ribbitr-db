@@ -1,0 +1,43 @@
+---
+title: "amps_wrangling"
+format: html
+---
+
+# setup
+```{r}
+librarian::shelf(tidyverse, dbplyr, here, lubridate, janitor)
+
+## Connect to DB
+dbcon <- hopToDB("ribbitr")
+## Point to local data directory
+ddir = Sys.getenv("data_dir")  # data directory
+# Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
+wddir = here(ddir, "amps", '2025-03-25') # working data directory
+
+```
+
+# data resources
+```{r}
+# table pointer objects from database
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
+# files
+# list.files(path = here(wddir))
+pa_gia_raw <- read_csv(here(wddir, "Summary PA GIAs-BF&GF 1-8-25_CONSOLODATED.csv"))
+```
+
+
+# clean, normalize, associate data
+```{r}
+pa_gia_clean = pa_gia_raw %>%
+  clean_names() %>%
+  mutate(species = tolower(species),
+         date_of_capture_1 = mdy(date_of_capture))
+
+```
