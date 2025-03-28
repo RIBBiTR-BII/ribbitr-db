@@ -11,7 +11,7 @@ librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr
 # librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 
 # connect to database
-dbcon = hopToDB("ribbitr")
+dbcon = hopToDB("wibbitr")
 
 ```
 
@@ -24,8 +24,10 @@ mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
 # pull relevant chain tables from DB
 db_aural = tbl(dbcon, Id("survey_data", "aural"))
 db_capture = tbl(dbcon, Id("survey_data", "capture"))
-db_ves = tbl(dbcon, Id("survey_data", "ves"))
+db_edna = tbl(dbcon, Id("survey_data", "edna"))
 db_env = tbl(dbcon, Id("survey_data", "environmental"))
+db_ves = tbl(dbcon, Id("survey_data", "ves"))
+
 
 db_survey = tbl(dbcon, Id("survey_data", "survey"))
 db_visit = tbl(dbcon, Id("survey_data", "visit"))
@@ -891,4 +893,83 @@ tryCatch(
     dbRollback(dbcon)
     message("Transaction failed: ", e$message)
   })
+```
+
+
+# clean up sex
+```{r}
+sex_aural = db_aural %>%
+  mutate(sex = tolower(sex),
+         sex = case_match(sex,
+                          "f" ~ "female",
+                          "female" ~ "female",
+                          "m" ~ "male",
+                          "male" ~ "male",
+                          "metamorph" ~ NA_character_,
+                          "unknown" ~ NA_character_,
+                          "unkonwn" ~ NA_character_,
+                          .default = NA_character_))
+
+sex_capture = db_capture %>%
+  mutate(sex = tolower(sex),
+         sex = case_match(sex,
+                          "f" ~ "female",
+                          "female" ~ "female",
+                          "m" ~ "male",
+                          "male" ~ "male",
+                          "metamorph" ~ NA_character_,
+                          "unknown" ~ NA_character_,
+                          "unkonwn" ~ NA_character_,
+                          .default = NA_character_))
+
+sex_ves = db_ves %>%
+  mutate(sex = tolower(sex),
+         sex = case_match(sex,
+                          "f" ~ "female",
+                          "female" ~ "female",
+                          "m" ~ "male",
+                          "male" ~ "male",
+                          "metamorph" ~ NA_character_,
+                          "unknown" ~ NA_character_,
+                          "unkonwn" ~ NA_character_,
+                          .default = NA_character_))
+
+dbBegin(dbcon)
+
+tryCatch(
+  {
+    rows_update(db_aural, sex_aural, by = "aural_id", in_place=TRUE, unmatched = "ignore")
+    rows_update(db_capture, sex_capture, by = "capture_id", in_place=TRUE, unmatched = "ignore")
+    rows_update(db_ves, sex_ves, by = "ves_id", in_place=TRUE, unmatched = "ignore")
+    
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful!")
+    
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
+
+```
+
+# clean up photo
+```{r}
+photo_capture = db_capture %>%
+  mutate(photo = ifelse(is.na(photo), FALSE, photo))
+
+rows_update(db_capture, photo_capture, by = "capture_id", in_place=TRUE, unmatched = "ignore")
+   
+
+```
+
+# clean up marked
+```{r}
+marked_capture = db_capture %>%
+  mutate(marked = ifelse(!is.na(cmr_id), TRUE, FALSE))
+
+rows_update(db_capture, marked_capture, by = "capture_id", in_place=TRUE, unmatched = "ignore")
+   
+
 ```
