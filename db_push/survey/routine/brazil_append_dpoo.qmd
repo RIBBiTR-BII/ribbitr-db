@@ -22,7 +22,7 @@ mdc = tbl(dbcon, Id("public", "all_columns")) %>%
 ## Point to local data directory
 ddir = Sys.getenv("data_dir")  # data directory
 # Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
-wddir = here(ddir, "brazil", '2025-01-27') # working data directory
+wddir = here(ddir, "brazil") # working data directory
 
 ```
 
@@ -54,17 +54,36 @@ db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
 
 # existing brazil data dates
 ```{r}
-data_br = db_visit %>%
+data_br = db_survey %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(country == "brazil") %>%
+  select(date,
+         transect,
+         site,
+         region,
+         visit_id,
+         project) %>%
+  collect() %>%
+  arrange(date,
+          region,
+          site)
+
+br_visits = db_visit %>%
   left_join(db_site, by = "site_id") %>%
   left_join(db_region, by = "region_id") %>%
   left_join(db_country, by = "country_id") %>%
   filter(country == "brazil") %>%
   select(date,
          site,
+         region,
          visit_id,
          project) %>%
   collect() %>%
   arrange(date,
+          region,
           site)
 
 visit_of_interest = data_br %>%
@@ -116,24 +135,34 @@ data_of_interest = db_sample %>%
 ```{r}
 # list.files(path = here(wddir))
 
-in_focal = import_list(here(wddir, "RIBBiTR_Brazil_FocalSp_2024.xlsx"))
+in_focal = import_list(here(wddir, '2025-01-27', "RIBBiTR_Brazil_FocalSp_2024.xlsx"))
 raw_focal_2022 = in_focal[["2022"]]
 raw_focal_2023 = in_focal[["2023"]]
 raw_focal_2024 = in_focal[["2024"]]
 
-in_nonfocal = import_list(here(wddir, "RIBBiTR_Brazil_Non focal species_2024.xlsx"))
+in_nonfocal = import_list(here(wddir, '2025-01-27', "RIBBiTR_Brazil_Non focal species_2024.xlsx"))
 raw_nonfocal_2023 = in_nonfocal[["2023"]]
 raw_nonfocal_2024 = in_nonfocal[["2024"]]
 
-in_edna = import_list(here(wddir, "RIBBiTR_Brazil_eDNA_2024.xlsx"))
+in_edna = import_list(here(wddir, '2025-01-27', "RIBBiTR_Brazil_eDNA_2024.xlsx"))
 raw_edna_2022 = in_edna[["2022"]]
 raw_edna_2023 = in_edna[["2023"]]
 raw_edna_2024 = in_edna[["2024"]]
 
 # # non RIBBiTR
-raw_tissue = import_list(here(wddir, "Boraceia_species tissues_2024.xlsx"))[["Sheet1"]]
-raw_loggers = read_csv(here(wddir, "RIBBiTR_Brazil_Dataloggers_2024_clean.csv"))
+raw_tissue = import_list(here(wddir, '2025-01-27', "Boraceia_species tissues_2024.xlsx"))[["Sheet1"]]
+raw_loggers = read_csv(here(wddir, '2025-01-27', "RIBBiTR_Brazil_Dataloggers_2024_clean.csv"))
 
+# legacy data
+raw_ls_area <- read_csv(here(wddir, "legacy", "area_gps_landscapes_brazil_for_cob.csv"))
+raw_sv_area <- read_csv(here(wddir, "legacy", "clean_sv_sites_latlon.csv"))
+
+raw_ls <- read_csv(here(wddir, "legacy", "raw_data_landscapes_brazil_for_cob.csv"))
+raw_sv <- read_csv(here(wddir, "legacy", "TS_Santa_Virginia_PCE_Legacy_Data_For_Cob_utm23s.csv"))
+
+
+raw_cct = import_list(here(wddir, "legacy", "climate_ct.xlsx"))
+raw_cct = raw_cct$Sheet1
 
 local_tz = "America/Sao_Paulo"
 ```
@@ -170,7 +199,8 @@ clean_focal = bind_rows(raw_focal_2022 %>%
          tissue = ifelse(genetic_id != "NA", "toe", NA_character_),
          is_duplicate = FALSE,
          uuid_name_capture = paste0(date, transect_id, time, species, snout_vent_length_mm, body_mass_g, bd_swab_tube_id),
-         capture_id = UUIDfromName("e3c835a4-4c8d-491c-9970-011aba853686", uuid_name_capture))
+         capture_id = UUIDfromName("e3c835a4-4c8d-491c-9970-011aba853686", uuid_name_capture),
+         project = "ribbitr")
 
 clean_nonfocal = bind_rows(raw_nonfocal_2023 %>%
                              clean_names() %>%
@@ -185,7 +215,8 @@ clean_nonfocal = bind_rows(raw_nonfocal_2023 %>%
   mutate(date = ymd(date),
          is_duplicate = FALSE,
          uuid_name_capture = paste0(date, transect_id, time, species, bd_swab_tube_id),
-         capture_id = UUIDfromName("e3c835a4-4c8d-491c-9970-011aba853686", uuid_name_capture)) %>%
+         capture_id = UUIDfromName("e3c835a4-4c8d-491c-9970-011aba853686", uuid_name_capture),
+         project = "ribbitr") %>%
   select(-correct_swab_id)
 
 clean_tissue = raw_tissue %>%
@@ -201,7 +232,8 @@ clean_tissue = raw_tissue %>%
          longitude = as.numeric(longitude),
          time = as.hms(as.numeric(time)*24*60*60),
          uuid_name_capture = paste0(date, transect_id, time, species, snout_vent_length_mm, body_mass_g),
-         capture_id = UUIDfromName("e3c835a4-4c8d-491c-9970-011aba853686", uuid_name_capture)) %>%
+         capture_id = UUIDfromName("e3c835a4-4c8d-491c-9970-011aba853686", uuid_name_capture),
+         project = "ribbitr") %>%
   group_by(region,
            transect_id,
            date,
@@ -212,11 +244,79 @@ clean_tissue = raw_tissue %>%
   ungroup() %>%
   mutate(is_duplicate = is.na(bd_swab_tube_id))
 
+clean_ls = raw_ls %>%
+  clean_names() %>%
+  unite(notes, notes, notes_2, remove = TRUE, na.rm = TRUE) %>%
+  mutate(date = ifelse(date == "27/09/2018", "9/27/2018", date),
+         date = mdy(date),
+         sample_id = as.character(sample_id),
+         project = "landscapes",
+         bd_swab_tube_id = paste0("brls_", str_pad(sample_id, 3, pad = "0")),
+         survey_time = "night",
+         life_stage = case_when(
+           grepl('jovem', notes) | grepl("juvenil", notes) ~ "juvenile",
+           TRUE ~ "adult"),
+         site_prefix = case_match(landscape_id,
+                                  "1-Intervales" ~ "intervales",
+                                  "2-Pilar" ~ "pilar",
+                                  "3-StaVirginia" ~ "sta_virgínia",
+                                  "4-Japi" ~ "japi",
+                                  "5-Cotia" ~ "cotia",
+                                  "6-RB" ~ "rb",
+                                  "7-Bananal" ~ "bananal",
+                                  "8-SLP" ~ "slp"),
+         site = paste0(site_prefix, "_", tolower(forest_fragment_id)),
+         frog_substrate = case_match(microclimate_of_capture_location,
+                                        "Lago" ~ "lake",
+                                        "Fragmento" ~ "forest",
+                                        "Bordo" ~ "forest_edge",
+                                        .default = NA_character_),
+         uuid_name_capture = paste0(project, date, sample_id),
+         capture_id = UUIDfromName("e3c835a4-4c8d-491c-9970-011aba853686", uuid_name_capture))
 
+clean_sv = raw_sv %>%
+  clean_names() %>%
+  rename(time = capture_time,
+         survey_time = day_night,
+         capture_utme = easting,
+         capture_utmn = northing) %>%
+  mutate(date = mdy(date),
+         site = gsub(" ", "_", tolower(transect_id)),
+         site = case_match(site,
+                           "extra_poça_temporária" ~ "poca_temporaria",
+                           "extra_trilha_olho_dagua" ~ "olho_de_agua",
+                           .default = site),
+         transect = tolower(transect_type),
+         capture_utm_zone = 23,
+         project = "pce_santa_virginia",
+         id = as.character(id),
+         bd_swab_tube_id = paste0("ple_", id),
+         sex = case_match(sex,
+                          'M' ~ "male",
+                          c("F","FO") ~ "female",
+                          c("U", "J") ~ NA),
+         life_stage = case_match(sex,
+                                 "J" ~ "juvenile",
+                                 .default = "adult"),
+         capture_animal_state = case_match(dead,
+                                           "Y" ~ "dead",
+                                           NA ~ NA,
+                                           .default = "alive"),
+         uuid_name_capture = paste0(project, date, id),
+         capture_id = UUIDfromName("e3c835a4-4c8d-491c-9970-011aba853686", uuid_name_capture))
+
+compare_captures = compare_df_cols(
+  clean_focal,
+  clean_nonfocal,
+  clean_tissue,
+  clean_ls,
+  clean_sv)
 
 clean_capture = bind_rows(clean_focal,
-                       clean_nonfocal,
-                       clean_tissue) %>%
+                          clean_nonfocal,
+                          clean_tissue,
+                          clean_ls,
+                          clean_sv) %>%
   rename(observer_capture = observer,
          taxon_capture = species,
          time_of_capture = time,
@@ -226,12 +326,13 @@ clean_capture = bind_rows(clean_focal,
          body_temp_c = frog_temperature_c,
          substrate_temp_c = substrate_temperature_c,
          microhabitat_type = frog_substrate,
-         comments_capture = capture_comments) %>%
+         comments_capture = capture_comments,
+         time_of_day = survey_time) %>%
   unite("comments_capture", c("comments_capture", "notes"), sep = "; ", na.rm = TRUE) %>%
   mutate(transect_type = tolower(transect_type),
          transect_type = ifelse(transect_type == "na", NA_character_, transect_type),
-         survey_time = tolower(survey_time),
-         survey_time = ifelse(survey_time == "na", NA_character_, survey_time),
+         time_of_day = tolower(time_of_day),
+         time_of_day = ifelse(time_of_day == "na", NA_character_, time_of_day),
          life_stage = tolower(life_stage),
          life_stage = ifelse(life_stage == "na", NA_character_, life_stage),
          detection_type = "capture",
@@ -244,7 +345,7 @@ clean_capture = bind_rows(clean_focal,
          sex = ifelse(grepl("female", comments_capture, ignore.case = TRUE), "female", sex),
          taxon_capture = tolower(gsub(" ", "_", taxon_capture)),
          taxon_capture = gsub("_sp.", "", taxon_capture),
-         site = coalesce(new_transect_id, transect_id),
+         site = coalesce(site, new_transect_id, transect_id),
          site = tolower(site),
          site = ifelse(site == "na", NA_character_, site),
          site = gsub(" ", "_", site), 
@@ -275,7 +376,6 @@ clean_capture = bind_rows(clean_focal,
          capture_latitude = ifelse(capture_longitude > -30, NA, capture_latitude),
          capture_longitude = ifelse(capture_longitude > -30, NA, capture_longitude),
          capture_latitude = ifelse(capture_latitude == -23.35632 & capture_longitude == -45.88978, -23.65632, capture_latitude),
-         time_of_day = survey_time,
          transect = transect_type,
          observer_capture = gsub("_", ",", observer_capture),
          observer_capture = ifelse(observer_capture == "NA", NA_character_, observer_capture),
@@ -337,7 +437,8 @@ clean_edna = bind_rows(raw_edna_2022 %>%
          site = tolower(coalesce(new_transect_id, transect_id)),
          time_of_day = case_when(collection_time >= as_hms("08:00:00") & collection_time < as_hms("20:00:00") ~ "day",
                                  collection_time < as_hms("08:00:00") | collection_time >= as_hms("20:00:00") ~ "night",
-                                 .default = NA_character_))
+                                 .default = NA_character_),
+         project = "ribbitr")
 ```
 
 ## unify visit
@@ -345,18 +446,19 @@ clean_edna = bind_rows(raw_edna_2022 %>%
 unified_visit = bind_rows(clean_edna,
                           clean_capture) %>%
   filter(!is.na(date),
-         !is.na(time_of_day),
          !is.na(site)) %>%
   select(date,
          time_of_day,
-         site) %>%
+         campaign,
+         site,
+         project) %>%
   distinct()
 ```
 
 ## gel visit
 ```{r}
 gelled_visit = unified_visit %>%
-  inner_join(db_site %>%
+  left_join(db_site %>%
               select(tbl_keys("site", mdc)) %>%
               collect(),
             by = "site") %>%
@@ -366,7 +468,6 @@ gelled_visit = unified_visit %>%
             by = tbl_nkey("visit", mdc)) %>%
   mutate(uuid_name = paste0(site, date, time_of_day),
          visit_id = ifelse(is.na(visit_id), UUIDfromName("2f5bf5f7-d325-4b93-9c46-821f5b5178e8", uuid_name), visit_id),
-         project = "ribbitr",
          visit_lab = "becker_lab")
 ```
 
@@ -397,10 +498,48 @@ compare_visit = compare_df_cols(db_visit %>%
                                   collect(), subset_visit)
 
 tray = compare_for_staging(db_visit %>%
-                             filter(date >= dblog$date_min,
-                                    site_id %in% dblog$site_id) %>%
+                             filter(site_id %in% dblog$site_id) %>%
                              collect(),
-                           subset_visit, tbl_pkey('visit', mdc), return_all = TRUE, report = "visit")
+                           subset_visit, c("date", "site_id", "time_of_day"), return_all = TRUE, report = "visit")
+
+peace = db_visit %>%
+  filter(site_id %in% dblog$site_id,
+         is.na(time_of_day)) %>%
+  collect()
+
+check = full_join(peace, tray$insert, by = c("date", "site_id"))
+
+po = tray$orphan
+
+pp = bind_rows(tray$orphan %>%
+                 mutate(src = "db"),
+               tray$insert %>%
+                 mutate(src = "csv")) %>%
+  left_join(db_site %>%
+              collect(), by = "site_id") %>%
+  arrange(date, site, src)
+
+peace = tray$orphan %>%
+  left_join(db_site %>%
+              collect(), by = "site_id") %>%
+  select(date,
+         site) %>%
+  distinct() %>%
+  arrange(date, site)
+
+fleace = tray$insert %>%
+  left_join(db_site %>%
+              collect(), by = "site_id") %>%
+  select(date,
+         site) %>%
+  distinct() %>%
+  arrange(date, site)
+
+peace = tray$orphan %>%
+  left_join(db_site %>%
+              collect(), by = "site_id") %>%
+  arrange(date, site, project)
+
 
 upsert_visit = bind_rows(tray$insert,
                          tray$update)
@@ -616,14 +755,13 @@ compare_env_survey = compare_df_cols(db_survey %>%
                                   filter(FALSE) %>%
                                   collect(), subset_env_survey)
 
-peace = get_dupes(subset_env_survey, survey_id)
+peace = get_dupes(subset_env_survey, "transect", "detection_type", "visit_id", "start_time")
 
-tray = compare_for_staging(db_survey %>% collect(), subset_env_survey, tbl_nkey("survey", mdc), return_all = TRUE, report = "env_survey")
+tray = compare_for_staging(db_survey %>% collect(), subset_env_survey, "survey_id", return_all = TRUE, report = "env_survey")
 peace = compare_updates(tray)
 upsert_env_survey = bind_rows(tray$insert,
                              tray$update)
-
-# aural
+# env
 subset_env = gelled_env%>%
   select(any_of(colnames(db_env))) %>%
   distinct() %>%

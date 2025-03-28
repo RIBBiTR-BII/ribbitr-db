@@ -15,7 +15,7 @@ dbcon <- hopToDB("wibbitr")
 ## Point to local data directory
 ddir = Sys.getenv("data_dir")  # data directory
 # Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
-wddir = here(ddir, "brazil", "legacy") # working data directory
+wddir = here(ddir, "brazil") # working data directory
 
 ```
 
@@ -46,12 +46,12 @@ db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
 
 ## load csv
 ```{r}
-raw_ls_area <- read_csv(here(wddir, "area_gps_landscapes_brazil_for_cob.csv"))
-raw_ls <- read_csv(here(wddir, "raw_data_landscapes_brazil_for_cob.csv"))
-raw_sv <- read_csv(here(wddir, "TS_Santa_Virginia_PCE_Legacy_Data_For_Cob_utm23s.csv"))
-raw_sv_area <- read_csv(here(wddir, "clean_sv_sites_latlon.csv"))
+raw_ls_area <- read_csv(here(wddir, "legacy", "area_gps_landscapes_brazil_for_cob.csv"))
+raw_ls <- read_csv(here(wddir, "legacy", "raw_data_landscapes_brazil_for_cob.csv"))
+raw_sv <- read_csv(here(wddir, "legacy", "TS_Santa_Virginia_PCE_Legacy_Data_For_Cob_utm23s.csv"))
+raw_sv_area <- read_csv(here(wddir, "legacy", "clean_sv_sites_latlon.csv"))
 
-raw_cct = import_list(here(wddir, "climate_ct.xlsx"))
+raw_cct = import_list(here(wddir, "legacy", "climate_ct.xlsx"))
 raw_cct = raw_cct$Sheet1
 
 ```
