@@ -179,7 +179,7 @@ clean_survey_info <- raw_survey_info %>%
          site = str_replace_all(site, " ", "_"),
          time_of_day = str_to_lower(time_of_day),
          comments_visit = str_replace_all(comments_visit, "\\n", ". "),
-         pressure_psi = ifelse(pressure_psi == 0, NA, pressure_psi),
+         air_pressure_psi = ifelse(air_pressure_psi == 0, NA, air_pressure_psi),
          air_pressure_mbar = air_pressure_psi * 68.9476,
          number_observers = as.integer(str_count(observers_survey, ",") + 1)) %>%
   select(-any_of(to_drop),
@@ -623,7 +623,7 @@ unified_env = clean_survey_info %>%
          !(is.na(wind) &
              is.na(sky) &
              is.na(relative_humidity_percent) &
-             is.na(pressure_psi) & 
+             is.na(air_pressure_mbar) & 
              is.na(wind_speed_m_s) &
              is.na(air_time) &
              is.na(air_temp_c) & 
@@ -653,8 +653,6 @@ gelled_env = unified_env %>%
   mutate(uuid_name = paste0(environmental_latitude, environmental_longitude, air_time, water_time),
          environmental_id = ifelse(is.na(environmental_id), UUIDfromName("37929955-baca-4968-9e7c-bc99bd05293c", uuid_name), environmental_id))
 
-env_dupes = get_dupes(gelled_env, environmental_id)
-
 if (nrow(env_dupes > 0)) {
   stop("Duplicate environmental_id's")
 }
@@ -674,7 +672,7 @@ compare_env_survey = compare_df_cols(db_survey %>%
                                   filter(FALSE) %>%
                                   collect(), subset_env_survey)
 
-tray = compare_for_staging(db_survey %>% collect(), subset_env_survey, tbl_pkey('survey', mdc), return_all = TRUE, report = "env_survey")
+tray = compare_for_staging(db_survey %>% collect(), subset_env_survey, "survey_id", return_all = TRUE, report = "env_survey")
 upsert_env_survey = bind_rows(tray$insert,
                                tray$update)
 
@@ -692,6 +690,9 @@ compare_env = compare_df_cols(db_env %>%
 tray = compare_for_staging(db_env %>% collect(), subset_env, "environmental_id", return_all = TRUE, report = "env")
 upsert_env = bind_rows(tray$insert,
                         tray$update)
+peace = compare_updates(tray)
+p1 = peace[[1]]
+
 
 # anything to upsert?
 x_env = (nrow(upsert_env_survey) > 0) | (nrow(upsert_env) > 0)
@@ -914,7 +915,7 @@ compare_aural_survey = compare_df_cols(db_survey %>%
                                   filter(FALSE) %>%
                                   collect(), subset_aural_survey)
 
-tray = compare_for_staging(db_survey %>% collect(), subset_aural_survey, tbl_pkey('survey', mdc), return_all = TRUE, report = "aural_survey")
+tray = compare_for_staging(db_survey %>% collect(), subset_aural_survey, "survey_id", return_all = TRUE, report = "aural_survey")
 peace = compare_updates(tray)
 upsert_aural_survey = bind_rows(tray$insert,
                                tray$update)
@@ -1061,7 +1062,7 @@ compare_ves_survey = compare_df_cols(db_survey %>%
                                   filter(FALSE) %>%
                                   collect(), subset_ves_survey)
 
-tray = compare_for_staging(db_survey %>% collect(), subset_ves_survey, tbl_pkey('survey', mdc), return_all = TRUE, report = "ves_survey")
+tray = compare_for_staging(db_survey %>% collect(), subset_ves_survey, "survey_id", return_all = TRUE, report = "ves_survey")
 peace = compare_updates(tray)
 upsert_ves_survey = bind_rows(tray$insert,
                              tray$update)
@@ -1385,7 +1386,7 @@ compare_capture_survey = compare_df_cols(db_survey %>%
                                   filter(FALSE) %>%
                                   collect(), subset_capture_survey)
 
-tray = compare_for_staging(db_survey %>% collect(), subset_capture_survey, tbl_pkey('survey', mdc), return_all = TRUE, report = "capture_survey")
+tray = compare_for_staging(db_survey %>% collect(), subset_capture_survey, "survey_id", return_all = TRUE, report = "capture_survey")
 peace = compare_updates(tray)
 upsert_capture_survey = bind_rows(tray$insert,
                                   tray$update)

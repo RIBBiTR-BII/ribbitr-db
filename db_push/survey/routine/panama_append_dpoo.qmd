@@ -605,7 +605,7 @@ compare_env_survey = compare_df_cols(db_survey %>%
                                   filter(FALSE) %>%
                                   collect(), subset_env_survey)
 
-tray = compare_for_staging(db_survey %>% collect(), subset_env_survey, tbl_nkey("survey", mdc), return_all = TRUE, report = "env_survey")
+tray = compare_for_staging(db_survey %>% collect(), subset_env_survey, "survey_id", return_all = TRUE, report = "env_survey")
 peace = compare_updates(tray)
 upsert_env_survey = bind_rows(tray$insert,
                              tray$update)
