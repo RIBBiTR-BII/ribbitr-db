@@ -35,9 +35,44 @@ pa_gia_raw <- read_csv(here(wddir, "Summary PA GIAs-BF&GF 1-8-25_CONSOLODATED.cs
 
 # clean, normalize, associate data
 ```{r}
-pa_gia_clean = pa_gia_raw %>%
+gia_clean = pa_gia_raw %>%
   clean_names() %>%
+  rename(date_capture = date_of_capture,
+         date_gia = date_of_gia,
+         sample_name = amp_id,
+         day_7_positive_optical_density = dy7_pos_o_d) %>%
   mutate(species = tolower(species),
-         date_of_capture_1 = mdy(date_of_capture))
+         date_capture = mdy(date_capture),
+         date_gia = mdy(date_gia)) %>%
+  pivot_longer(c("x500", "x250", "x125", "x62_5", "x31_25", "x15_625", "x7_8125", "x3_9", "x2"), values_to = "inhibition_percent", names_to = "concentration") %>%
+  mutate(concentration = case_match(concentration,
+                                    "x500" ~ 500,
+                                    "x250" ~ 250,
+                                    "x125" ~ 125,
+                                    "x62_5" ~ 62.5,
+                                    "x31_25" ~ 31.25,
+                                    "x15_625" ~ 15.625,
+                                    "x7_8125" ~ 7.8125,
+                                    "x3_9" ~ 3.9,
+                                    "x2" ~ 2))
+
+write_csv(gia_clean, here("staging", paste0("gia_pa_long_", today(), ".csv")))
+
+```
+
+
+```{r}
+data_amps = db_sample %>%
+  left_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(sample_type == "amp") %>%
+  collect()
+
+gia_united = gia_clean %>%
+  left_join(data_amps, by = "sample_name")
 
 ```
