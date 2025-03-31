@@ -238,32 +238,54 @@ tryCatch(
 ```
 # survey orphans
 ```{r}
-drop_ids = c(
-  "a7686f1f-2c5b-417d-8134-2f57aa936444"
+drop_ids = c("db0d5506-455f-47f4-9639-feeeaa8a6a9c", "0833d67a-c038-4172-b23b-26be65c834f4", 
+"086a8a26-e562-4720-bf04-2d4b67df941f", "0d303bdd-50db-41b0-ab56-ca2c22a8577c", 
+"1cf879a3-afe7-4226-a432-e5c4c6a8984a", "2e81f633-c86a-49c0-ada0-c475f855afaf", 
+"411d0dd0-f2f1-4645-94c8-b23c585df21c", "50b4ad67-2eae-4e50-b7b2-405bdd293207", 
+"5419d525-59c7-4c2c-961e-3c847b9a10f5", "5b65c94f-7009-4bce-b241-40c06374592d", 
+"5c120873-4786-4143-83f2-f4597cc0c227", "668830bc-5e87-455c-ab3e-de37b964c137", 
+"68a804ff-8b19-46a1-989b-ebe64ed06f97", "8b8de63d-2fe7-4629-8722-697877f29bf8", 
+"8c7d91c7-3756-4f6e-8561-322c7f769803", "9559cd31-871f-4e4c-9c16-e62586377430", 
+"958a9c58-bc52-4e44-87c6-9aa7763add47", "a3717cce-b3d2-49fa-aa4e-41cddffacb07", 
+"b122c4ee-20e4-4a2d-9eda-90da5fd8352e", "bdd80f08-e8ad-4a4e-a2bd-7c5882d97bc2", 
+"c5ee4a9a-4492-4f0c-a839-c74a565e3c0b", "cca8a7aa-b2ea-474c-838b-e5337296a41a", 
+"cfb79f55-b468-4e62-add6-f354ad752882", "e8ca2b0a-d2d8-4419-881e-faf155b622b7", 
+"f16c2c80-174f-4b77-8062-cca238e1ad31", "fe987a67-5b26-4990-9e1a-f550ab4151ea", 
+"5269bcbf-2486-435b-9f9d-e9fe31445f5b", "53bf9593-60c7-4320-97cc-3881e4764161"
 )
 
 drop_survey = db_survey %>%
   filter(survey_id %in% drop_ids)
+count = as.character(drop_survey %>% count() %>% pull())
+cat("drop_survey:", count, "\n")
 
 drop_env = db_env %>%
   right_join(drop_survey, by = "survey_id") %>%
   select(all_of(colnames(db_env))) %>%
   filter(!is.na(environmental_id))
+count = as.character(drop_env %>% count() %>% pull())
+cat("drop_env:", count, "\n")
 
 drop_aural = db_aural %>%
   right_join(drop_survey, by = "survey_id") %>%
   select(all_of(colnames(db_aural))) %>%
   filter(!is.na(aural_id))
+count = as.character(drop_aural %>% count() %>% pull())
+cat("drop_aural:", count, "\n")
 
 drop_capture = db_capture %>%
   right_join(drop_survey, by = "survey_id") %>%
   select(all_of(colnames(db_capture))) %>%
   filter(!is.na(capture_id))
+count = as.character(drop_capture %>% count() %>% pull())
+cat("drop_capture:", count, "\n")
 
 drop_ves = db_ves %>%
   right_join(drop_survey, by = "survey_id") %>%
   select(all_of(colnames(db_ves))) %>%
   filter(!is.na(ves_id))
+count = as.character(drop_ves %>% count() %>% pull())
+cat("drop_ves:", count, "\n")
 
 ```
 
