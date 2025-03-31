@@ -1,0 +1,26 @@
+---
+title: "isolate_build"
+format: html
+---
+
+```{r}
+
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, uuid, RIBBiTR-BII/ribbitrrr)
+
+# connect to database
+dbcon = hopToDB("wibbitr")
+```
+
+# pull in data
+
+```{r}
+ddir = Sys.getenv("data_dir")
+wddir = here(ddir, "mucosome")
+
+# list.files(path = here(wddir))
+raw_amphibac = read_csv(here(ddir, "AmphiBac-Database-main", "metadata", "AmphibBac_Metadata_2023.2.txt"))
+raw_isolates = read_csv(here(wddir, "Bd_isolate_metadata.csv"))
+
+
+```
