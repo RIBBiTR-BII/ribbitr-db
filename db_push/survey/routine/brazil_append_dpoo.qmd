@@ -54,7 +54,7 @@ db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
 
 # existing brazil data dates
 ```{r}
-data_br = db_survey %>%
+br_surveys = db_survey %>%
   left_join(db_visit, by = "visit_id") %>%
   left_join(db_site, by = "site_id") %>%
   left_join(db_region, by = "region_id") %>%
@@ -78,6 +78,7 @@ br_visits = db_visit %>%
   filter(country == "brazil") %>%
   select(date,
          site,
+         time_of_day,
          region,
          visit_id,
          project) %>%
@@ -85,6 +86,35 @@ br_visits = db_visit %>%
   arrange(date,
           region,
           site)
+
+br_na = br_visits %>%
+  filter(is.na(project))
+
+na_obs = db_survey %>%
+  collect() %>%
+  inner_join(br_na, by = "visit_id")
+
+
+br_ves = db_ves %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(country == "brazil") %>%
+  collect()
+
+
+dput(unique(br_ves$survey_id))
+
+br_cap = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(visit_id %in% br_ves$visit_id) %>%
+  collect()
 
 visit_of_interest = data_br %>%
   filter(date > "2023-02-01") %>%
@@ -518,6 +548,15 @@ pp = bind_rows(tray$orphan %>%
   left_join(db_site %>%
               collect(), by = "site_id") %>%
   arrange(date, site, src)
+
+br_mys = db_sample %>%
+  left_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  filter(visit_id %in% tray$orphan$visit_id) %>%
+  collect()
 
 peace = tray$orphan %>%
   left_join(db_site %>%
@@ -1029,6 +1068,10 @@ gelled_sample = gelled_capture %>%
               collect(), by = c("sample_name", "sample_type")) %>%
   mutate(uuid_name = paste0(sample_name, sample_type),
          sample_id = ifelse(is.na(sample_id), UUIDfromName("1208e62f-d3a1-462c-984f-0bf1f43f5837", uuid_name), sample_id))
+
+constrained_sample = gelled_sample %>%
+  resolve_sample_conflicts(db_sample)
+
 
 ```
 
