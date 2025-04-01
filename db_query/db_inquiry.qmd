@@ -52,30 +52,29 @@ mdc = tbl(dbcon, Id("public", "all_columns")) %>%
   collect()
 
 # filter then load capture data table
-db_capture = tbl(dbcon, Id("survey_data", "capture")) %>%
-  select(all_of(tbl_keys("capture", mdc)),
-         species_capture,
-         bd_swab_id,
-         microbiome_swab_id,
-         bacterial_swab_id,
+data_capture = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  select(capture_id,
+         taxon_capture,
          life_stage,
-         svl_mm) %>%
-  filter(!is.na(bd_swab_id))
-  
-capture_chain = tbl_chain("capture", mdc, until="region")
-
-db_capture_chain = tbl_join(dbcon, capture_chain, tbl=db_capture) %>%
-  filter(date >= "2022-01-01",
-         date < "2023-01-01",
-         !is.na(site)) # drop orphan swab data currently missing site
-
-db_capture_chain_bd = tbl(dbcon, Id("survey_data", "qpcr_bd_results")) %>%
-  inner_join(db_capture_chain, by="bd_swab_id") %>%
+         svl_mm,
+         body_mass_g,
+         date,
+         site,
+         region) %>%
+  filter(region == "pennsylvania",
+         date >= "2022-01-01",
+         date < "2023-01-01",) %>%
   collect()
 
-colnames(db_penn_bd)
+data_size = data_capture %>%
+  filter(!is.na(svl_mm) | !is.na(body_mass_g))
 
-write_csv(db_penn_bd, here("staging", "bd_query_01.csv"))
+# write_csv(db_penn_bd, here("staging", "bd_query_01.csv"))
 
 ```
 
