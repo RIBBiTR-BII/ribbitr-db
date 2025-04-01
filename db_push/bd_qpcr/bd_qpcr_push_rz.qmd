@@ -229,8 +229,9 @@ clean_results = bind_results %>%
          replicate_results = ifelse(detected, "p", "n"),
          replicate = "singlet",
          replicate_count = 1,
+         qpcr_well = as.character(qpcr_well),
          qpcr_lab = "rz_lab",
-         extract_lab = "rz_lab",
+         extraction_lab = "rz_lab",
          extraction_kit = "qiagen_dneasy",
          standard = "plasmid-pisces",
          standard_target_type = "ITS1",
@@ -247,8 +248,6 @@ clean_results = bind_results %>%
          !str_detect(sample_name, "^Pisces"),
          target_name == "Bd" | is.na(target_name),
          ipc == "Pass")
-
-
 
 
 ```
@@ -280,7 +279,7 @@ violations_unique = get_dupes(clean_results, sample_name)
 gelled_results = clean_results %>%
   left_join(db_sample %>% collect(), by = c("sample_name", "sample_type")) %>%
   group_by(sample_name, sample_type) %>%
-  mutate(uuid_name = paste0(sample_name_bd, sample_type),
+  mutate(uuid_name = paste0(sample_name, sample_type),
          sample_id = ifelse(is.na(sample_id), UUIDfromName("1208e62f-d3a1-462c-984f-0bf1f43f5837", uuid_name), sample_id)) %>%
   ungroup() %>%
   mutate(sample_name_bd = sample_name) %>%
@@ -328,6 +327,14 @@ compare_bd = compare_df_cols(db_bd %>%
 tray = compare_for_staging(db_bd %>% collect(), subset_bd, "result_id", return_all = TRUE, report = "bd")
 final_bd = bind_rows(tray$insert,
                        tray$update)
+
+cheese = tray$update
+
+peace = compare_updates(tray)
+
+p1 = peace[[1]]
+p2 = peace[[2]]
+p3 = peace[[3]]
 
 ```
 
