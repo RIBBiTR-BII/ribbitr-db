@@ -5,7 +5,7 @@ format: html
 
 # setup
 ```{r}
-librarian::shelf(tidyverse, dbplyr, here, lubridate, janitor)
+librarian::shelf(tidyverse, dbplyr, here, lubridate, janitor, RIBBiTR-BII/ribbitrrr)
 
 ## Connect to DB
 dbcon <- hopToDB("ribbitr")
