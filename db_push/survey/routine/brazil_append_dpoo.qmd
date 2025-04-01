@@ -116,7 +116,7 @@ br_cap = db_capture %>%
   filter(visit_id %in% br_ves$visit_id) %>%
   collect()
 
-visit_of_interest = data_br %>%
+visit_of_interest = br_visits %>%
   filter(date > "2023-02-01") %>%
   pull(visit_id)
 
@@ -302,7 +302,8 @@ clean_ls = raw_ls %>%
                                         "Bordo" ~ "forest_edge",
                                         .default = NA_character_),
          uuid_name_capture = paste0(project, date, sample_id),
-         capture_id = UUIDfromName("e3c835a4-4c8d-491c-9970-011aba853686", uuid_name_capture))
+         capture_id = UUIDfromName("e3c835a4-4c8d-491c-9970-011aba853686", uuid_name_capture),
+         is_duplicate = FALSE)
 
 clean_sv = raw_sv %>%
   clean_names() %>%
@@ -333,7 +334,8 @@ clean_sv = raw_sv %>%
                                            NA ~ NA,
                                            .default = "alive"),
          uuid_name_capture = paste0(project, date, id),
-         capture_id = UUIDfromName("e3c835a4-4c8d-491c-9970-011aba853686", uuid_name_capture))
+         capture_id = UUIDfromName("e3c835a4-4c8d-491c-9970-011aba853686", uuid_name_capture),
+         is_duplicate = FALSE)
 
 compare_captures = compare_df_cols(
   clean_focal,
@@ -532,58 +534,11 @@ tray = compare_for_staging(db_visit %>%
                              collect(),
                            subset_visit, c("date", "site_id", "time_of_day"), return_all = TRUE, report = "visit")
 
-peace = db_visit %>%
-  filter(site_id %in% dblog$site_id,
-         is.na(time_of_day)) %>%
-  collect()
-
-check = full_join(peace, tray$insert, by = c("date", "site_id"))
-
-po = tray$orphan
-
-pp = bind_rows(tray$orphan %>%
-                 mutate(src = "db"),
-               tray$insert %>%
-                 mutate(src = "csv")) %>%
-  left_join(db_site %>%
-              collect(), by = "site_id") %>%
-  arrange(date, site, src)
-
-br_mys = db_sample %>%
-  left_join(db_capture, by = "capture_id") %>%
-  left_join(db_survey, by = "survey_id") %>%
-  left_join(db_visit, by = "visit_id") %>%
-  left_join(db_site, by = "site_id") %>%
-  left_join(db_region, by = "region_id") %>%
-  filter(visit_id %in% tray$orphan$visit_id) %>%
-  collect()
-
-peace = tray$orphan %>%
-  left_join(db_site %>%
-              collect(), by = "site_id") %>%
-  select(date,
-         site) %>%
-  distinct() %>%
-  arrange(date, site)
-
-fleace = tray$insert %>%
-  left_join(db_site %>%
-              collect(), by = "site_id") %>%
-  select(date,
-         site) %>%
-  distinct() %>%
-  arrange(date, site)
-
-peace = tray$orphan %>%
-  left_join(db_site %>%
-              collect(), by = "site_id") %>%
-  arrange(date, site, project)
-
 
 upsert_visit = bind_rows(tray$insert,
                          tray$update)
 
-# # get visit_id
+# # # get visit_id
 # vids = subset_visit %>%
 #   select(visit_id) %>%
 #   distinct() %>%
@@ -608,101 +563,6 @@ if (x_visit) {
 db_visit = tbl(dbcon, Id("survey_data", "visit"))
 
 ```
-
-### investigate related observations
-```{r}
-obs_capture = db_capture %>%
-  left_join(db_survey, by = "survey_id") %>%
-  left_join(db_visit, by = "visit_id") %>%
-  left_join(db_site, by = "site_id") %>%
-  left_join(db_region, by = "region_id") %>%
-  left_join(db_country, by = "country_id")
-
-obs_ves = db_ves %>%
-  left_join(db_survey, by = "survey_id") %>%
-  left_join(db_visit, by = "visit_id") %>%
-  left_join(db_site, by = "site_id") %>%
-  left_join(db_region, by = "region_id") %>%
-  left_join(db_country, by = "country_id")
-
-obs_capture_rel = obs_capture %>%
-  filter(visit_id %in% vids) %>%
-  select(region,
-         site,
-         date,
-         time_of_day,
-         transect,
-         start_time,
-         detection_type,
-         taxon_capture,
-         svl_mm,
-         body_mass_g,
-         life_stage,
-         sex,
-         observer_capture,
-         comments_capture) %>%
-  collect() %>%
-  arrange(date, time_of_day, site)
-
-obs_ves_rel = obs_ves %>%
-  filter(visit_id %in% vids) %>%
-  select(region,
-         site,
-         date,
-         time_of_day,
-         transect,
-         start_time,
-         detection_type,
-         taxon_ves,
-         count_ves,
-         life_stage,
-         observer_ves,
-         comments_ves) %>%
-  collect() %>%
-  arrange(date, time_of_day, site)
-
-obs_capture_range = obs_capture %>%
-  filter(region %in% dblog$region,
-         date >= dblog$date_min,
-         date <= dblog$date_max) %>%
-  select(region,
-         site,
-         date,
-         time_of_day,
-         transect,
-         start_time,
-         detection_type,
-         taxon_capture,
-         svl_mm,
-         body_mass_g,
-         life_stage,
-         sex,
-         observer_capture,
-         comments_capture) %>%
-  collect() %>%
-  arrange(date, time_of_day, site)
-
-obs_ves_range = obs_ves %>%
-  filter(region %in% dblog$region,
-         date >= dblog$date_min,
-         date <= dblog$date_max) %>%
-  select(region,
-         site,
-         date,
-         time_of_day,
-         transect,
-         start_time,
-         detection_type,
-         taxon_ves,
-         count_ves,
-         life_stage,
-         observer_ves,
-         comments_ves) %>%
-  collect() %>%
-  arrange(date, time_of_day, site)
-
-```
-
 
 # environmental
 ```{r}
@@ -878,7 +738,10 @@ unified_edna = clean_edna %>%
               select(tbl_keys("survey", mdc)) %>%
               filter(!is.na(visit_id)) %>%
               collect(),
-            by = tbl_nkey("survey", mdc)) %>%
+            by = c("transect",
+                   "visit_id",
+                   "start_time",
+                   "detection_type")) %>%
   filter(!is.na(site),
          !is.na(date))
 
@@ -1069,9 +932,6 @@ gelled_sample = gelled_capture %>%
   mutate(uuid_name = paste0(sample_name, sample_type),
          sample_id = ifelse(is.na(sample_id), UUIDfromName("1208e62f-d3a1-462c-984f-0bf1f43f5837", uuid_name), sample_id))
 
-constrained_sample = gelled_sample %>%
-  resolve_sample_conflicts(db_sample)
-
 
 ```
 
@@ -1128,11 +988,13 @@ tray = compare_for_staging(db_sample %>% collect(), subset_sample, "sample_id", 
 upsert_sample = bind_rows(tray$insert,
                           tray$update)
 
-peace = compare_updates(tray)
+# constrained_sample = upsert_sample %>%
+#   resolve_sample_conflicts(db_sample)
 
 if (nrow(tray$update) > 0) {
   warning("Sample updates may indicate duplicate capture_ids. Investigation recommended.")
 }
+
 
 x_capture = (nrow(upsert_capture_survey) > 0) | (nrow(insert_capture_taxa) > 0) | (nrow(upsert_capture) > 0 | nrow(upsert_sample) > 0)
 ```
@@ -1163,6 +1025,7 @@ tryCatch(
     
     # Commit the transaction if successful
     dbCommit(dbcon)
+    
     print("Transaction successful!")
     
   }, error = function(e) {
