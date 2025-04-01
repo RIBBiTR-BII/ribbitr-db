@@ -1,0 +1,106 @@
+---
+title: "brazil_sample_inventory"
+format: html
+---
+
+# setup
+```{r}
+librarian::shelf(tidyverse, dbplyr, here, lubridate, RPostgres, DBI, RIBBiTR-BII/ribbitrrr)
+
+## Connect to DB
+dbcon <- hopToDB("ribbitr")
+
+## Pull column metadata from database
+mdc = tbl(dbcon, Id("public", "all_columns")) %>%
+  filter(table_schema == "survey_data") %>%
+  collect()
+
+```
+
+# data table pointers
+```{r}
+db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
+```
+
+# queries
+```{r}
+# all brazil bd samples with associated capture in database
+bd_samples_br = db_sample %>%
+  left_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(sample_type == "bd",
+         country == "brazil") %>%
+  collect()
+
+# all brazil bd sample counts by year
+bd_samples_by_year = bd_samples_br %>%
+  mutate(year = year(date)) %>%
+  group_by(year) %>%
+  summarize(bd_sample_count = n())
+
+# all_brazil samples with corresponding results in database
+bd_results_br = db_bd %>%
+  collect() %>%
+  inner_join(bd_samples_br, by = "sample_id")
+
+# all brazil bd result counts by year
+bd_results_by_year = bd_results_br %>%
+  mutate(year = year(date)) %>%
+  group_by(year) %>%
+  summarize(bd_sample_count = n())
+
+# write_csv(bd_samples_br, here("staging", "bd_sample_count.csv"))
+
+```
+
+# queries
+```{r}
+# all brazil bd samples with associated capture in database
+bd_samples = db_sample %>%
+  left_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(sample_type == "bd") %>%
+  collect()
+
+# all brazil bd sample counts by year
+bd_samples_by_year = bd_samples %>%
+  mutate(year = year(date)) %>%
+  group_by(country, region, year) %>%
+  summarize(bd_sample_count = n())
+
+# all_brazil samples with corresponding results in database
+bd_results = db_bd %>%
+  collect() %>%
+  inner_join(bd_samples, by = "sample_id")
+
+# all brazil bd result counts by year
+bd_results_by_year = bd_results %>%
+  mutate(year = year(date)) %>%
+  group_by(country, region, year) %>%
+  summarize(bd_result_count = n())
+
+bd_samples_results = bd_samples_by_year %>%
+  full_join(bd_results_by_year, by = c("country", "region", "year")) %>%
+  arrange(country, region, year) %>%
+  mutate(bd_result_count = ifelse(is.na(bd_result_count), 0, bd_result_count),
+         discrepancy = bd_sample_count - bd_result_count)
+
+# write_csv(bd_samples_br, here("staging", "bd_sample_count.csv"))
+
+```
