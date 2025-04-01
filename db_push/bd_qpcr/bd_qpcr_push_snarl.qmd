@@ -155,6 +155,8 @@ tray = compare_for_staging(db_bd %>% collect(), subset_bd, "result_id", return_a
 final_bd = bind_rows(tray$insert,
                        tray$update)
 
+peace = compare_updates(tray)
+
 ```
 
 # commit
