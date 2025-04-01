@@ -4,7 +4,7 @@ format: html
 ---
 
 ```{r}
-librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, rio, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
 # librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 
 ## Connect to DB
@@ -117,10 +117,78 @@ revised_sample = samples_of_interest %>%
   mutate(sample_name_conflict = sample_name,
          sample_name = paste0(sample_name, "_ts"))
 
+# temp_sample = stage_to_temp(dbcon, db_sample, revised_sample)
+# pointer = tbl(dbcon, temp_sample)
+# db_sample = rows_update(db_sample, pointer, by="sample_id", in_place=TRUE, unmatched = "ignore")
+
+```
+
+# existing brazil data by year
+```{r}
+data_br = db_sample %>%
+  left_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(sample_type == "bd",
+         country == "brazil") %>%
+  select(date) %>%
+  collect() %>%
+  mutate(year = year(date)) %>%
+  group_by(year) %>%
+  summarize(bd_sample_count = n())
+
+write_csv(bd_sample_count)
+```
+
+# revert sample name conflicts
+```{r}
+snc = db_sample %>%
+  filter(!is.na(sample_name_conflict),
+         grepl("_ts", sample_name)) %>%
+  arrange(sample_name) %>%
+  mutate(sample_name = sample_name_conflict,
+         sample_name_conflict = NA_character_)
+
+bll = snc %>%
+  collect()
+
+# db_sample = rows_update(db_sample, snc, by="sample_id", in_place=TRUE, unmatched = "ignore")
+
 ```
 
 ```{r}
-temp_sample = stage_to_temp(dbcon, db_sample, revised_sample)
+to_correct = db_sample %>%
+  collect() %>%
+  filter(grepl("BRBd", sample_name)) %>%
+  mutate(sample_num = as.numeric(gsub("BRBd", "", sample_name))) %>%
+  filter(sample_num >= 81,
+         sample_num <=160) %>%
+  mutate(sample_name_conflict = sample_name,
+         sample_name = paste0(sample_name, "_a")) %>%
+  select(-sample_num)
+
+temp_sample = stage_to_temp(dbcon, db_sample, to_correct)
+pointer = tbl(dbcon, temp_sample)
+db_sample = rows_update(db_sample, pointer, by="sample_id", in_place=TRUE, unmatched = "ignore")
+
+```
+
+```{r}
+to_correct = db_sample %>%
+  collect() %>%
+  filter(grepl("BRBd", sample_name),
+         is.na(sample_name_conflict)) %>%
+  mutate(sample_num = as.numeric(gsub("BRBd", "", sample_name))) %>%
+  filter(sample_num >= 81,
+         sample_num <=160) %>%
+  mutate(sample_name_conflict = sample_name,
+         sample_name = paste0(sample_name, "_b")) %>%
+  select(-sample_num)
+
+temp_sample = stage_to_temp(dbcon, db_sample, to_correct)
 pointer = tbl(dbcon, temp_sample)
 db_sample = rows_update(db_sample, pointer, by="sample_id", in_place=TRUE, unmatched = "ignore")
 
