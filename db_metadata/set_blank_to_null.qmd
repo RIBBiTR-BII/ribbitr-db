@@ -1,0 +1,46 @@
+---
+title: "set_blank_to_null"
+format: html
+---
+
+```{r}
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, DBI, RPostgres, here, janitor, RIBBiTR-BII/ribbitrrr)
+
+## Connect to DB
+dbcon <- hopToDB("wibbitr")
+```
+
+## Pull Schemas
+
+```{r}
+schemas <- dbGetQuery(dbcon, "SELECT schema_name FROM information_schema.schemata
+                      WHERE schema_name NOT LIKE 'pg_temp_%'
+                      AND schema_name NOT LIKE 'pg_toast_temp_%'
+                      AND schema_name != 'pg_catalog'
+                      AND schema_name != 'information_schema'
+                      AND schema_name != 'public';")$schema_name
+```
+
+## set additional columns to null if blank
+
+```{r}
+
+for (ss in schemas) {
+  cat(ss, "...", sep = "")
+  mdc = tbl(dbcon, Id(ss, "metadata_columns"))
+  
+  mdc_clean = mdc %>%
+    mutate(definition = ifelse(definition == "", NA_character_, definition),
+           units = ifelse(units == "", NA_character_, units),
+           accuracy = ifelse(accuracy == "", NA_character_, accuracy),
+           scale = ifelse(scale == "", NA_character_, scale),
+           format = ifelse(format == "", NA_character_, format))
+  
+  mdc = mdc %>%
+    rows_update(mdc_clean, c("table_schema", "table_name", "column_name"), in_place = TRUE, unmatched = "ignore")
+  cat("done\n")
+}
+
+
+```
