@@ -12,6 +12,15 @@ librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr
 dbcon = hopToDB("wibbitr")
 ```
 
+# table pointers
+```{r}
+db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
+db_isolate = tbl(dbcon, Id("survey_data", "bd_isolate"))
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+db_mucosome = tbl(dbcon, Id("survey_data", "mucosome_results"))
+
+```
+
 # pull in data
 
 ```{r}
@@ -20,7 +29,67 @@ wddir = here(ddir, "mucosome")
 
 # list.files(path = here(wddir))
 raw_amphibac = read_csv(here(ddir, "AmphiBac-Database-main", "metadata", "AmphibBac_Metadata_2023.2.txt"))
-raw_isolates = read_csv(here(wddir, "Bd_isolate_metadata.csv"))
+raw_isolate = read_csv(here(wddir, "Bd_isolate_metadata_colab_2025-04-02.csv"))
+raw_mucosome = read_csv(here(wddir, "ribbitr_mucosomes_updated20250327.csv"))
 
+```
+
+# isolates
+
+```{r}
+clean_isolate = raw_isolate %>%
+  clean_names() %>%
+  rename(taxon_source = source_species,
+         bd_isolate_id = isolate_name) %>%
+  mutate(taxon_source = tolower(gsub(" ", "_", gsub('"', '', taxon_source))))
+
+# dbWriteTable(dbcon, Id("survey_data", "bd_isolate"), clean_isolate, overwrite = TRUE)
+
+temp_isolate = stage_to_temp(dbcon, db_isolate, clean_isolate)
+pointer = tbl(dbcon, temp_isolate)
+db_isolate = db_isolate %>%
+  rows_update(pointer, by = "bd_isolate_id", in_place = TRUE, unmatched = "ignore")
+
+new_taxa = clean_isolate %>%
+  anti_join(db_taxa %>% collect(), by = c("taxon_source" = "taxon_id"))
+
+new_taxa_lookup = ribbitr_taxa_lookup(new_taxa$taxon_source, cites = TRUE, cites_token = Sys.getenv("cites_token"), format = "simple")
+
+
+temp_taxa = stage_to_temp(dbcon, db_taxa, new_taxa_lookup)
+pointer = tbl(dbcon, temp_taxa)
+db_taxa = db_taxa %>%
+  rows_insert(pointer, by = "taxon_id", in_place = TRUE, conflict = "ignore")
+  
+
+```
+
+
+```{r}
+
+clean_mucosome = raw_mucosome %>%
+  clean_names() %>%
+  rename(sample_name_mucosome = mucosome_id,
+         bd_isolate_id = mucosome_isolate) %>%
+  mutate(sample_type = "mucosome") %>%
+  left_join(db_sample %>% collect(), by = c("sample_name_mucosome" = "sample_name", "sample_type")) %>%
+  mutate(assay_lab = "woodhams_lab",
+         bd_isolate_id = gsub(" ", "_", bd_isolate_id),
+         uuid_name = paste0(sample_name_mucosome, bd_isolate_id, mucosome_proportion_viable), 
+         result_id = UUIDfromName("d6d7ffad-5533-4ae3-85c5-44ed713df8d6", uuid_name)) %>%
+  filter(!is.na(bd_isolate_id)) %>%
+  select(result_id,
+         sample_id,
+         sample_name_mucosome,
+         bd_isolate_id,
+         mucosome_proportion_viable,
+         assay_lab)
+
+# dbWriteTable(dbcon, Id("survey_data", "mucosome_results"), clean_mucosome, overwrite = TRUE)
+
+temp_mucosome = stage_to_temp(dbcon, db_mucosome, clean_mucosome)
+pointer = tbl(dbcon, temp_mucosome)
+db_mucosome = db_mucosome %>%
+  rows_update(pointer, by = "result_id", in_place = TRUE, unmatched = "ignore")
 
 ```
