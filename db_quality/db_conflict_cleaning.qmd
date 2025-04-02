@@ -28,7 +28,6 @@ db_edna = tbl(dbcon, Id("survey_data", "edna"))
 db_env = tbl(dbcon, Id("survey_data", "environmental"))
 db_ves = tbl(dbcon, Id("survey_data", "ves"))
 
-
 db_survey = tbl(dbcon, Id("survey_data", "survey"))
 db_visit = tbl(dbcon, Id("survey_data", "visit"))
 db_site = tbl(dbcon, Id("survey_data", "site"))
@@ -36,9 +35,11 @@ db_region = tbl(dbcon, Id("survey_data", "region"))
 db_country = tbl(dbcon, Id("survey_data", "country"))
 
 db_cmr = tbl(dbcon, Id("survey_data", "cmr"))
+db_isolate = tbl(dbcon, Id("survey_data", "bd_isolate"))
 
 db_sample = tbl(dbcon, Id("survey_data", "sample"))
 db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+db_mucosome = tbl(dbcon, Id("survey_data", "mucosome_results"))
 
 ```
 
@@ -971,5 +972,170 @@ marked_capture = db_capture %>%
 
 rows_update(db_capture, marked_capture, by = "capture_id", in_place=TRUE, unmatched = "ignore")
    
+
+```
+
+# clean up microhabitat_wet
+```{r}
+mhw_capture = db_capture %>%
+  mutate(microhabitat_wet = case_match(microhabitat_wet,
+                                       "yes" ~ TRUE,
+                                       "no" ~ FALSE,
+                                       .default = NA),
+         microhabitat_wet = as.logical(microhabitat_wet))
+
+rows_update(db_capture, mhw_capture, by = "capture_id", in_place=TRUE, unmatched = "ignore")
+```
+
+# microhab temp
+```{r}
+
+mht_capture_read = db_capture %>%
+  select(substrate_temp_c, microhabitat_temperature) %>%
+  filter(!is.na(substrate_temp_c) | !is.na(microhabitat_temperature)) %>%
+  collect()
+
+mht_capture = db_capture %>%
+  mutate(substrate_temp_c = coalesce(substrate_temp_c, microhabitat_temperature))
+
+rows_update(db_capture, mht_capture, by = "capture_id", in_place=TRUE, unmatched = "ignore")
+
+
+```
+
+# inside outside serdp
+```{r}
+io_capture = db_capture %>%
+  mutate(inside_outside_serdp = tolower(inside_outside_serdp),
+         inside_outside_serdp = case_match(inside_outside_serdp,
+                                       "insdie" ~ "inside",
+                                       "outsdie" ~ "outside",
+                                       .default = inside_outside_serdp))
+
+rows_update(db_capture, io_capture, by = "capture_id", in_place=TRUE, unmatched = "ignore")
+
+```
+
+# sample coherency check
+```{r}
+
+# every sample result should show up in the sample table
+sample_bd = db_bd %>%
+  anti_join(db_sample, by = "sample_id") %>%
+  collect()
+
+results_unmatched = db_bd %>%
+  left_join(db_sample, by = "sample_id") %>%
+  filter(is.na(capture_id),
+         sample_type == "bd") %>%
+  collect() %>%
+  arrange(sample_name_bd)
+
+samples_unmatched = db_bd %>%
+  right_join(db_sample, by = "sample_id") %>%
+  filter(is.na(result_id),
+         sample_type == "bd") %>%
+  left_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  select(all_of(colnames(db_sample)),
+         date,
+         site,
+         region,
+         country) %>%
+  collect() %>%
+  arrange(sample_name)
+```
+
+# some fixes
+```{r}
+fix_bd = db_bd %>%
+  filter(grepl("^1912\\d{2}_", sample_name_bd)) %>%
+  collect() %>%
+  mutate(sample_name_next = sample_name_bd,
+         last_phrase = gsub("^1912\\d{2}_", "", sample_name_bd),
+         sample_name_next = ifelse(grepl("^K", last_phrase),
+                                   gsub("_K0", "_k", sample_name_next),
+                                   gsub("_0", "_", sample_name_next))) %>%
+  left_join(db_sample %>%
+              filter(sample_type == "bd") %>%
+              collect(), by = c("sample_name_next" = "sample_name")) %>%
+  mutate(sample_id = coalesce(sample_id.y, sample_id.x),
+         sample_name_bd = sample_name_next) %>%
+  select(all_of(colnames(db_bd)))
+
+temp_bd = stage_to_temp(dbcon, db_bd, fix_bd)
+pointer = tbl(dbcon, temp_bd)
+db_bd = rows_update(db_bd, pointer, by = "result_id", in_place=TRUE, unmatched = "ignore")
+
+```
+
+# fix maligned names
+```{r}
+bd_update = db_bd %>%
+  inner_join(db_sample %>%
+               filter(sample_type == "bd"), by = "sample_id") %>%
+  filter(sample_name != sample_name_bd) %>%
+  mutate(sample_name_bd = sample_name) %>%
+  select(all_of(colnames(db_bd)))
+
+db_bd = db_bd %>%
+  rows_update(bd_update, by = "result_id", unmatched = "ignore", in_place = TRUE)
+```
+# bd sample_id duplicates
+```{r}
+dupes = get_dupes(db_bd %>% filter(replicate %in% c("singlet", "singley")) %>%collect(), sample_id)
+
+```
+
+# drop samples with no basis in results or capture
+```{r}
+# clean sample table, anything that should not be there
+sample_drop = db_sample %>%
+  anti_join(db_capture, by = "capture_id") %>%
+  anti_join(db_bd %>% mutate(sample_type = "bd"), by = c("sample_name" = "sample_name_bd", "sample_type")) %>%
+  anti_join(db_mucosome %>% mutate(sample_type = "mucosome"), by = c("sample_name" = "sample_name_mucosome", "sample_type")) %>%
+  collect()
+
+sample_drop = db_sample %>%
+  anti_join(db_capture, by = "capture_id") %>%
+  anti_join(db_bd %>% mutate(sample_type = "bd"), by = c("sample_id")) %>%
+  anti_join(db_mucosome %>% mutate(sample_type = "mucosome"), by = c("sample_id"))
+
+samps = db_sample %>%
+  filter(sample_id == "29053744-6717-4f8a-8c91-629d87b6409f") %>%
+  collect()
+
+samps2 = db_bd %>%
+  filter(sample_id == "29053744-6717-4f8a-8c91-629d87b6409f") %>%
+  collect()
+
+db_sample = db_sample %>%
+  rows_delete(sample_drop, by = "sample_id", in_place = TRUE, unmatched = "ignore")
+```
+
+# fix incorrect sample names
+```{r}
+# check names
+names_bd = db_bd %>%
+  inner_join(db_sample, by = "sample_id") %>%
+  filter(sample_name != sample_name_bd) %>%
+  select(sample_id,
+         sample_name,
+         sample_name_bd) %>%
+  collect()
+
+# fix names
+
+update_sample = db_bd %>%
+  inner_join(db_sample, by = "sample_id") %>%
+  filter(sample_name != sample_name_bd) %>%
+  mutate(sample_name = sample_name_bd) %>%
+  select(all_of(colnames(db_sample)))
+
+rows_update(db_sample, update_sample, by = "sample_id", in_place=TRUE, unmatched = "ignore")
 
 ```
