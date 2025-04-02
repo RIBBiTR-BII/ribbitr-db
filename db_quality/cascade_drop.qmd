@@ -22,6 +22,7 @@ mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
 
 # pull relevant chain tables from 
 db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+db_mucosome = tbl(dbcon, Id("survey_data", "mucosome_results"))
 db_sample = tbl(dbcon, Id("survey_data", "sample"))
 
 db_aural = tbl(dbcon, Id("survey_data", "aural"))
@@ -365,18 +366,32 @@ drop_capture = db_capture %>%
 count = as.character(drop_capture %>% count() %>% pull())
 cat("capture:", count, "\n")
 
+# all associated capture samples
 drop_sample_all = db_sample %>%
   right_join(drop_capture, by = "capture_id") %>%
   select(all_of(colnames(db_sample))) %>%
   filter(!is.na(sample_id))
 
+# associated capture samples with bd results
 bd_samples = db_bd %>%
   inner_join(drop_sample_all, by = "sample_id") %>%
   select(sample_id) %>%
   filter(!is.na(sample_id))
 
+# associated capture samples with mucosome results
+mucosome_samples = db_mucosome %>%
+  inner_join(drop_sample_all, by = "sample_id") %>%
+  select(sample_id) %>%
+  filter(!is.na(sample_id))
+
+# updated bd samples
 update_sample = drop_sample_all %>%
   inner_join(bd_samples, by = "sample_id") %>%
+  mutate(capture_id = NA) %>%
+  collect()
+
+update_sample_musosome = drop_sample_all %>%
+  inner_join(mucosome_samples, by = "sample_id") %>%
   mutate(capture_id = NA) %>%
   collect()
 
@@ -384,7 +399,8 @@ count = as.character(update_sample %>% count() %>% pull())
 cat("sample_update:", count, "\n")
 
 drop_sample = drop_sample_all %>%
-  anti_join(bd_samples, by = "sample_id")
+  anti_join(bd_samples, by = "sample_id") %>%
+  anti_join(mucosome_samples, by = "sample_id")
 
 count = as.character(drop_sample %>% count() %>% pull())
 cat("sample_drop:", count, "\n")
