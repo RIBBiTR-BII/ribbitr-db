@@ -52,114 +52,6 @@ db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
 
 ```
 
-# existing brazil data dates
-```{r}
-br_surveys = db_survey %>%
-  left_join(db_visit, by = "visit_id") %>%
-  left_join(db_site, by = "site_id") %>%
-  left_join(db_region, by = "region_id") %>%
-  left_join(db_country, by = "country_id") %>%
-  filter(country == "brazil") %>%
-  select(date,
-         transect,
-         site,
-         region,
-         visit_id,
-         project) %>%
-  collect() %>%
-  arrange(date,
-          region,
-          site)
-
-br_visits = db_visit %>%
-  left_join(db_site, by = "site_id") %>%
-  left_join(db_region, by = "region_id") %>%
-  left_join(db_country, by = "country_id") %>%
-  filter(country == "brazil") %>%
-  select(date,
-         site,
-         time_of_day,
-         region,
-         visit_id,
-         project) %>%
-  collect() %>%
-  arrange(date,
-          region,
-          site)
-
-br_na = br_visits %>%
-  filter(is.na(project))
-
-na_obs = db_survey %>%
-  collect() %>%
-  inner_join(br_na, by = "visit_id")
-
-
-br_ves = db_ves %>%
-  left_join(db_survey, by = "survey_id") %>%
-  left_join(db_visit, by = "visit_id") %>%
-  left_join(db_site, by = "site_id") %>%
-  left_join(db_region, by = "region_id") %>%
-  left_join(db_country, by = "country_id") %>%
-  filter(country == "brazil") %>%
-  collect()
-
-
-dput(unique(br_ves$survey_id))
-
-br_cap = db_capture %>%
-  left_join(db_survey, by = "survey_id") %>%
-  left_join(db_visit, by = "visit_id") %>%
-  left_join(db_site, by = "site_id") %>%
-  left_join(db_region, by = "region_id") %>%
-  left_join(db_country, by = "country_id") %>%
-  filter(visit_id %in% br_ves$visit_id) %>%
-  collect()
-
-visit_of_interest = br_visits %>%
-  filter(date > "2023-02-01") %>%
-  pull(visit_id)
-
-data_of_interest = db_sample %>%
-  inner_join(db_capture, by = "capture_id") %>%
-  left_join(db_survey, by = "survey_id") %>%
-  left_join(db_visit, by = "visit_id") %>%
-  left_join(db_site, by = "site_id") %>%
-  filter(visit_id %in% visit_of_interest) %>%
-    select(sample_name,
-         sample_type,
-         capture_id,
-         life_stage,
-         sex,
-         comments_capture,
-         taxon_capture,
-         transect,
-         time_of_day,
-         date,
-         site) %>%
-    collect() %>%
-  pivot_wider(names_from = "sample_type",
-              values_from = "sample_name") %>%
-  select(capture_id,
-         taxon_capture,
-         life_stage,
-         sex,
-         bd,
-         genetic,
-         comments_capture,
-         transect,
-         time_of_day,
-         date,
-         site) %>%
-  rename(species = taxon_capture,
-         bd_swab_id = bd,
-         genetic_id = genetic) %>%
-  arrange(bd_swab_id)
-
-# write.csv(data_of_interest, here("staging", "br_2023_02_conflicting_data.csv"))
-  
-```
-
 ## Load csv files
 
 ```{r}
@@ -196,6 +88,7 @@ raw_cct = raw_cct$Sheet1
 
 local_tz = "America/Sao_Paulo"
 ```
+
 # 2 - Clean data
 
 ## check for null columns & duplicated rows
@@ -321,7 +214,7 @@ clean_sv = raw_sv %>%
          capture_utm_zone = 23,
          project = "pce_santa_virginia",
          id = as.character(id),
-         bd_swab_tube_id = paste0("ple_", id),
+         bd_swab_tube_id = paste0("pce_", id),
          sex = case_match(sex,
                           'M' ~ "male",
                           c("F","FO") ~ "female",
