@@ -64,7 +64,7 @@ bd_results_by_year = bd_results %>%
 
 bd_samples_results = bd_samples_by_year %>%
   full_join(bd_results_by_year, by = c("country", "region", "year")) %>%
-  arrange(country, region, year) %>%
+  arrange(year, country, region) %>%
   mutate(bd_result_count = ifelse(is.na(bd_result_count), 0, bd_result_count),
          discrepancy = bd_sample_count - bd_result_count)
 
