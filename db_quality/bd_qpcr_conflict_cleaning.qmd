@@ -1,0 +1,119 @@
+---
+title: "bd_qpcr_conflict_cleaning"
+format: html
+---
+
+```{r}
+
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr, ggplot2)
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+# connect to database
+dbcon = hopToDB("ribbitr")
+
+sncon = hopToDB("qpcr")
+
+```
+
+Pull metadata and tables
+
+```{r}
+mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
+  collect()
+
+# pull relevant chain tables from DB
+db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
+sn_plates = tbl(sncon, Id("plates"))
+sn_results = tbl(sncon, Id("results"))
+
+
+```
+
+# allign results
+
+```{r}
+sn_data = sn_results %>%
+  left_join(sn_plates, by = c("plate_id" = "id")) %>%
+  collect()
+
+colnames(sn_data) <- paste0("sn_", colnames(sn_data))
+
+sn_dupes = get_dupes(sn_data, sn_sample_id)
+
+rb_data = db_bd %>%
+  collect() %>%
+  filter(replicate %in% c("singlet", "singley"))
+
+colnames(rb_data) <- paste0("rb_", colnames(rb_data))
+
+rb_dupes = get_dupes(rb_data, rb_sample_name_bd)
+
+common_data = sn_data %>%
+  inner_join(rb_data, by = c("sn_sample_id" = "rb_sample_name_bd")) %>%
+  rename(sample_name = sn_sample_id)
+
+```
+
+# identify discrepancies
+```{r}
+
+discrepancy = function(data, col1, col2) {
+  data %>%
+  filter({{col1}} != {{col2}}) %>%
+  select({{col1}},
+         {{col2}})
+}
+
+qc_1 = common_data %>%
+  discrepancy(sn_plate_id,
+              rb_qpcr_plate_name)
+# plates clean
+
+qc_2 = common_data %>%
+  discrepancy(sn_well_id,
+              rb_qpcr_well)
+# wells are wrong
+
+qc_3 = common_data %>%
+  discrepancy(sn_std_type,
+              rb_standard_target_type) %>%
+  distinct()
+# some are wrong (zoospore - ITS1)
+
+qa_1 = sn_data %>%
+  mutate(year = year(sn_date_start)) %>%
+  select(year, sn_std_type) %>%
+  distinct() %>%
+  arrange(year)
+
+```
+
+# visualize discrepancies
+```{r}
+start_quant_disc = common_data %>%
+  filter(sn_start_quant != rb_average_target_quant)
+
+ggplot(data=common_data, aes(x=log(sn_start_quant), y=log(rb_average_target_quant), color=sn_date_start)) +
+      geom_point()
+
+# 3 discrepancies
+
+ct_disc = common_data %>%
+  filter(sn_quant_cycle != rb_average_ct)
+
+ggplot(data=common_data, aes(x=sn_quant_cycle, y=rb_average_ct, color=sn_date_start)) +
+      geom_point()
+
+# 2 discrepancies
+```
+
+
