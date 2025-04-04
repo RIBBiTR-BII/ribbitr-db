@@ -73,7 +73,7 @@ clean_mucosome = raw_mucosome %>%
          bd_isolate_id = mucosome_isolate) %>%
   mutate(sample_type = "mucosome") %>%
   left_join(db_sample %>% collect(), by = c("sample_name_mucosome" = "sample_name", "sample_type")) %>%
-  mutate(assay_lab = "woodhams_lab",
+  mutate(mucosome_lab = "woodhams_lab",
          bd_isolate_id = gsub(" ", "_", bd_isolate_id),
          uuid_name = paste0(sample_name_mucosome, bd_isolate_id, mucosome_proportion_viable), 
          result_id = UUIDfromName("d6d7ffad-5533-4ae3-85c5-44ed713df8d6", uuid_name)) %>%
