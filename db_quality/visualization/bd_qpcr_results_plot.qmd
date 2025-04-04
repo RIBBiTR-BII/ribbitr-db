@@ -16,9 +16,8 @@ sncon <- hopToDB("qpcr")
 ```{r}
 db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
 
-sn_res = tbl(sncon, Id("public", "results"))
-
-sn_resi = tbl(sncon, Id("public", "results_snarl_import"))
+sn_bd = tbl(sncon, Id("public", "results"))
+sn_plate = tbl(sncon, Id("public", "plates"))
 ```
 
 # plotting
@@ -26,18 +25,9 @@ sn_resi = tbl(sncon, Id("public", "results_snarl_import"))
 data_bd = db_bd %>%
   collect()
 
-data_sn = data_bd %>%
-  filter(qpcr_lab == "snarl")
-
-data_res = sn_res %>%
+data_sn = sn_bd %>%
+  left_join(sn_plate, by = c("plate_id" = "id")) %>%
   collect()
-
-unique(data_res$target)
-
-data_resi = sn_resi %>%
-  collect()
-
-unique(data_resi$standard_type)
 
 ggplot(data=data_bd, aes(x=log(average_target_quant), y=log(target_quant_per_swab), color=standard_target_type)) +
       geom_point()
@@ -50,15 +40,6 @@ ggplot(data=data_bd, aes(x=log(average_target_quant), y=log(target_quant_per_swa
 
 ggplot(data=data_sn, aes(x=log(average_target_quant), y=log(target_quant_per_swab), color=standard)) +
       geom_point()
-
-ggplot(data=data_resi, aes(x=log(start_quant), y=log(bd_load), color=standard_type)) +
-      geom_point()
-
-some_calc = data_resi %>%
-  mutate(factor = bd_load/ start_quant)
-
-samp = data_res %>%
-  filter(sample_id == "RKS18685")
 
 ```
 
@@ -88,8 +69,31 @@ ggplot(data = data_bd, aes(x=log(target_quant_per_swab), y=log(average_its1_copi
 peace = data_bd %>%
   mutate(ratio = round(average_its1_copies_per_swab / target_quant_per_swab, digits = 0)) %>%
   group_by(ratio) %>%
-  summarise(count = n())
+  summarise(count = n()) %>%
+  ungroup()
 
 
 
+```
+
+# check for comparison between standards
+```{r}
+comps = data_sn %>%
+  group_by(sample_id) %>%
+  mutate(std_count = n_distinct(std_type)) %>%
+  ungroup() %>%
+  filter(std_count > 1) %>%
+  arrange(sample_id)
+
+# there are!
+
+wide_comps = comps %>%
+  pivot_wider(id_cols = sample_id,
+              names_from = std_type,
+              values_from = start_quant) %>%
+  mutate(ratio = gblock / genomic)
+
+ggplot(data = wide_comps, aes(x=log(genomic), y=ratio)) +
+      geom_point() +
+  ylim(0, 1500)
 ```
