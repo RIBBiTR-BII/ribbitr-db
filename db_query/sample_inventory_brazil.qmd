@@ -46,9 +46,11 @@ bd_samples_br = db_sample %>%
 
 # all brazil bd sample counts by year
 bd_samples_by_year = bd_samples_br %>%
-  mutate(year = year(date)) %>%
+  mutate(year = year(date),
+         month = month(date)) %>%
   group_by(year, region) %>%
-  summarize(bd_sample_count = n())
+  summarize(months = paste(sort(unique(month)), collapse = ","),
+            bd_sample_count = n())
 
 # all_brazil samples with corresponding results in database
 bd_results_br = db_bd %>%
@@ -67,7 +69,7 @@ bd_samples_results = bd_samples_by_year %>%
   full_join(bd_results_by_year, by = c("year", "region")) %>%
   arrange(year, region) %>%
   mutate(bd_result_count = ifelse(is.na(bd_result_count), 0, bd_result_count),
-         discrepancy = bd_sample_count - bd_result_count)
+         bd_results_pending = bd_sample_count - bd_result_count)
 
 
 write_csv(bd_samples_results, here("staging", paste0("br_bd_samples_results_count_", today(), ".csv")))
