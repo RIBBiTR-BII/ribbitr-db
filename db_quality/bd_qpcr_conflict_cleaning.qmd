@@ -35,10 +35,9 @@ db_country = tbl(dbcon, Id("survey_data", "country"))
 sn_plates = tbl(sncon, Id("plates"))
 sn_results = tbl(sncon, Id("results"))
 
-
 ```
 
-# allign results
+# align results
 
 ```{r}
 sn_data = sn_results %>%
@@ -92,6 +91,12 @@ qc_3 = common_data %>%
 qa_1 = sn_data %>%
   mutate(year = year(sn_date_start)) %>%
   select(year, sn_std_type) %>%
+  distinct() %>%
+  arrange(year)
+
+qa_2 = rb_data %>%
+  mutate(year = year(qpcr_date)) %>%
+  select(year, standard) %>%
   distinct() %>%
   arrange(year)
 
