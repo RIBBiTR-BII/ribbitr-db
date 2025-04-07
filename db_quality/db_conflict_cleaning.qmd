@@ -955,6 +955,17 @@ tryCatch(
 
 ```
 
+# clean up life stage
+```{r}
+ls_capture = db_capture %>%
+  mutate(life_stage = tolower(life_stage),
+         life_stage = ifelse(life_stage == "unknown", NA_character_, life_stage))
+
+db_capture = rows_update(db_capture, ls_capture, by = "capture_id", in_place=TRUE, unmatched = "ignore")
+   
+
+```
+
 # clean up photo
 ```{r}
 photo_capture = db_capture %>%
