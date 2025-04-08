@@ -1027,135 +1027,56 @@ rows_update(db_capture, io_capture, by = "capture_id", in_place=TRUE, unmatched 
 
 ```
 
-# sample coherency check
+# precipitation_during_visit & precipitation_notes
 ```{r}
+clean_precip = db_env %>%
+  mutate(precipitation_during_visit = tolower(precipitation_during_visit),
+         precipitation_during_visit = case_match(precipitation_during_visit,
+                                                 "hard rain" ~ "heavy rain",
+                                                 "medium rain" ~ "moderate rain",
+                                                 "no rain" ~ "none",
+                                                 "light rain/drizzle" ~ "light rain",
+                                                 .default = precipitation_during_visit),
+         precipitation_during_visit = ifelse(is.na(precipitation_during_visit),
+                                             case_match(precipitation_during_visit,
+                                                 "drizzle" ~ "light rain",
+                                                 "heavy rain at 1330" ~ "heavy rain",
+                                                 "intermittent" ~ "moderate rain",
+                                                 "heavy rain 0700-0800" ~ "heavy rain",
+                                                 "intermittent showers during survey" ~ "moderate_rain",
+                                                 "heavy rain, thunderstorm" ~ "heavy rain",
+                                                 "rain" ~ "moderate rain",
+                                                 "drizzling" ~ "light_rain",
+                                                 "heavy rain began 11:00" ~ "heavy rain",
+                                                 "intermittent rain" ~ "moderate rain",
+                                                 "heavy rain throughout day" ~ "heavy rain",
+                                                 "light mist" ~ "fog/mist",
+                                                 "none" ~ "none",
+                                                 "rain, thunder" ~ "heavy rain",
+                                                 "rain all day" ~ "moderate rain",
+                                                 "very misty foggy and dark" ~ "fog/mist",
+                                                 "heavy rain in morning" ~ "heavy rain",
+                                                 "0" ~ "none",
+                                                 "heavy rain" ~ "heavy rain",
+                                                 "100" ~ "moderate rain",
+                                                 "1" ~ "moderate rain",
+                                                 "heavy rain in morning and on hike in" ~ "heavy rain",
+                                                 .default = precipitation_during_visit),
+                                             precipitation_during_visit))
 
-# every sample result should show up in the sample table
-sample_bd = db_bd %>%
-  anti_join(db_sample, by = "sample_id") %>%
+db_env = db_env %>%
+  rows_update(clean_precip, by = "environmental_id", unmatched = "ignore", in_place = TRUE)
+
+pdv = clean_precip %>%
+  select(precipitation_during_visit) %>%
+  distinct() %>%
   collect()
 
-results_unmatched = db_bd %>%
-  left_join(db_sample, by = "sample_id") %>%
-  filter(is.na(capture_id),
-         sample_type == "bd") %>%
-  collect() %>%
-  arrange(sample_name_bd)
-
-samples_unmatched = db_bd %>%
-  right_join(db_sample, by = "sample_id") %>%
-  filter(is.na(result_id),
-         sample_type == "bd") %>%
-  left_join(db_capture, by = "capture_id") %>%
-  left_join(db_survey, by = "survey_id") %>%
-  left_join(db_visit, by = "visit_id") %>%
-  left_join(db_site, by = "site_id") %>%
-  left_join(db_region, by = "region_id") %>%
-  left_join(db_country, by = "country_id") %>%
-  select(all_of(colnames(db_sample)),
-         date,
-         site,
-         region,
-         country) %>%
-  collect() %>%
-  arrange(sample_name)
-```
-
-# some fixes
-```{r}
-fix_bd = db_bd %>%
-  filter(grepl("^1912\\d{2}_", sample_name_bd)) %>%
-  collect() %>%
-  mutate(sample_name_next = sample_name_bd,
-         last_phrase = gsub("^1912\\d{2}_", "", sample_name_bd),
-         sample_name_next = ifelse(grepl("^K", last_phrase),
-                                   gsub("_K0", "_k", sample_name_next),
-                                   gsub("_0", "_", sample_name_next))) %>%
-  left_join(db_sample %>%
-              filter(sample_type == "bd") %>%
-              collect(), by = c("sample_name_next" = "sample_name")) %>%
-  mutate(sample_id = coalesce(sample_id.y, sample_id.x),
-         sample_name_bd = sample_name_next) %>%
-  select(all_of(colnames(db_bd)))
-
-temp_bd = stage_to_temp(dbcon, db_bd, fix_bd)
-pointer = tbl(dbcon, temp_bd)
-db_bd = rows_update(db_bd, pointer, by = "result_id", in_place=TRUE, unmatched = "ignore")
-
-```
-
-# fix maligned names
-```{r}
-bd_update = db_bd %>%
-  inner_join(db_sample %>%
-               filter(sample_type == "bd"), by = "sample_id") %>%
-  filter(sample_name != sample_name_bd) %>%
-  mutate(sample_name_bd = sample_name) %>%
-  select(all_of(colnames(db_bd))) %>%
+test = db_env %>%
+  group_by(precipitation_during_visit) %>%
+  summarise(val = first(na.omit(precipitation_notes))) %>%
   collect()
 
-db_bd = db_bd %>%
-  rows_update(bd_update, by = "result_id", unmatched = "ignore", in_place = TRUE)
-```
-
-# bd sample_id duplicates
-```{r}
-dupes = get_dupes(db_bd %>% filter(replicate %in% c("singlet", "singley")) %>%collect(), sample_id)
-dupes_to_drop = dupes %>%
-  filter(grepl("^pce_\\d{3}$", sample_name_bd)) %>%
-  select(-dupe_count)
-
-temp_bd = stage_to_temp(dbcon, db_bd, dupes_to_drop)
-pointer = tbl(dbcon, temp_bd)
-db_bd = rows_delete(db_bd, pointer, by = "result_id", in_place=TRUE, unmatched = "ignore")
-
-```
-
-# drop samples with no basis in results or capture
-```{r}
-# clean sample table, anything that should not be there
-sample_drop = db_sample %>%
-  anti_join(db_capture, by = "capture_id") %>%
-  anti_join(db_bd %>% mutate(sample_type = "bd"), by = c("sample_name" = "sample_name_bd", "sample_type")) %>%
-  anti_join(db_mucosome %>% mutate(sample_type = "mucosome"), by = c("sample_name" = "sample_name_mucosome", "sample_type")) %>%
-  collect()
-
-sample_drop = db_sample %>%
-  anti_join(db_capture, by = "capture_id") %>%
-  anti_join(db_bd %>% mutate(sample_type = "bd"), by = c("sample_id")) %>%
-  anti_join(db_mucosome %>% mutate(sample_type = "mucosome"), by = c("sample_id"))
-
-samps = db_sample %>%
-  filter(sample_id == "29053744-6717-4f8a-8c91-629d87b6409f") %>%
-  collect()
-
-samps2 = db_bd %>%
-  filter(sample_id == "29053744-6717-4f8a-8c91-629d87b6409f") %>%
-  collect()
-
-db_sample = db_sample %>%
-  rows_delete(sample_drop, by = "sample_id", in_place = TRUE, unmatched = "ignore")
-```
-
-# fix incorrect sample names
-```{r}
-# check names
-names_bd = db_bd %>%
-  inner_join(db_sample, by = "sample_id") %>%
-  filter(sample_name != sample_name_bd) %>%
-  select(sample_id,
-         sample_name,
-         sample_name_bd) %>%
-  collect()
-
-# fix names
-
-update_sample = db_bd %>%
-  inner_join(db_sample, by = "sample_id") %>%
-  filter(sample_name != sample_name_bd) %>%
-  mutate(sample_name = sample_name_bd) %>%
-  select(all_of(colnames(db_sample)))
-
-rows_update(db_sample, update_sample, by = "sample_id", in_place=TRUE, unmatched = "ignore")
+sql_render(test)
 
 ```

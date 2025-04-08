@@ -10,7 +10,7 @@ librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr
 # librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 
 # connect to database
-dbcon = hopToDB("ribbitr")
+dbcon = hopToDB("wibbitr")
 
 sncon = hopToDB("qpcr")
 
@@ -44,21 +44,17 @@ sn_data = sn_results %>%
   left_join(sn_plates, by = c("plate_id" = "id")) %>%
   collect()
 
-colnames(sn_data) <- paste0("sn_", colnames(sn_data))
-
-sn_dupes = get_dupes(sn_data, sn_sample_id)
+sn_dupes = get_dupes(sn_data, sample_id)
 
 rb_data = db_bd %>%
   collect() %>%
   filter(replicate %in% c("singlet", "singley"))
 
-colnames(rb_data) <- paste0("rb_", colnames(rb_data))
-
-rb_dupes = get_dupes(rb_data, rb_sample_name_bd)
+rb_dupes = get_dupes(rb_data, sample_name_bd)
 
 common_data = sn_data %>%
-  inner_join(rb_data, by = c("sn_sample_id" = "rb_sample_name_bd")) %>%
-  rename(sample_name = sn_sample_id)
+  inner_join(rb_data, by = c("sample_id" = "sample_name_bd")) %>%
+  rename(sample_name = sample_id)
 
 ```
 
@@ -73,24 +69,25 @@ discrepancy = function(data, col1, col2) {
 }
 
 qc_1 = common_data %>%
-  discrepancy(sn_plate_id,
-              rb_qpcr_plate_name)
+  discrepancy(plate_id,
+              qpcr_plate_name)
 # plates clean
 
 qc_2 = common_data %>%
-  discrepancy(sn_well_id,
-              rb_qpcr_well)
+  discrepancy(well_id,
+              qpcr_well)
 # wells are wrong
 
 qc_3 = common_data %>%
-  discrepancy(sn_std_type,
-              rb_standard_target_type) %>%
-  distinct()
+  discrepancy(std_type,
+              standard_target_type) %>%
+  group_by(std_type, standard_target_type) %>%
+  count()
 # some are wrong (zoospore - ITS1)
 
 qa_1 = sn_data %>%
-  mutate(year = year(sn_date_start)) %>%
-  select(year, sn_std_type) %>%
+  mutate(year = year(date_start)) %>%
+  select(year, std_type) %>%
   distinct() %>%
   arrange(year)
 
@@ -99,6 +96,60 @@ qa_2 = rb_data %>%
   select(year, standard) %>%
   distinct() %>%
   arrange(year)
+
+qa_3 = rb_data %>%
+  mutate(year = year(qpcr_date)) %>%
+  select(qpcr_lab,
+         year,
+         standard_target_type,
+         standard,
+         total_qpcr_volume_uL,
+         qpcr_dilution_factor,
+         extract_volume_uL,
+         volume_template_dna_uL) %>%
+  group_by(qpcr_lab,
+           standard_target_type,
+           standard,
+           total_qpcr_volume_uL,
+           qpcr_dilution_factor,
+           extract_volume_uL,
+           volume_template_dna_uL) %>%
+  summarise(years = paste(sort(unique(year)), collapse = ","),
+         count = n()) %>%
+  arrange(qpcr_lab)
+
+inv_1 = rb_data %>%
+  filter(is.na(qpcr_lab)) %>%
+  select(qpcr_plate_name) %>%
+  distinct()
+
+inv_2 = rb_data %>%
+  filter(is.na(qpcr_date)) %>%
+  group_by(qpcr_plate_name) %>%
+  count()
+
+inv_3 = rb_data %>%
+  filter(qpcr_lab == "rz_lab",
+         qpcr_dilution_factor == 10) %>%
+  select(qpcr_plate_name) %>%
+  distinct() %>%
+  arrange(qpcr_plate_name)
+
+```
+
+# consistency cleaning
+```{r}
+clean_bd = db_bd %>%
+  mutate(standard_target_type = ifelse(standard == "plasmid-pisces", "ITS1", standard_target_type),
+         standard = ifelse(standard == "plasmid" & qpcr_lab == "snarl", "plasmid_birggs", standard),
+         qpcr_date = case_match(qpcr_plate_name,
+                                "RIBBiTR_qPCR_Penn2023_18August2023_Plate3" ~ as.Date("2023-08-18"),
+                                "vs17-04-01plate 2 field" ~ as.Date("2017-10-31"),
+                                "VS19-07plate7field(2)" ~ as.Date("2019-08-07"),
+                                .default = qpcr_date))
+
+db_bd = db_bd %>%
+  rows_update(clean_bd, by = "result_id", unmatched = "ignore", in_place = TRUE)
 
 ```
 
@@ -121,4 +172,135 @@ ggplot(data=common_data, aes(x=sn_quant_cycle, y=rb_average_ct, color=sn_date_st
 # 2 discrepancies
 ```
 
+# sample coherency check
+```{r}
 
+# every sample result should show up in the sample table
+sample_bd = db_bd %>%
+  anti_join(db_sample, by = "sample_id") %>%
+  collect()
+
+results_unmatched = db_bd %>%
+  left_join(db_sample, by = "sample_id") %>%
+  filter(is.na(capture_id),
+         sample_type == "bd") %>%
+  collect() %>%
+  arrange(sample_name_bd)
+
+samples_unmatched = db_bd %>%
+  right_join(db_sample, by = "sample_id") %>%
+  filter(is.na(result_id),
+         sample_type == "bd") %>%
+  left_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  select(all_of(colnames(db_sample)),
+         date,
+         site,
+         region,
+         country) %>%
+  collect() %>%
+  arrange(sample_name)
+```
+
+# some fixes
+```{r}
+fix_bd = db_bd %>%
+  filter(grepl("^1912\\d{2}_", sample_name_bd)) %>%
+  collect() %>%
+  mutate(sample_name_next = sample_name_bd,
+         last_phrase = gsub("^1912\\d{2}_", "", sample_name_bd),
+         sample_name_next = ifelse(grepl("^K", last_phrase),
+                                   gsub("_K0", "_k", sample_name_next),
+                                   gsub("_0", "_", sample_name_next))) %>%
+  left_join(db_sample %>%
+              filter(sample_type == "bd") %>%
+              collect(), by = c("sample_name_next" = "sample_name")) %>%
+  mutate(sample_id = coalesce(sample_id.y, sample_id.x),
+         sample_name_bd = sample_name_next) %>%
+  select(all_of(colnames(db_bd)))
+
+# temp_bd = stage_to_temp(dbcon, db_bd, fix_bd)
+# pointer = tbl(dbcon, temp_bd)
+# db_bd = rows_update(db_bd, pointer, by = "result_id", in_place=TRUE, unmatched = "ignore")
+
+```
+
+# fix maligned names
+```{r}
+bd_update = db_bd %>%
+  inner_join(db_sample %>%
+               filter(sample_type == "bd"), by = "sample_id") %>%
+  filter(sample_name != sample_name_bd) %>%
+  mutate(sample_name_bd = sample_name) %>%
+  select(all_of(colnames(db_bd))) %>%
+  collect()
+
+# db_bd = db_bd %>%
+#   rows_update(bd_update, by = "result_id", unmatched = "ignore", in_place = TRUE)
+```
+
+# bd sample_id duplicates
+```{r}
+dupes = get_dupes(db_bd %>% filter(replicate %in% c("singlet", "singley")) %>%collect(), sample_id)
+dupes_to_drop = dupes %>%
+  filter(grepl("^pce_\\d{3}$", sample_name_bd)) %>%
+  select(-dupe_count)
+
+temp_bd = stage_to_temp(dbcon, db_bd, dupes_to_drop)
+pointer = tbl(dbcon, temp_bd)
+db_bd = rows_delete(db_bd, pointer, by = "result_id", in_place=TRUE, unmatched = "ignore")
+
+```
+
+# drop samples with no basis in results or capture
+```{r}
+# clean sample table, anything that should not be there
+sample_drop = db_sample %>%
+  anti_join(db_capture, by = "capture_id") %>%
+  anti_join(db_bd %>% mutate(sample_type = "bd"), by = c("sample_name" = "sample_name_bd", "sample_type")) %>%
+  anti_join(db_mucosome %>% mutate(sample_type = "mucosome"), by = c("sample_name" = "sample_name_mucosome", "sample_type")) %>%
+  collect()
+
+sample_drop = db_sample %>%
+  anti_join(db_capture, by = "capture_id") %>%
+  anti_join(db_bd %>% mutate(sample_type = "bd"), by = c("sample_id")) %>%
+  anti_join(db_mucosome %>% mutate(sample_type = "mucosome"), by = c("sample_id"))
+
+samps = db_sample %>%
+  filter(sample_id == "29053744-6717-4f8a-8c91-629d87b6409f") %>%
+  collect()
+
+samps2 = db_bd %>%
+  filter(sample_id == "29053744-6717-4f8a-8c91-629d87b6409f") %>%
+  collect()
+
+db_sample = db_sample %>%
+  rows_delete(sample_drop, by = "sample_id", in_place = TRUE, unmatched = "ignore")
+```
+
+# fix incorrect sample names
+```{r}
+# check names
+names_bd = db_bd %>%
+  inner_join(db_sample, by = "sample_id") %>%
+  filter(sample_name != sample_name_bd) %>%
+  select(sample_id,
+         sample_name,
+         sample_name_bd) %>%
+  collect()
+
+# fix names
+
+update_sample = db_bd %>%
+  inner_join(db_sample, by = "sample_id") %>%
+  filter(sample_name != sample_name_bd) %>%
+  mutate(sample_name = sample_name_bd) %>%
+  select(all_of(colnames(db_sample)))
+
+rows_update(db_sample, update_sample, by = "sample_id", in_place=TRUE, unmatched = "ignore")
+
+```
