@@ -1,0 +1,184 @@
+---
+title: "amm_sn_sites_counts"
+format: html
+---
+
+```{r}
+
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, here, RPostgres, DBI, RIBBiTR-BII/ribbitrrr)
+
+# connect to database
+dbcon = hopToDB("ribbitr")
+
+```
+
+# table pointers
+```{r}
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+```
+
+# query
+```{r}
+pop = tibble(
+  site = c("72808",
+           "72336",
+           "72996",
+           "70459",
+           "54188",
+           "50837",
+           "50895",
+           "50731",
+           "52127",
+           "70397",
+           "50783",
+           "70641",
+           "10196",
+           "10198"),
+  population = c("unicorn",
+                 "unicorn",
+                 "conness",
+                 "kuna",
+                 "trapdoor",
+                 "independence_crk",
+                 "independence_crk",
+                 "sleet",
+                 "ameletus",
+                 "east_evelyn",
+                 "mulkey",
+                 "dog",
+                 "rambaud",
+                 "rambaud")
+)
+
+data_samps = db_sample %>%
+  pivot_wider(id_cols = capture_id,
+              names_from = sample_type,
+              values_from = sample_name) %>%
+  left_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(region == "california",
+         !is.na(amp) | !is.na(mucosome) | !is.na(microbiome),
+         !is.na(taxon_capture),
+         taxon_capture %in% c("rana_muscosa", "rana_sierrae"),
+         life_stage %in% c("adult", "subadult")) %>%
+  select(capture_id,
+         taxon_capture,
+         life_stage,
+         cmr_id,
+         marked,
+         amp,
+         mucosome,
+         microbiome,
+         bd,
+         date,
+         site,
+         site_latitude,
+         site_longitude,
+         site_name_alt,
+         geographic_area,
+         project) %>%
+  collect() %>%
+  arrange(date,
+          bd)
+
+write_csv(data_samps, here("staging", paste0("amm_sn_captured_individuals_", today(), ".csv")))
+
+data_10196 = data_samps %>%
+  filter(site == "10196")
+
+data_2017 = data_samps %>%
+  mutate(year = year(date)) %>%
+  filter(year == "2017") %>%
+  group_by(site) %>%
+  count()
+
+data_proj = data_samps %>%
+  group_by(project) %>%
+  count()
+
+data_proj_spec = data_samps %>%
+  group_by(project, taxon_capture) %>%
+  count()
+
+data_life_stage_proj = data_samps %>%
+  group_by(life_stage, project) %>%
+  count()
+
+data_species = data_samps %>%
+  group_by(taxon_capture) %>%
+  count()
+
+data_sites = data_samps %>%
+  mutate(year = year(date)) %>%
+  left_join(pop, by = "site") %>%
+  group_by(site,
+           site_name_alt,
+           population,
+           site_latitude,
+           site_longitude,
+           geographic_area) %>%
+  summarise(years = paste(sort(unique(year)), collapse = ","),
+            amp_samples = sum(!is.na(amp)),
+            microbiome_samples = sum(!is.na(microbiome)),
+            mucosome_samples = sum(!is.na(mucosome)),
+            any_samples = sum(!is.na(amp) | !is.na(microbiome) | !is.na(mucosome)),
+            all_samples = sum(!is.na(amp) & !is.na(microbiome) & !is.na(mucosome))) %>%
+  arrange(site)
+
+write_csv(data_sites, here("staging", paste0("amm_sn_site_summary_", today(), ".csv")))
+
+
+data_summary = data_samps %>%
+  mutate(year = year(date)) %>%
+  left_join(pop, by = "site") %>%
+  filter(taxon_capture %in% c("rana_muscosa", "rana_sierrae"),
+         life_stage %in% c("adult", "subadult")) %>%
+  summarise(years = paste(sort(unique(year)), collapse = ","),
+            amp_samples = sum(!is.na(amp)),
+            microbiome_samples = sum(!is.na(microbiome)),
+            mucosome_samples = sum(!is.na(mucosome)),
+            any_samples = sum(!is.na(amp) | !is.na(microbiome) | !is.na(mucosome)),
+            all_samples = sum(!is.na(amp) & !is.na(microbiome) & !is.na(mucosome)))
+
+```
+
+# 70397 survey hx
+```{r}
+s_70397 = db_survey %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  filter(site == "70397") %>%
+  mutate(year = year(date)) %>%
+  collect()
+
+
+c_70397_2023 = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  filter(survey_id == "00f86c2a-035b-4898-93ab-c672c059d6ea") %>%
+  collect()
+
+s_70397_2023 = db_sample %>%
+  pivot_wider(id_cols = capture_id,
+              names_from = sample_type,
+              values_from = sample_name) %>%
+  left_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  filter(survey_id == "00f86c2a-035b-4898-93ab-c672c059d6ea") %>%
+  collect()
+
+```
