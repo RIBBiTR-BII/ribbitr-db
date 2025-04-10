@@ -77,7 +77,10 @@ pull_pg_column_data <- function(schema) {
     left_join(pkeys, by = c("table_name", "column_name")) %>%
     left_join(fkeys, by = c("table_name", "column_name")) %>%
     left_join(unique, by = c("table_name", "column_name")) %>%
-    mutate(primary_key = ifelse(is.na(primary_key), FALSE, TRUE),
+    mutate(is_nullable = case_match(is_nullable,
+                                    "YES" ~ TRUE,
+                                    "NO" ~ FALSE),
+           primary_key = ifelse(is.na(primary_key), FALSE, TRUE),
            foreign_key = ifelse(is.na(foreign_key), FALSE, TRUE),
            unique = ifelse(is.na(unique), FALSE, TRUE),
            key_type = case_when(  # depreciate on Jan 2025
