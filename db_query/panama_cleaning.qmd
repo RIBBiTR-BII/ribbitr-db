@@ -1,0 +1,214 @@
+---
+title: "panama_cleaning"
+format: html
+---
+
+```{r}
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, RIBBiTR-BII/ribbitrrr, here)
+
+# connect to database
+dbcon = hopToDB("ribbitr")
+
+```
+
+```{r}
+mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
+  collect()
+
+# pull relevant chain tables from DB
+db_aural = tbl(dbcon, Id("survey_data", "aural"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_edna = tbl(dbcon, Id("survey_data", "edna"))
+db_env = tbl(dbcon, Id("survey_data", "environmental"))
+db_ves = tbl(dbcon, Id("survey_data", "ves"))
+
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
+db_cmr = tbl(dbcon, Id("survey_data", "cmr"))
+db_isolate = tbl(dbcon, Id("survey_data", "bd_isolate"))
+
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+db_mucosome = tbl(dbcon, Id("survey_data", "mucosome_results"))
+```
+
+# VES surveys independent (in time) from Capture or Aural (edna, acoustic, hobo)?
+
+# survey structure prior to RIBBiTR: transects?
+
+# VES high counts, NA species, NA life stage. Maybe tadpoles?
+```{r}
+data_ves = db_ves %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(country == "panama")
+
+na_ves = data_ves %>%
+  filter(is.na(taxon_ves),
+         is.na(life_stage)) %>%
+  collect() %>%
+  arrange(date,
+          site,
+          transect,
+          count_ves) %>%
+  select(ves_id,
+         taxon_ves,
+         count_ves,
+         life_stage,
+         sex,
+         visual_animal_state,
+         ves_transect_m,
+         microhabitat_type,
+         microhabitat_detailed,
+         time_of_day,
+         transect,
+         site,
+         date,
+         observer_ves,
+         comments_ves,
+         comments_survey,
+         comments_visit)
+
+na_ves_10 = na_ves %>%
+  filter(count_ves >= 10)
+
+write_csv(na_ves_10, here("staging", paste0("ves_na_panama_gt10_", today(), ".csv")))
+
+```
+
+# maligned bd swab IDs
+
+```{r}
+# every sample result should show up in the sample table
+sample_bd = db_bd %>%
+  anti_join(db_sample, by = "sample_id") %>%
+  collect()
+
+results_unmatched = db_bd %>%
+  left_join(db_sample, by = "sample_id") %>%
+  filter(is.na(capture_id),
+         sample_type == "bd") %>%
+  collect() %>%
+  arrange(sample_name_bd)
+
+results_unmatched_pa = results_unmatched %>%
+  filter(grepl("pan", qpcr_plate_name))
+
+samples_unmatched = db_bd %>%
+  right_join(db_sample, by = "sample_id") %>%
+  filter(is.na(result_id),
+         sample_type == "bd") %>%
+  left_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(country == "panama") %>%
+  select(all_of(colnames(db_sample)),
+         date,
+         site,
+         region,
+         country) %>%
+  collect() %>%
+  arrange(sample_name)
+
+
+samples_unmatched_agg
+```
+
+# sample inventory panama
+```{r}
+# all brazil bd samples with associated capture in database
+bd_samples_pa = db_sample %>%
+  left_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(sample_type == "bd",
+         country == "panama") %>%
+  collect()
+
+# all brazil bd sample counts by year
+bd_samples_by_year = bd_samples_pa %>%
+  mutate(year = year(date),
+         month = month(date)) %>%
+  group_by(year, region) %>%
+  summarize(months = paste(sort(unique(month)), collapse = ","),
+            bd_sample_count = n())
+
+# all_brazil samples with corresponding results in database
+bd_results_pa = db_bd %>%
+  select(sample_id) %>%
+  distinct() %>%
+  collect() %>%
+  inner_join(bd_samples_pa, by = "sample_id")
+
+# all brazil bd result counts by year
+bd_results_by_year = bd_results_pa %>%
+  mutate(year = year(date)) %>%
+  group_by(year, region) %>%
+  summarize(bd_result_count = n())
+
+ves_results_pa = db_ves %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(country == "panama") %>%
+  collect()
+
+ves_results_by_year = ves_results_pa %>%
+  mutate(year = year(date)) %>%
+  group_by(year, region) %>%
+  summarize(ves_result_count = n())
+
+aural_results_pa = db_aural %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(country == "panama") %>%
+  collect()
+
+aural_results_by_year =  aural_results_pa %>%
+  mutate(year = year(date)) %>%
+  group_by(year, region) %>%
+  summarize(aural_result_count = n())
+
+bd_samples_results = bd_samples_by_year %>%
+  full_join(bd_results_by_year, by = c("year", "region")) %>%
+  full_join(aural_results_by_year, by = c("year", "region")) %>%
+  full_join(ves_results_by_year, by = c("year", "region")) %>%
+  arrange(year, region) %>%
+  mutate(bd_result_count = ifelse(is.na(bd_result_count), 0, bd_result_count),
+         bd_results_pending = bd_sample_count - bd_result_count)
+
+
+write_csv(bd_samples_results, here("staging", paste0("pa_bd_samples_results_count_", today(), ".csv")))
+
+```
+
+# aural counts = 100 (full chorus?)
+```{r}
+data_aural = db_aural %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(country == "panama") %>% collect()
+
+```
