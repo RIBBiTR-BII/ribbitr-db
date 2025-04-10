@@ -1080,3 +1080,23 @@ test = db_env %>%
 sql_render(test)
 
 ```
+# SN 2022 mucosome & AMPs samples
+```{r}
+doi = db_sample %>%
+  inner_join(db_capture, by = "capture_id") %>%
+  filter(sample_type == "mucosome",
+         grepl("^BII", sample_name)) %>%
+  collect() %>%
+  arrange(sample_name)
+
+doi_manip = doi %>%
+  select(any_of(colnames(db_sample)),
+         -sample_id) %>%
+  mutate(sample_type = "amp",
+         sample_id = UUIDfromName("1208e62f-d3a1-462c-984f-0bf1f43f5837", paste0(sample_name, sample_type)))
+
+temp_sample = stage_to_temp(dbcon, db_sample, doi_manip)
+pointer = tbl(dbcon, temp_sample)
+rows_insert(db_sample, pointer, by = "sample_id", in_place=TRUE, conflict = "ignore")
+
+```
