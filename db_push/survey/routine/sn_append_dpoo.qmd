@@ -23,7 +23,7 @@ mdc = tbl(dbcon, Id("public", "all_columns")) %>%
 ## Point to local data directory
 ddir = Sys.getenv("data_dir")  # data directory
 # Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
-wddir = here(ddir, "sierra", '2025-03-18') # working data directory
+wddir = here(ddir, "sierra", "2025-03-18") # working data directory
 
 ```
 
