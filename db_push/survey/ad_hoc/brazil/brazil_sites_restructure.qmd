@@ -1,0 +1,188 @@
+---
+title: "brazil_legacy_fix"
+format: html
+---
+
+## Setup
+
+```{r}
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, rio, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr, plotly)
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+## Connect to DB
+dbcon <- hopToDB("wibbitr")
+
+```
+
+## db pointers
+```{r}
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
+```
+
+```{r}
+old_sites = db_survey %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(country == "brazil") %>%
+  collect()
+
+revised_sites = old_sites %>%
+  mutate(site_new = case_when(grepl("_f[0-5]$", site) ~ site,
+                              grepl(".*_water", site) ~ gsub("_water", "", site),
+                              grepl(".*_land", site) ~ gsub("_land", "", site),
+                              grepl("^b.*\\d+w$", site) ~ gsub("b", "t", gsub("w", "", site)),
+                              grepl("^b.*\\d+t$", site) ~ gsub("b", "t", gsub("t", "", site)),
+                              grepl("^a.*\\d+w$", site) ~ gsub("a", "s", gsub("w", "", site)),
+                              site == "trilha_olho_dagua" ~ "olho_de_agua",
+                              site %in% c("alojamento",
+                                          "estrada",
+                                          "lago_angelim",
+                                          "lago_anta",
+                                          "lago_minutal",
+                                          "lago_sede",
+                                          "olho_de_agua",
+                                          "pirapitinga",
+                                          "poca_temporaria",
+                                          "bp2",
+                                          "bp4") ~ site,
+                              site == "b5" ~ "t5",
+                              TRUE ~ NA_character_),
+         transect_new = case_when(grepl("_water$", site) ~ "water",
+                                  grepl("_land$", site) ~ "land",
+                                  grepl("*\\d+w$", site) ~ "water",
+                                  grepl("*\\d+t$", site) ~ "land",
+                                  TRUE ~ transect))
+
+new_sites = revised_sites %>%
+  select(site,
+         site_new,
+         site_latitude,
+         site_longitude,
+         region,
+         country) %>%
+  distinct() %>%
+  group_by(site_new) %>%
+  summarize(count = n()) %>%
+  filter(count > 1,
+         site_new != "olho_de_agua") %>%
+  pull(site_new)
+
+name_probs = revised_sites %>%
+  select(site,
+         site_new) %>%
+  filter(site_new %in% new_sites,
+         site_new == site)
+
+new_site_table = revised_sites %>%
+  select(all_of(colnames(db_site)),
+         site_new) %>%
+  filter(site_new %in% new_sites) %>%
+  group_by(site_new) %>%
+  summarise(site_utm_zone = first(site_utm_zone),
+            site_utme = mean(site_utme, na.rm = TRUE),
+            site_utmn = mean(site_utmn, na.rm = TRUE),
+            site_latitude = mean(site_latitude, na.rm = TRUE),
+            site_longitude = mean(site_longitude, na.rm = TRUE),
+            region_id = first(region_id),
+            site_id = UUIDgenerate()) %>%
+  rename(site = site_new) %>%
+  mutate(site_name_alt = gsub("s", "a", gsub("t", "b", site)))
+
+```
+
+# remap sites & visits
+```{r}
+all_sites = db_site %>%
+  collect() %>%
+  bind_rows(new_site_table)
+
+remapped_sites = revised_sites %>%
+  select(-any_of(colnames(db_site)),
+         -any_of(colnames(db_region)),
+         -any_of(colnames(db_country))) %>%
+  left_join(all_sites, by = c("site_new" = "site")) %>%
+  rename(site = site_new) %>%
+  mutate(transect = transect_new) %>%
+  group_by(date,
+           site_id,
+           time_of_day,
+           project) %>%
+  mutate(visit_id = first(visit_id)) %>%
+  ungroup()
+  
+
+```
+
+# subset & compare
+```{r}
+subset_survey = remapped_sites %>%
+  select(all_of(colnames(db_survey)))
+
+tray = compare_for_staging(old_sites %>% select(all_of(colnames(db_survey))), subset_survey, "survey_id", report = "survey")
+peace = compare_updates(tray)
+update_survey = tray$update
+
+subset_visit = remapped_sites %>%
+  select(all_of(colnames(db_visit))) %>%
+  distinct()
+
+tray = compare_for_staging(old_sites %>% select(all_of(colnames(db_visit))) %>% distinct(), subset_visit, "visit_id", report = "visit")
+peace = compare_updates(tray)
+update_visit = tray$update
+drop_visit = tray$orphan
+delete_visit = db_visit %>%
+  filter(visit_id %in% drop_visit$visit_id)
+
+subset_site = remapped_sites %>%
+  select(all_of(colnames(db_site))) %>%
+  distinct()
+
+tray = compare_for_staging(old_sites %>% select(all_of(colnames(db_site))) %>% distinct(), subset_site, "site_id", report = "site")
+insert_site = tray$insert
+drop_site = tray$orphan
+delete_site = db_site %>%
+  filter(site_id %in% drop_site$site_id)
+
+```
+
+# commit changes
+```{r}
+# update all landscape
+dbBegin(dbcon)
+
+tryCatch(
+  {
+    temp_site = stage_to_temp(dbcon, db_site, insert_site)
+    pointer = tbl(dbcon, temp_site)
+    rows_insert(db_site, pointer, by="site_id", in_place=TRUE, conflict = "ignore")
+    
+    temp_visit = stage_to_temp(dbcon, db_visit, update_visit)
+    pointer = tbl(dbcon, temp_visit)
+    rows_update(db_visit, pointer, by="visit_id", in_place=TRUE, unmatched = "ignore")
+    
+    temp_survey = stage_to_temp(dbcon, db_survey, update_survey)
+    pointer = tbl(dbcon, temp_survey)
+    rows_update(db_survey, pointer, by="survey_id", in_place=TRUE, unmatched = "ignore")
+
+    rows_delete(db_visit, delete_visit, by="visit_id", in_place=TRUE, unmatched = "ignore")
+    
+    rows_delete(db_site, delete_site, by="site_id", in_place=TRUE, unmatched = "ignore")
+    
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful!")
+    
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
+
+```
