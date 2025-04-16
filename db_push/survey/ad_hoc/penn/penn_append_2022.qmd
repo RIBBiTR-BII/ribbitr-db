@@ -1,0 +1,1332 @@
+---
+title: "penn_append"
+format: html
+editor: source
+---
+
+# Setup
+
+## Load Packages
+
+```{r}
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+## Connect to DB
+dbcon <- hopToDB("wibbitr")
+
+## Pull metadata from database
+mdc = tbl(dbcon, Id("public", "all_columns")) %>%
+  filter(table_schema == "survey_data") %>%
+  collect()
+
+## Point to local data directory
+ddir = Sys.getenv("data_dir")  # data directory
+# Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
+wddir = here(ddir, "fulcrum", 'penn', '2022_data') # working data directory
+
+```
+
+# 0 - Data Plan
+
+## Goals
+
+-   Integrate batches of Penn survey data with other RIBBiTR data (including other Penn data) for combined analysis
+-   Compare with existing data to avoid duplicating, and facilitate automated updating
+-   Quality control for red flag data (potential or known issues)
+-   Upload to Database in transaction
+-   log transaction
+
+## Data chains (someday we can automate this...)
+
+-   capture / survey / visit / site / region / location
+-   aural / survey / visit / site / region / location
+-   ves / survey / visit / site / region / location
+
+# 1 - Import data
+
+## Pull dependent tables for each data chain
+
+### use naming convention "db\_" to distinguish the source
+
+```{r}
+# pull relevant chain tables from DB
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+
+db_aural = tbl(dbcon, Id("survey_data", "aural"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_edna = tbl(dbcon, Id("survey_data", "edna"))
+db_env = tbl(dbcon, Id("survey_data", "environmental"))
+db_ves = tbl(dbcon, Id("survey_data", "ves"))
+
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
+db_cmr = tbl(dbcon, Id("survey_data", "cmr"))
+db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
+
+```
+
+## Load most recent raw CSV Exports
+
+-   use naming convention "raw\_" to distinguish source
+-   name related tables similarly for natural grouping
+
+```{r}
+list.files(path = here(wddir, "ple_amphibian_processing_app"))
+
+# general survey table
+raw_survey_info <- read_csv(here(wddir, "ple_amphibian_survey", "ple_amphibian_survey.csv"))
+raw_survey_changesets <- read_csv(here(wddir, "ple_amphibian_survey", "ple_amphibian_survey_changesets.csv"))
+
+# aural
+raw_aural_survey <- read_csv(here(wddir, "ple_acoustic_survey", "ple_acoustic_survey.csv"))
+raw_aural_obs <- read_csv(here(wddir, "ple_acoustic_survey", "ple_acoustic_survey_acoustic_survey.csv"))
+raw_aural_changesets <- read_csv(here(wddir, "ple_acoustic_survey", "ple_acoustic_survey_changesets.csv"))
+
+# ves tables
+raw_ves_survey <- read_csv(here(wddir, "ple_visual_encounter_survey", "ple_visual_encounter_survey.csv"))
+raw_ves_obs <- read_csv(here(wddir, "ple_visual_encounter_survey", "ple_visual_encounter_survey_visual_encounter_information.csv"))
+raw_ves_changesets <- read_csv(here(wddir, "ple_visual_encounter_survey", "ple_visual_encounter_survey_changesets.csv"))
+
+# capture tables
+raw_capture_survey <- read_csv(here(wddir, "ple_captured_amphibian_information", "ple_captured_amphibian_information.csv"))
+raw_capture_obs <- read_csv(here(wddir, "ple_captured_amphibian_information", "ple_captured_amphibian_information_captured_amphibian_information.csv"))
+raw_capture_photo <- read_csv(here(wddir, "ple_captured_amphibian_information", "ple_captured_amphibian_information_captured_amphibian_information_bag_photo.csv"))
+raw_capture_changesets <- read_csv(here(wddir, "ple_captured_amphibian_information", "ple_captured_amphibian_information_changesets.csv"))
+
+raw_cmr <- read_csv(here(wddir, "ple_cmr_data", "ple_cmr_data.csv"))
+raw_cmr_changesets <- read_csv(here(wddir, "ple_cmr_data", "ple_cmr_data_changesets.csv"))
+
+# sample processing & obs tables
+raw_sample_processing <- read_csv(here(wddir, "ple_amphibian_processing_app", "ple_amphibian_processing_app.csv"))
+raw_sample_obs <- read_csv(here(wddir, "ple_amphibian_processing_app", "ple_amphibian_processing_app_amphibian_capture_survey_collections.csv"))
+raw_sample_photo <- read_csv(here(wddir, "ple_amphibian_processing_app", "ple_amphibian_processing_app_amphibian_capture_survey_collections_photo.csv"))
+raw_sample_changesets <- read_csv(here(wddir, "ple_amphibian_processing_app", "ple_amphibian_processing_app_changesets.csv"))
+
+local_tz = "America/New_York"
+
+```
+
+# 2 - Clean data
+
+## Drop irrelevant & fix structural issues
+
+-   clean column names
+-   rename/mutate/drop specific columns
+-   Split, concatenate, coalesce related columns
+-   Convert to accurate data types/units/naming conventions
+-   drop unnecessary rows
+-   NA formatting
+
+```{r}
+
+# Fulcrum columns to drop. Best practice to drop by name
+to_drop = c(
+  "created_at",
+  "updated_at",
+  "created_by",
+  "updated_by",
+  "system_created_at",
+  "system_updated_at",
+  "version",
+  "change_type",
+  "status",
+  "project",
+  "assigned_to",
+  "geometry",
+  "fulcrum_record_id",
+  "site_other", # ignoring sites outside RIBBiTR... could include though.
+  "changeset_id"
+)
+
+# Begin cleaning
+
+clean_survey_info <- raw_survey_info %>%
+  clean_names() %>% 
+  rename(site = location,
+         air_temp_c = air_temperature_c,
+         water_temp_c = water_temperature_c,
+         dissolved_o2_percent = dissolved_oxygen,
+         tds_ppm = total_dissolved_solids,
+         conductivity_us_cm = conductivity_us,
+         p_h = ph,
+         comments_visit = sampling_event_comments) %>%
+  mutate(site = str_to_lower(site),
+         site = str_replace_all(site, "-", "_"),
+         site = str_replace_all(site, " ", "_"),
+         air_time = start_time,
+         water_time = start_time,
+         environmental_latitude = latitude,
+         environmental_longitude = longitude,
+         time_of_day = case_when(hour(start_time) < 19 ~ "day",
+                                 .default = "night")) %>%
+  unite(observers_survey, c("observers", "other_observers"), sep=",", remove = TRUE, na.rm = TRUE) %>%
+  select(-any_of(to_drop)) %>%
+  distinct()
+
+clean_aural_survey <- raw_aural_survey %>%
+  clean_names() %>% 
+  rename(site = location,
+         comments_survey = comments,
+         survey_latitude = latitude,
+         survey_longitude = longitude) %>%
+  mutate(site = str_to_lower(site),
+         site = str_replace_all(site, "-", "_"),
+         site = str_replace_all(site, " ", "_"),
+         detection_type = "aural",
+         transect = NA) %>%
+  unite(observer_aural, c("observer", "observer_other"), sep=",", remove = TRUE, na.rm = TRUE) %>%
+  select(-any_of(to_drop))
+
+clean_aural_obs <- raw_aural_obs %>%
+  clean_names() %>%
+  rename(taxon_aural = species_acoustic,
+         comments_aural = acoustic_comments) %>%
+  mutate(aural_id = fulcrum_id,
+         taxon_aural = str_to_lower(str_replace_all(taxon_aural, " ", "_"))) %>%
+  ribbitr_clean_taxa(taxon_aural, comments_aural) %>%
+  select(-any_of(to_drop))
+
+clean_ves_survey <- raw_ves_survey %>%
+  clean_names() %>% 
+  rename(site = location,
+         comments_survey = comments,
+         survey_latitude = latitude,
+         survey_longitude = longitude) %>%
+  mutate(site = str_to_lower(site),
+         site = str_replace_all(site, "-", "_"),
+         site = str_replace_all(site, " ", "_"),
+         detection_type = "visual",
+         time_of_day = case_when(hour(start_time) < 19 ~ "day",
+                                 .default = "night"),
+         transect = NA) %>%
+  unite(observer_ves, c("observer", "observer_other"), sep=",", remove = TRUE, na.rm = TRUE) %>%
+  select(-any_of(to_drop)) %>%
+  filter(!is.na(site))
+
+clean_ves_obs <- raw_ves_obs %>%
+  clean_names() %>%
+  mutate(ves_id = fulcrum_id,
+         taxon_ves = coalesce(species_ves, species_ves_other),
+         taxon_ves = str_to_lower(str_replace_all(taxon_ves, " ", "_")),
+         comments_ves = str_replace_all(comments_ves, "\\n", ". ")) %>%
+  ribbitr_clean_taxa(taxon_ves, comments_ves) %>%
+  select(-any_of(to_drop),
+         -species_ves,
+         -species_ves_other)
+
+clean_capture_survey <- raw_capture_survey %>%
+  clean_names() %>% 
+  rename(site = location,
+         comments_survey = survey_comments,
+         survey_latitude = latitude,
+         survey_longitude = longitude) %>%
+  mutate(site = str_to_lower(site),
+         site = str_replace_all(site, "-", "_"),
+         site = str_replace_all(site, " ", "_"),
+         detection_type = "capture",
+         time_of_day = case_when(hour(start_time) < 19 ~ "day",
+                                 .default = "night"),
+         transect = NA) %>%
+  unite(observer_capture, c("observer", "observer_other"), sep=",", remove = TRUE, na.rm = TRUE) %>%
+  select(-any_of(to_drop))
+
+clean_capture_obs <- raw_capture_obs %>%
+  clean_names() %>%
+  rename(body_temp_c = body_temperature,
+         substrate_temp_c = microhabitat_temperature,
+         comments_capture = amphibian_comments,
+         capture_latitude = latitude,
+         capture_longitude = longitude,
+         photo_id = bag_photo) %>%
+  mutate(capture_id = fulcrum_id,
+         taxon_capture = coalesce(species, species_other),
+         taxon_capture = str_to_lower(str_replace_all(taxon_capture, " ", "_")),
+         comments_capture = str_replace_all(comments_capture, "\\n", ". "),
+         bag_id = ifelse(bag_id == "BAG00", NA, bag_id),
+         photo = !is.na(photo_id)) %>%
+  ribbitr_clean_taxa(taxon_capture, comments_capture) %>%
+  select(-any_of(to_drop),
+         -all_of(c("species_other",
+                   "bag_photo_caption",
+                   "bag_photo_url")))
+
+clean_cmr <- raw_cmr %>%
+  clean_names() %>%
+  rename(site = location,
+         local_cmr_id = cmr_id,
+         taxon_cmr = species) %>%
+  mutate(site = str_to_lower(site),
+         site = str_replace_all(site, "-", "_"),
+         site = str_replace_all(site, " ", "_"),
+         taxon_cmr = str_to_lower(str_replace_all(taxon_cmr, " ", "_")),
+         local_cmr_id = coalesce(local_cmr_id, cmr_id_other)) %>%
+  ribbitr_clean_taxa(taxon_cmr) %>%
+  select(-any_of(to_drop),
+         -latitude,
+         -longitude,
+         -cmr_id_other)
+
+clean_sample_processing <- raw_sample_processing %>%
+  clean_names() %>%
+  rename(site = location,
+         comments_sample = survey_comments) %>%
+  mutate(site = str_to_lower(site),
+         site = str_replace_all(site, "-", "_"),
+         site = str_replace_all(site, " ", "_"),
+         detection_type = "capture") %>%
+  unite(processor, c("processor", "processor_other"), sep=",", remove = TRUE, na.rm = TRUE) %>%
+  select(-any_of(to_drop),
+         -latitude,
+         -longitude) %>%
+  filter(!is.na(site))
+
+clean_sample_obs <- raw_sample_obs %>%
+  clean_names() %>%
+  rename(svl_mm = snout_vent_length,
+         body_and_bag_mass_g = body_and_bag_mass,
+         bag_mass_g = bag_mass,
+         body_mass_g = body_mass,
+         comments_sample = capture_comments,
+         cmr_fulcrum_id = capture_mark_recapture) %>%
+  mutate(sex = str_to_lower(sex),
+         sex = ifelse(sex == "unknown", NA_character_, sex),
+         capture_type = str_to_lower(capture_type),
+         life_stage = str_to_lower(life_stage),
+         life_stage_other = str_to_lower(life_stage_other),
+         taxon_sample = coalesce(species_capture, species_capture_other),
+         taxon_sample = str_to_lower(str_replace_all(taxon_sample, " ", "_")),
+         comments_sample = str_replace_all(comments_sample, "\\n", ". "),
+         sample_id = fulcrum_id) %>%
+  ribbitr_clean_taxa(taxon_sample) %>%
+  select(-any_of(to_drop),
+         -fulcrum_record_id,
+         -species_capture,
+         -species_capture_other,
+         -latitude,
+         -longitude) %>%
+  filter(!if_all(everything(), is.na),
+         !(taxon_sample == "negative_control"))
+
+clean_edna = clean_survey_info %>%
+  rename(edna_latitude = latitude,
+         edna_longitude = longitude) %>%
+  mutate(collection_type = "passive_bag",
+         collection_time = start_time,
+         collection_volume_ml = edna_volume_collected_l * 1000,
+         edna_id = fulcrum_id) %>%
+  select(-any_of(to_drop))
+
+```
+
+# 3 Checks
+
+## visits
+
+### unify visits
+
+```{r}
+unique_visit <- bind_rows(clean_survey_info,
+                          clean_aural_survey,
+                          clean_capture_survey,
+                          clean_sample_processing,
+                          clean_edna_survey,
+                          clean_ves_survey) %>% 
+  select(date, site, time_of_day) %>%
+  distinct()
+
+unified_visit = clean_survey_info %>%
+  full_join(unique_visit, by = c("site", "date", "time_of_day")) %>%
+  filter(!is.na(site))
+
+```
+
+### gel visit
+
+```{r}
+gelled_visit = unified_visit %>%
+  left_join(db_site %>%
+              select(tbl_keys("site", mdc)) %>%
+              collect(),
+            by = tbl_nkey("site", mdc)) %>%
+  left_join(db_visit %>%
+              select(tbl_keys("visit", mdc)) %>%
+              collect(),
+            by = tbl_nkey("visit", mdc)) %>%
+  group_by_at(tbl_nkey("visit", mdc)) %>%
+  mutate(uuid_name = paste0(site, date, time_of_day),
+         visit_id = ifelse(is.na(visit_id), UUIDfromName("1aec3647-4fb5-4086-b5ea-66c947562ec6", uuid_name), visit_id)) %>%
+  ungroup() %>%
+  mutate(project = "ribbitr",
+         visit_lab = "rz_lab")
+
+if (nrow(gelled_visit %>% filter(is.na(site_id))) > 0) {
+  stop("Unknown sites returned, consider importing first.")
+}
+```
+
+### Generate stats for log
+
+```{r}
+dblog = list()
+dblog$date_min = min(gelled_visit$date)
+dblog$date_max = max(gelled_visit$date)
+dblog$site = gelled_visit$site %>% unique()
+dblog$site_id = gelled_visit$site_id %>% unique()
+dblog$region = db_site %>%
+  left_join(db_region, by = "region_id") %>%
+  filter(site %in% dblog$sites) %>%
+  pull(region) %>%
+  unique()
+
+```
+
+### subset visit
+
+```{r}
+subset_visit = gelled_visit %>%
+  select(any_of(colnames(db_visit))) %>%
+  distinct() %>%
+  filter(!is.na(visit_id))
+
+compare_visit = compare_df_cols(db_visit %>%
+                                  filter(FALSE) %>%
+                                  collect(), subset_visit)
+
+
+tray = compare_for_staging(db_visit %>%
+                             filter(date >= dblog$date_min,
+                                    site_id %in% dblog$site_id) %>%
+                             collect(),
+                           subset_visit, tbl_pkey('visit', mdc), return_all = TRUE, report = "visit")
+upsert_visit = bind_rows(tray$insert,
+                        tray$update)
+
+# # get visit_id
+# vids = subset_visit %>%
+#   select(visit_id) %>%
+#   distinct() %>%
+#   pull(visit_id)
+# 
+# dput(vids)
+
+# upsert visit?
+x_visit = (nrow(upsert_visit) > 0)
+
+```
+
+### upsert visits
+
+```{r}
+if (x_visit) {
+  temp_visit = stage_to_temp(dbcon, db_visit, upsert_visit)
+  pointer = tbl(dbcon, temp_visit)
+  db_visit = rows_upsert(db_visit, pointer, by="visit_id", in_place=TRUE)
+}
+
+# reload visits
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+```
+
+# One chain at a time
+
+## Environmental chain
+
+```{r}
+unified_env = clean_survey_info %>%
+  mutate(detection_type = "environmental",
+         transect = NA,
+         start_time = as_hms(pmin(air_time, water_time, na.rm = TRUE)),
+         end_time = as_hms(pmax(air_time, water_time, na.rm = TRUE))) %>%
+  left_join(db_site %>%
+              select(tbl_keys("site", mdc)) %>%
+              collect(),
+            by = tbl_nkey("site", mdc)) %>%
+  left_join(db_visit %>%
+              select(tbl_keys("visit", mdc)) %>%
+              collect(),
+            by = tbl_nkey("visit", mdc)) %>%
+  left_join(db_survey %>%
+              select(tbl_keys("survey", mdc)) %>%
+              filter(!is.na(visit_id)) %>%
+              collect(),
+            by = tbl_nkey("survey", mdc)) %>%
+  left_join(db_env %>%
+              select(survey_id,
+                     air_time,
+                     water_time,
+                     environmental_id) %>%
+              collect(),
+            by = c("survey_id", "air_time", "water_time")) %>%
+  filter(!is.na(date),
+         !is.na(site_id),
+         !(is.na(wind) &
+             is.na(sky) &
+             is.na(relative_humidity_percent) &
+             is.na(air_pressure_mbar) & 
+             is.na(wind_speed_m_s) &
+             is.na(air_time) &
+             is.na(air_temp_c) & 
+             is.na(dissolved_o2_percent) &
+             is.na(tds_ppm) &
+             is.na(water_time) & 
+             is.na(water_temp_c) &
+             is.na(p_h) &
+             is.na(conductivity_us_cm)))
+
+if (nrow(unified_env %>% filter(is.na(site_id))) > 0) {
+  stop("Unknown sites returned, consider importing first.")
+}
+
+```
+
+```{r}
+gelled_env = unified_env %>%
+  group_by_at(tbl_nkey("survey", mdc)) %>%
+  mutate(start_timestamp_utc = start_timestamp_utc(date, start_time, local_tz),
+         end_timestamp_utc = end_timestamp_utc(date, start_time, end_time, local_tz),
+         duration_minutes = duration_minutes(start_timestamp_utc, end_timestamp_utc),
+         number_observers = count_observers(paste(observers_survey, collapse = ",")),
+         uuid_name = paste0(temp_survey_id, detection_type),
+         survey_id = ifelse(is.na(survey_id), UUIDfromName("5113bb6e-8cff-4a2d-9910-904403736cfb", uuid_name), survey_id)) %>%
+  ungroup() %>%
+  mutate(uuid_name = paste0(environmental_latitude, environmental_longitude, air_time, water_time),
+         environmental_id = ifelse(is.na(environmental_id), UUIDfromName("37929955-baca-4968-9e7c-bc99bd05293c", uuid_name), environmental_id))
+
+```
+
+```{r}
+# survey
+subset_env_survey = gelled_env %>%
+  select(any_of(colnames(db_survey))) %>%
+  distinct() %>%
+  filter(!is.na(survey_id))
+
+# compare columns
+compare_env_survey = compare_df_cols(db_survey %>%
+                                  filter(FALSE) %>%
+                                  collect(), subset_env_survey)
+
+tray = compare_for_staging(db_survey %>% collect(), subset_env_survey, "survey_id", return_all = TRUE, report = "env_survey")
+upsert_env_survey = bind_rows(tray$insert,
+                               tray$update)
+
+# env
+subset_env = gelled_env %>%
+  select(any_of(colnames(db_env))) %>%
+  distinct() %>%
+  filter(!is.na(environmental_id))
+
+# compare columns
+compare_env = compare_df_cols(db_env %>%
+                                  filter(FALSE) %>%
+                                  collect(), subset_env)
+
+tray = compare_for_staging(db_env %>% collect(), subset_env, "environmental_id", return_all = TRUE, report = "env")
+upsert_env = bind_rows(tray$insert,
+                        tray$update)
+peace = compare_updates(tray)
+p1 = peace[[1]]
+
+
+# anything to upsert?
+x_env = (nrow(upsert_env_survey) > 0) | (nrow(upsert_env) > 0)
+
+```
+
+```{r}
+
+if (x_env) {
+  # begin transaction temp
+  dbBegin(dbcon)
+  
+  tryCatch(
+    {
+      temp_env_survey = stage_to_temp(dbcon, db_survey, upsert_env_survey)
+      pointer = tbl(dbcon, temp_env_survey)
+      rows_upsert(db_survey, pointer, by="survey_id", in_place=TRUE)
+      
+      temp_env = stage_to_temp(dbcon, db_env, upsert_env)
+      pointer = tbl(dbcon, temp_env)
+      rows_upsert(db_env, pointer, by="environmental_id", in_place=TRUE)
+      
+      # Commit the transaction if successful
+      dbCommit(dbcon)
+      print("Transaction successful!")
+      
+    }, error = function(e) {
+      # Rollback in case of error
+      dbRollback(dbcon)
+      stop("Transaction failed: ", e$message)
+    })
+}
+
+# reload
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_env = tbl(dbcon, Id("survey_data", "environmental"))
+```
+
+## eDNA chain
+
+# unify edna
+```{r}
+unified_edna = clean_edna_collection %>%
+  left_join(clean_edna_filtering, by = c("fulcrum_id" = "fulcrum_parent_id")) %>%
+  left_join(clean_edna_survey, by = c("fulcrum_parent_id" = "fulcrum_id")) %>%
+  select(-fulcrum_parent_id) %>%
+  left_join(clean_survey_info, by = c("site", "date", "time_of_day")) %>%
+  left_join(db_site %>%
+              select(tbl_keys("site", mdc)) %>%
+              collect(),
+            by = tbl_nkey("site", mdc)) %>%
+  left_join(db_visit %>%
+              select(tbl_keys("visit", mdc)) %>%
+              collect(),
+            by = tbl_nkey("visit", mdc)) %>%
+  left_join(db_survey %>%
+              select(tbl_keys("survey", mdc)) %>%
+              collect(),
+            by = tbl_nkey("survey", mdc)) %>%
+  filter(!is.na(site),
+         !is.na(date))
+
+```
+
+# gel edna
+```{r}
+gelled_edna = unified_edna %>%
+  group_by_at(tbl_nkey("survey", mdc)) %>%
+  mutate(comments_survey = str_c(comments_survey, collapse = ", "),
+         start_timestamp_utc = start_timestamp_utc(date, start_time, local_tz),
+         number_observers = count_observers(paste(observers_survey, collapse = ",")),
+         uuid_name = paste0(visit_id, start_time, transect, detection_type),
+         survey_id = ifelse(is.na(survey_id),
+                            UUIDfromName("5113bb6e-8cff-4a2d-9910-904403736cfb", uuid_name),
+                            survey_id)) %>%
+  ungroup() %>%
+  select(-fulcrum_id)
+```
+
+# subset edna
+```{r}
+# survey
+subset_edna_survey = gelled_edna %>%
+  select(any_of(colnames(db_survey))) %>%
+  distinct() %>%
+  filter(!is.na(survey_id))
+
+# compare columns
+compare_edna_survey = compare_df_cols(db_survey %>%
+                                  filter(FALSE) %>%
+                                  collect(), subset_edna_survey)
+
+tray = compare_for_staging(db_survey %>% collect(), subset_edna_survey, "survey_id", return_all = TRUE, report = "edna_survey")
+upsert_edna_survey = bind_rows(tray$insert,
+                               tray$update)
+
+# edna
+subset_edna = gelled_edna %>%
+  select(any_of(colnames(db_edna))) %>%
+  distinct() %>%
+  filter(!is.na(edna_id))
+
+# compare columns
+compare_edna = compare_df_cols(db_edna %>%
+                                  filter(FALSE) %>%
+                                  collect(), subset_edna)
+
+peace = get_dupes(subset_edna, edna_id)
+
+tray = compare_for_staging(db_edna %>% collect(), subset_edna, "edna_id", return_all = TRUE, report = "edna")
+upsert_edna = bind_rows(tray$insert,
+                        tray$update)
+
+# anything to upsert?
+x_edna = (nrow(upsert_edna_survey) > 0) | (nrow(upsert_edna) > 0)
+
+```
+
+# stage and commit edna
+```{r}
+
+if (x_edna) {
+  # begin transaction temp
+  dbBegin(dbcon)
+  
+  tryCatch(
+    {
+      temp_edna_survey = stage_to_temp(dbcon, db_survey, upsert_edna_survey)
+      pointer = tbl(dbcon, temp_edna_survey)
+      rows_upsert(db_survey, pointer, by="survey_id", in_place=TRUE)
+      
+      temp_edna = stage_to_temp(dbcon, db_edna, upsert_edna)
+      pointer = tbl(dbcon, temp_edna)
+      rows_upsert(db_edna, pointer, by="edna_id", in_place=TRUE)
+      
+      # Commit the transaction if successful
+      dbCommit(dbcon)
+      print("Transaction successful!")
+      
+    }, error = function(e) {
+      # Rollback in case of error
+      dbRollback(dbcon)
+      stop("Transaction failed: ", e$message)
+    })
+}
+
+# refresh
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_edna = tbl(dbcon, Id("survey_data", "edna"))
+```
+
+## Aural chain
+
+-   aural / survey / visit / site / region / location
+
+### 3 - Unify aural data
+
+(including unmatched surveys as "environmental". Not great though long term. Needs better fix.)
+
+```{r}
+unified_aural = clean_aural_obs %>%
+  full_join(clean_aural_survey, by = c("fulcrum_parent_id" = "fulcrum_id")) %>%
+  select(-fulcrum_parent_id,
+         -latitude,
+         -longitude) %>%
+  left_join(clean_survey_info, by = c("site", "date", "time_of_day")) %>%
+  left_join(db_site %>%
+              select(tbl_keys("site", mdc)) %>%
+              collect(),
+            by = tbl_nkey("site", mdc)) %>%
+  left_join(db_visit %>%
+              select(tbl_keys("visit", mdc)) %>%
+              collect(),
+            by = tbl_nkey("visit", mdc)) %>%
+  left_join(db_survey %>%
+              select(tbl_keys("survey", mdc)) %>%
+              filter(!is.na(visit_id)) %>%
+              collect(),
+            by = tbl_nkey("survey", mdc)) %>%
+  filter(!is.na(site),
+         !is.na(date))
+
+if (nrow(unified_aural %>% filter(is.na(site_id))) > 0) {
+  stop("Unknown sites returned, consider importing first.")
+}
+
+```
+
+### 4 - Gelled aural data
+
+```{r}
+gelled_aural = unified_aural %>%
+  group_by_at(tbl_nkey("survey", mdc)) %>%
+  mutate(start_timestamp_utc = start_timestamp_utc(date, start_time, local_tz),
+         end_timestamp_utc = end_timestamp_utc(date, start_time, end_time, local_tz),
+         duration_minutes = duration_minutes(start_timestamp_utc, end_timestamp_utc),
+         number_observers = count_observers(paste(observers_survey, collapse = ",")),
+         comments_survey = str_c(comments_survey, collapse = ", "),
+         uuid_name = paste0(visit_id, temp_survey_id, detection_type, start_time),
+         survey_id = ifelse(is.na(survey_id), UUIDfromName("5113bb6e-8cff-4a2d-9910-904403736cfb", uuid_name), survey_id),
+         group_id = cur_group_id()) %>%
+  ungroup()
+
+```
+
+### 5 - Subset aural tables
+
+```{r}
+
+# survey
+subset_aural_survey = gelled_aural %>%
+  select(any_of(colnames(db_survey))) %>%
+  distinct() %>%
+  filter(!is.na(survey_id))
+
+# compare columns
+compare_aural_survey = compare_df_cols(db_survey %>%
+                                  filter(FALSE) %>%
+                                  collect(), subset_aural_survey)
+
+tray = compare_for_staging(db_survey %>% collect(), subset_aural_survey, "survey_id", return_all = TRUE, report = "aural_survey")
+peace = compare_updates(tray)
+upsert_aural_survey = bind_rows(tray$insert,
+                               tray$update)
+
+# taxa
+subset_aural_taxa = gelled_aural %>%
+  select(taxon_aural) %>%
+  drop_na(taxon_aural) %>%
+  distinct() %>%
+  rename(taxon_id = taxon_aural) %>%
+  left_join(db_taxa %>% collect(), by = "taxon_id")
+
+tray = compare_for_staging(db_taxa %>% collect(), subset_aural_taxa, "taxon_id", return_all = TRUE, report = "aural_taxa")
+insert_aural_taxa = tray$insert
+
+# aural
+subset_aural = gelled_aural %>%
+  select(any_of(colnames(db_aural))) %>%
+  distinct() %>%
+  filter(!is.na(aural_id))
+
+# compare columns
+compare_aural = compare_df_cols(db_aural %>%
+                                  filter(FALSE) %>%
+                                  collect(), subset_aural)
+
+tray = compare_for_staging(db_aural %>% collect(), subset_aural, tbl_pkey('aural', mdc), return_all = TRUE, report = "aural")
+upsert_aural = bind_rows(tray$insert,
+                        tray$update)
+
+# anything to upsert?
+x_aural = (nrow(upsert_aural_survey) > 0) | (nrow(insert_aural_taxa) > 0) | (nrow(upsert_aural) > 0)
+
+```
+
+### Stage and commit aural tables
+
+```{r}
+
+if (x_aural) {
+  # begin transaction temp
+  dbBegin(dbcon)
+  
+  tryCatch(
+    {
+      temp_aural_survey = stage_to_temp(dbcon, db_survey, upsert_aural_survey)
+      pointer = tbl(dbcon, temp_aural_survey)
+      rows_upsert(db_survey, pointer, by="survey_id", in_place=TRUE)
+      
+      temp_aural_taxa = stage_to_temp(dbcon, db_taxa, insert_aural_taxa)
+      pointer = tbl(dbcon, temp_aural_taxa)
+      rows_insert(db_taxa, pointer, by="taxon_id", in_place=TRUE, conflict = "ignore")
+      
+      temp_aural = stage_to_temp(dbcon, db_aural, upsert_aural)
+      pointer = tbl(dbcon, temp_aural)
+      rows_upsert(db_aural, pointer, by="aural_id", in_place=TRUE)
+      
+      # Commit the transaction if successful
+      dbCommit(dbcon)
+      print("Transaction successful!")
+      
+    }, error = function(e) {
+      # Rollback in case of error
+      dbRollback(dbcon)
+      stop("Transaction failed: ", e$message)
+    })
+}
+
+# refresh
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_aural = tbl(dbcon, Id("survey_data", "aural"))
+db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
+```
+
+## VES chain
+
+-   ves / survey / visit / site / region / location
+
+### Unify ves data
+
+```{r}
+unified_ves = clean_ves_obs %>%
+  full_join(clean_ves_survey, by = c("fulcrum_parent_id" = "fulcrum_id")) %>%
+  select(-fulcrum_parent_id) %>%
+  left_join(clean_survey_info, by = c("site", "date", "time_of_day")) %>%
+  left_join(db_site %>%
+              select(tbl_keys("site", mdc)) %>%
+              collect(),
+            by = tbl_nkey("site", mdc)) %>%
+  left_join(db_visit %>%
+              select(tbl_keys("visit", mdc)) %>%
+              collect(),
+            by = tbl_nkey("visit", mdc)) %>%
+  left_join(db_survey %>%
+              select(tbl_keys("survey", mdc)) %>%
+              filter(!is.na(visit_id)) %>%
+              collect(),
+            by = tbl_nkey("survey", mdc)) %>%
+  filter(!is.na(site),
+         !is.na(date))
+
+if (nrow(unified_ves %>% filter(is.na(site_id))) > 0) {
+  stop("Unknown sites returned, consider importing first.")
+}
+
+```
+
+### Gel ves data
+
+```{r}
+gelled_ves = unified_ves %>%
+  group_by(transect,
+           detection_type,
+           visit_id) %>%
+  mutate(start_time = find_time_range(c(start_time, end_time))$first_time,
+         end_time = find_time_range(c(start_time, end_time))$last_time,
+         start_timestamp_utc = start_timestamp_utc(date, start_time, local_tz),
+         end_timestamp_utc = end_timestamp_utc(date, start_time, end_time, local_tz),
+         duration_minutes = duration_minutes(start_timestamp_utc, end_timestamp_utc),
+         number_observers = count_observers(paste(observers_survey, collapse = ",")),
+         comments_survey = str_c(comments_survey, collapse = ", "),
+         uuid_name = paste0(visit_id, temp_survey_id, detection_type),
+         survey_id = ifelse(is.na(survey_id),
+                            UUIDfromName("5113bb6e-8cff-4a2d-9910-904403736cfb", uuid_name),
+                            survey_id)) %>%
+  ungroup() %>%
+  select(-fulcrum_id)
+```
+
+### 5 - Subset final ves tables
+
+```{r}
+
+# survey
+subset_ves_survey = gelled_ves %>%
+  select(any_of(colnames(db_survey))) %>%
+  distinct() %>%
+  filter(!is.na(survey_id))
+
+peace = get_dupes(subset_ves_survey, survey_id)
+
+# compare columns
+compare_ves_survey = compare_df_cols(db_survey %>%
+                                  filter(FALSE) %>%
+                                  collect(), subset_ves_survey)
+
+tray = compare_for_staging(db_survey %>% collect(), subset_ves_survey, "survey_id", return_all = TRUE, report = "ves_survey")
+peace = compare_updates(tray)
+upsert_ves_survey = bind_rows(tray$insert,
+                             tray$update)
+
+# taxa
+subset_ves_taxa = gelled_ves %>%
+  select(taxon_ves) %>%
+  drop_na(taxon_ves) %>%
+  distinct() %>%
+  rename(taxon_id = taxon_ves) %>%
+  left_join(db_taxa %>% collect(), by = "taxon_id")
+
+tray = compare_for_staging(db_taxa %>% collect(), subset_ves_taxa, "taxon_id", return_all = TRUE, report = "ves_taxa")
+insert_ves_taxa = tray$insert
+
+# ves
+subset_ves = gelled_ves %>%
+  select(any_of(colnames(db_ves))) %>%
+  distinct() %>%
+  filter(!is.na(ves_id))
+
+# compare columns
+compare_ves = compare_df_cols(db_ves %>%
+                                  filter(FALSE) %>%
+                                  collect(), subset_ves)
+
+tray = compare_for_staging(db_ves %>% collect(), subset_ves, tbl_pkey('ves', mdc), return_all = TRUE, report = "ves")
+upsert_ves = bind_rows(tray$insert,
+                      tray$update)
+
+x_ves = (nrow(upsert_ves_survey) > 0) | (nrow(insert_ves_taxa) > 0) | (nrow(upsert_ves) > 0)
+
+```
+
+### Stage and commit aural tables
+
+```{r}
+if (x_ves) {
+  # begin transaction temp
+  dbBegin(dbcon)
+  
+  tryCatch(
+    {
+      temp_ves_survey = stage_to_temp(dbcon, db_survey, upsert_ves_survey)
+      pointer = tbl(dbcon, temp_ves_survey)
+      rows_upsert(db_survey, pointer, by="survey_id", in_place=TRUE)
+      
+      temp_ves_taxa = stage_to_temp(dbcon, db_taxa, insert_ves_taxa)
+      pointer = tbl(dbcon, temp_ves_taxa)
+      rows_insert(db_taxa, pointer, by="taxon_id", in_place=TRUE, conflict = "ignore")
+      
+      temp_ves = stage_to_temp(dbcon, db_ves, upsert_ves)
+      pointer = tbl(dbcon, temp_ves)
+      rows_upsert(db_ves, pointer, by="ves_id", in_place=TRUE)
+      
+      # Commit the transaction if successful
+      dbCommit(dbcon)
+      print("Transaction successful!")
+      
+    }, error = function(e) {
+      # Rollback in case of error
+      dbRollback(dbcon)
+      stop("Transaction failed: ", e$message)
+    })
+}
+
+# reload
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_ves = tbl(dbcon, Id("survey_data", "ves"))
+db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
+
+```
+
+## Capture chain
+
+-   capture / survey / visit / site / region / location
+
+```{r}
+
+unified_sample =  clean_sample_obs %>% 
+  full_join(clean_sample_processing, by= c("fulcrum_parent_id" = "fulcrum_id")) %>%
+  unite("comments_sample", c("comments_sample.x", "comments_sample.y"), sep=",", remove = TRUE, na.rm = TRUE) %>%
+  select(-fulcrum_id,
+         -fulcrum_parent_id) %>%
+  filter(bag_id != "BAG00")
+
+unified_capture = clean_capture_obs %>%
+  left_join(clean_capture_survey, by = c("fulcrum_parent_id" = "fulcrum_id")) %>%
+  filter(!is.na(site)) %>%  # drop captures which don't have corresponding site data in capture_survey
+  select(-fulcrum_parent_id) %>%
+  full_join(unified_sample, by=c("site", "date", "time_of_day", "bag_id", "detection_type")) %>%
+  mutate(taxon_capture = coalesce(taxon_sample, taxon_capture),
+         uuid_name = paste0(taxon_capture, svl_mm, body_mass_g, life_stage, sex, time_of_capture),
+         capture_id = ifelse(is.na(capture_id), UUIDfromName("2128d8af-bb98-4206-a356-25faa67ac3f9", uuid_name), capture_id)) %>%
+  select(-taxon_sample) %>%
+  unite("comments_capture", c("comments_capture", "comments_sample"), sep=",", remove = TRUE, na.rm = TRUE) %>%
+  left_join(clean_survey_info, by = c("site", "date")) %>%
+  mutate(time_of_day = coalesce(time_of_day.x, time_of_day.y)) %>%
+  select(-time_of_day.x,
+         -time_of_day.y) %>%
+  left_join(db_site %>%
+              select(tbl_keys("site", mdc)) %>%
+              collect(),
+            by = tbl_nkey("site", mdc)) %>%
+  left_join(db_visit %>%
+              select(tbl_keys("visit", mdc)) %>%
+              collect(),
+            by = tbl_nkey("visit", mdc)) %>%
+  left_join(db_survey %>%
+              select(tbl_keys("survey", mdc)) %>%
+              collect(),
+            by = tbl_nkey("survey", mdc))
+
+capture_dupes = get_dupes(unified_capture, capture_id)
+
+if (nrow(capture_dupes) > 0) {
+  stop("Duplicate captures found.")
+}
+
+if (nrow(unified_capture %>% filter(is.na(site_id))) > 0) {
+  stop("Unknown sites returned, consider importing first.")
+}
+
+
+# QA/QC
+
+# exploration
+sample_unmatched = unified_sample %>%
+  anti_join(unified_capture, by=c("site", "date", "bag_id")) %>%
+  # select(site, date, bag_id, species_capture, sample_id) %>%
+  mutate(capture_id = as.character(NA)) %>%
+  filter(!is.na(bag_id))
+
+capture_unmatched = unified_capture %>%
+  anti_join(unified_sample, by=c("site", "date", "bag_id")) %>%
+  # select(site, date, bag_id, species_capture, capture_id) %>%
+  mutate(sample_id = as.character(NA)) %>%
+  filter(!is.na(bag_id))
+# 
+# sample_capture_unmatched = bind_rows(capture_unmatched, sample_unmatched) %>%
+#   arrange(site, date, bag_id) %>%
+#   group_by(site, date) %>%
+#   mutate(temp_id = cur_group_id()) %>%
+#   ungroup() %>%
+#   select(site, date, bag_id, species_capture, capture_id, sample_id, start_time, end_time, observer_capture, processor, comments_capture, comments_sample,)
+# 
+# write_csv(sample_capture_unmatched, here("staging", "sample_campture_unmatched.csv"))
+# 
+# test_site = "rv_pond"
+# test_bag = "BAG12"
+# test_date = "2024-10-13"
+# 
+# peace = unified_sample %>%
+#   filter(site == test_site,
+#          # bag_id == test_bag,
+#          date == test_date) %>%
+#   arrange(bag_id)
+# 
+# train = unified_capture %>%
+#   filter(site == test_site,
+#          # bag_id == test_bag,
+#          date == test_date) %>%
+#   arrange(bag_id)
+
+```
+
+### CMR table
+
+```{r}
+unified_cmr = clean_cmr %>%
+  left_join(unified_capture %>%
+              select(capture_mark_recapture,
+                     date), by = c("fulcrum_id" = "capture_mark_recapture")) %>%
+  left_join(db_site %>%
+              select(site,
+                     site_id) %>%
+              collect(), by = "site") %>%
+  left_join(db_cmr %>% collect(), by = c("local_cmr_id", "taxon_cmr", "site_id" = "site_id_tagged")) %>%
+  arrange(date_tagged, date) %>%
+  group_by(local_cmr_id, taxon_cmr, site_id) %>%
+  rename(site_id_tagged = site_id) %>%
+  mutate(cmr_id = ifelse(is.na(cmr_id), first(fulcrum_id), cmr_id),
+         date_tagged = as.Date(ifelse(is.na(date_tagged), min(date), date_tagged)),
+         id_type = ifelse(is.na(id_type), "toe_clip", id_type)) %>%
+  ungroup() %>%
+  group_by(fulcrum_id) %>%
+  slice_head(n = 1) %>%
+  ungroup() %>%
+  filter(!is.na(site_id_tagged),
+         !is.na(taxon_cmr))
+
+subset_cmr = unified_cmr %>%
+  arrange(date_tagged) %>%
+  group_by(local_cmr_id, taxon_cmr, site_id_tagged) %>%
+  slice_head(n = 1) %>%
+  ungroup() %>%
+  select(any_of(colnames(db_cmr)))
+
+compare_cmr = compare_df_cols(db_cmr %>%
+                                  filter(FALSE) %>%
+                                  collect(), subset_cmr)
+
+tray = compare_for_staging(db_cmr %>% collect(), subset_cmr, "cmr_id", return_all = TRUE, report = "cmr")
+
+upsert_cmr = bind_rows(tray$insert,
+                       tray$update)
+
+```
+
+### Gelled capture
+
+```{r}
+gelled_capture = unified_capture %>%
+  left_join(unified_cmr %>%
+              select(fulcrum_id, cmr_id),
+            by = c("capture_mark_recapture" = "fulcrum_id")) %>%
+  group_by(transect, detection_type, visit_id) %>%
+  mutate(start_time = find_time_range(c(start_time, end_time, time_of_capture))$first_time,
+         end_time = find_time_range(c(start_time, end_time, time_of_capture))$last_time,
+         start_timestamp_utc = start_timestamp_utc(date, start_time, local_tz),
+         end_timestamp_utc = end_timestamp_utc(date, start_time, end_time, local_tz),
+         duration_minutes = duration_minutes(start_timestamp_utc, end_timestamp_utc),
+         number_observers = count_observers(paste(observers_survey, collapse = ",")),
+         comments_survey = str_c(comments_survey, collapse = ", "),
+         uuid_name = paste0(visit_id, temp_survey_id, detection_type, start_time),
+         survey_id = ifelse(is.na(survey_id),
+                            UUIDfromName("5113bb6e-8cff-4a2d-9910-904403736cfb", uuid_name),
+                            survey_id)) %>%
+  ungroup() %>%
+  select(-capture_mark_recapture) %>%
+  arrange(date, site, time_of_capture) %>%
+  drop_na(visit_id)
+
+```
+
+### Samples capture
+
+```{r}
+sample_lookup_gen <- function(table, id_col, sample_cols, sample_type) {
+  # unique sample ids
+  sample_lookup = table %>%
+    select(all_of(c(sample_cols,
+                  id_col))) %>%
+    pivot_longer(!all_of(id_col), names_to = "name", values_to = "value") %>%
+    filter(!is.na(value),
+           value != "Pe_Bd00000",
+           value != "Pe_Toe00000",
+           value != "Pe_16S00000",
+           value != "Pe_AMP00000",
+           value != "Pe_Muc00000",
+           value != "Pe_Bac00000",
+           value != "Pe_IG00000") %>%
+    rename(sample_name = value) %>%
+    mutate(sample_type = sample_type) %>%
+    select(sample_name,
+           sample_type,
+           !!id_col)
+  
+  return(sample_lookup)
+}
+
+s1 = sample_lookup_gen(gelled_capture, "capture_id", c("bd_swab_id"), "bd")
+s2 = sample_lookup_gen(gelled_capture, "capture_id", c("genetic_id"), "genetic")
+s3 = sample_lookup_gen(gelled_capture, "capture_id", c("microbiome_swab_id"), "microbiome")
+s4 = sample_lookup_gen(gelled_capture, "capture_id", c("amp_id", "amp_id_2", "amp_id_3", "amp_id_4"), "amp")
+s5 = sample_lookup_gen(gelled_capture, "capture_id", c("mucosome_id"), "mucosome")
+s6 = sample_lookup_gen(gelled_capture, "capture_id", c("bacterial_swab_id"), "bacterial")
+s7 = sample_lookup_gen(gelled_capture, "capture_id", c("antibody_id", "antibody_id_2", "antibody_id_3", "antibody_id_4"), "antibody")
+
+select_cols = c("sample_name",
+                "sample_type",
+                "capture_id")
+
+clean_sample = rbind(s1 %>%
+                     select(all_of(select_cols)),
+                   s2 %>%
+                     select(all_of(select_cols)),
+                   s3 %>%
+                     select(all_of(select_cols)),
+                   s4 %>%
+                     select(all_of(select_cols)),
+                   s5 %>%
+                     select(all_of(select_cols)),
+                   s6 %>%
+                     select(all_of(select_cols)),
+                   s7 %>%
+                     select(all_of(select_cols)))
+
+gelled_sample = clean_sample %>%
+  left_join(db_sample %>%
+              select(-capture_id) %>%
+              collect(), by = c("sample_name", "sample_type")) %>%
+  mutate(uuid_name = paste0(sample_name, sample_type),
+         sample_id = ifelse(is.na(sample_id), UUIDfromName("1208e62f-d3a1-462c-984f-0bf1f43f5837", uuid_name), sample_id))
+
+
+dupes_sample = get_dupes(gelled_sample, sample_name, sample_type)
+
+if (nrow(dupes_sample) > 0) {
+  stop("sample dupes found")
+}
+
+# # troubleshoot
+# 
+# fleace = gelled_capture %>%
+#   filter(mucosome_id %in% dupes_sample$sample_name)
+
+```
+
+### 5 - Subset final capture tables
+
+```{r}
+# survey
+subset_capture_survey = gelled_capture %>%
+  select(any_of(colnames(db_survey))) %>%
+  distinct() %>%
+  filter(!is.na(survey_id))
+
+# compare columns
+compare_capture_survey = compare_df_cols(db_survey %>%
+                                  filter(FALSE) %>%
+                                  collect(), subset_capture_survey)
+
+tray = compare_for_staging(db_survey %>% collect(), subset_capture_survey, "survey_id", return_all = TRUE, report = "capture_survey")
+peace = compare_updates(tray)
+upsert_capture_survey = bind_rows(tray$insert,
+                                  tray$update)
+
+# taxa
+subset_capture_taxa = gelled_capture %>%
+  select(taxon_capture) %>%
+  drop_na(taxon_capture) %>%
+  distinct() %>%
+  rename(taxon_id = taxon_capture) %>%
+  left_join(db_taxa %>% collect(), by = "taxon_id")
+
+tray = compare_for_staging(db_taxa %>% collect(), subset_capture_taxa, "taxon_id", return_all = TRUE, report = "capture_taxa")
+insert_capture_taxa = tray$insert
+
+# capture
+subset_capture = gelled_capture %>%
+  select(any_of(colnames(db_capture))) %>%
+  distinct() %>%
+  filter(!is.na(capture_id))
+
+compare_capture = compare_df_cols(db_capture %>%
+                                  filter(FALSE) %>%
+                                  collect(), subset_capture)
+
+
+tray = compare_for_staging(db_capture %>% collect(), subset_capture, "capture_id", return_all = TRUE, report = "capture")
+upsert_capture = bind_rows(tray$insert,
+                           tray$update)
+
+# sample
+subset_sample = gelled_sample %>%
+  select(any_of(colnames(db_sample))) %>%
+  distinct() %>%
+  filter(!is.na(sample_id))
+
+compare_sample = compare_df_cols(db_sample %>%
+                                  filter(FALSE) %>%
+                                  collect(), subset_sample)
+
+
+tray = compare_for_staging(db_sample %>% collect(), subset_sample, "sample_id", return_all = TRUE, report = "sample")
+peace = compare_updates(tray)
+upsert_sample = bind_rows(tray$insert,
+                          tray$update)
+
+if (nrow(tray$update) > 0) {
+  warning("Sample updates may indicate duplicate capture_ids. Investigation recommended.")
+}
+  
+x_capture = (nrow(upsert_capture_survey) > 0) | (nrow(insert_capture_taxa) > 0) | (nrow(upsert_capture) > 0 | nrow(upsert_cmr) > 0 | nrow(upsert_sample) > 0)
+
+```
+
+### Stage and commit capture tables
+
+```{r}
+if (x_capture) {
+  # begin transaction temp
+  dbBegin(dbcon)
+  
+  tryCatch(
+    {
+      temp_cmr = stage_to_temp(dbcon, db_cmr, upsert_cmr)
+      pointer = tbl(dbcon, temp_cmr)
+      rows_upsert(db_cmr, pointer, by="cmr_id", in_place=TRUE)
+      
+      temp_capture_survey = stage_to_temp(dbcon, db_survey, upsert_capture_survey)
+      pointer = tbl(dbcon, temp_capture_survey)
+      rows_upsert(db_survey, pointer, by="survey_id", in_place=TRUE)
+      
+      temp_capture_taxa = stage_to_temp(dbcon, db_taxa, insert_capture_taxa)
+      pointer = tbl(dbcon, temp_capture_taxa)
+      rows_insert(db_taxa, pointer, by="taxon_id", in_place=TRUE, conflict = "ignore")
+      
+      temp_capture = stage_to_temp(dbcon, db_capture, upsert_capture)
+      pointer = tbl(dbcon, temp_capture)
+      rows_upsert(db_capture, pointer, by="capture_id", in_place=TRUE)
+      
+      temp_sample = stage_to_temp(dbcon, db_sample, upsert_sample)
+      pointer = tbl(dbcon, temp_sample)
+      rows_upsert(db_sample, pointer, by="sample_id", in_place=TRUE)
+      
+      # Commit the transaction if successful
+      dbCommit(dbcon)
+      print("Transaction successful!")
+      
+    }, error = function(e) {
+      # Rollback in case of error
+      dbRollback(dbcon)
+      stop("Transaction failed: ", e$message)
+    })
+}
+
+# reload
+db_cmr = tbl(dbcon, Id("survey_data", "cmr"))
+db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+```
+
+
+```{r}
+dbDisconnect(dbcon)
+```
