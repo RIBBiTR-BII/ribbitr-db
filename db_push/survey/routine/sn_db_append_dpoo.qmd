@@ -57,14 +57,6 @@ sn_site = tbl(sncon, "site")
 sn_surveyor = tbl(sncon, "surveyor")
 sn_ss = tbl(sncon, "survey_surveyor")
 
-```
-
-# files
-```{r}
-raw_sample_2023 = read_csv(here(wddir, "2025-04-10", "2023_SierraNevada_sampleData_Lindauer_231116_pits.csv"))
-raw_sample_2024 = read_csv(here(wddir, "2025-03-18", "2024_SierraNevada_sampleData_Lindauer_241229.csv"))
-
-
 local_tz = "America/Los_Angeles"
 
 ```
@@ -181,7 +173,8 @@ clean_capture = sn_capture %>%
          bd_swab_id = swab_id,
          comments_capture = comment,
          observer_capture = name) %>%
-  mutate(life_stage = as.character(life_stage),
+  mutate(observer_capture = ifelse(observer_capture == "UNSPECIFIED", NA_character_, observer_capture),
+         life_stage = as.character(life_stage),
          capture_animal_state = as.character(capture_animal_state),
          microhabitat_type = as.character(microhabitat_type),
          taxon_capture = case_match(species,
@@ -236,14 +229,7 @@ clean_ves = sn_ves %>%
 
 # sites
 ```{r}
-gelled_site = bind_rows(clean_capture %>%
-                          select(sn_survey_id),
-                        clean_ves %>%
-                          select(sn_survey_id)) %>%
-  left_join(clean_survey, by = "sn_survey_id") %>%
-  select(sn_visit_id) %>%
-  distinct() %>%
-  left_join(clean_visit, by = "sn_visit_id") %>%
+gelled_site = clean_visit %>%
   select(site) %>%
   distinct() %>%
   left_join(clean_site, by = "site") %>%
@@ -350,7 +336,7 @@ upsert_visit = bind_rows(tray$insert,
 #   distinct() %>%
 #   pull(visit_id)
 # 
-# dput(vids)
+# sn_vids = dput(vids)
 
 # upsert visit?
 x_visit = (nrow(upsert_visit) > 0)
@@ -372,6 +358,11 @@ db_visit = tbl(dbcon, Id("survey_data", "visit"))
 # Environmental chain
 ```{r}
 unified_env = clean_survey %>%
+  filter(!(is.na(wind) &
+           is.na(sky) &
+           is.na(air_temp_c) &
+           is.na(water_temp_c) &
+           is.na(fish))) %>%
   left_join(clean_visit, by = "sn_visit_id") %>%
   left_join(db_site %>%
               select(site,
@@ -406,7 +397,7 @@ gelled_env = unified_env %>%
          duration_minutes = duration_minutes(start_timestamp_utc, end_timestamp_utc),
          observers_survey = paste(observers_survey, collapse = ", "),
          number_observers = count_observers(paste(observers_survey, collapse = ",")),
-         comments_survey = str_c(comments_survey, collapse = ", "),
+         comments_survey = na.omit(comments_survey)[1],
          uuid_name = paste0(visit_id, detection_type),
          survey_id = ifelse(is.na(survey_id),
                             UUIDfromName("831e1d81-169a-4574-911a-a6cf3792cc0c", uuid_name),
@@ -496,7 +487,8 @@ db_env = tbl(dbcon, Id("survey_data", "environmental"))
 ## Unify ves
 ```{r}
 unified_ves = clean_ves %>%
-  left_join(clean_survey, by = "sn_survey_id") %>%
+  full_join(clean_survey, by = "sn_survey_id") %>%
+  filter(detection_type == "visual") %>%
   left_join(clean_visit, by = "sn_visit_id") %>%
   left_join(db_site %>%
               select(site,
@@ -527,11 +519,12 @@ gelled_ves = unified_ves %>%
            detection_type,
            start_time,
            visit_id) %>%
-  mutate(start_timestamp_utc = start_timestamp_utc(date, start_time, local_tz),
+  mutate(observer_ves = observers_survey,
+         start_timestamp_utc = start_timestamp_utc(date, start_time, local_tz),
          end_timestamp_utc = end_timestamp_utc(date, start_time, end_time, local_tz),
          duration_minutes = duration_minutes(start_timestamp_utc, end_timestamp_utc),
          number_observers = count_observers(paste(observers_survey, collapse = ",")),
-         comments_survey = str_c(comments_survey, collapse = ", "),
+         comments_survey = na.omit(comments_survey)[1],
          uuid_name = paste0(visit_id, detection_type, transect, start_time),
          survey_id = ifelse(is.na(survey_id),
                             UUIDfromName("831e1d81-169a-4574-911a-a6cf3792cc0c", uuid_name),
@@ -628,7 +621,8 @@ db_ves = tbl(dbcon, Id("survey_data", "ves"))
 ## Unify capture
 ```{r}
 unified_capture = clean_capture %>%
-  left_join(clean_survey, by = "sn_survey_id") %>%
+  full_join(clean_survey, by = "sn_survey_id") %>%
+  filter(detection_type == "capture") %>%
   left_join(clean_visit, by = "sn_visit_id") %>%
   left_join(db_site %>%
               select(site,
@@ -701,9 +695,9 @@ gelled_capture = unified_capture %>%
          end_timestamp_utc = end_timestamp_utc(date, start_time, end_time, local_tz),
          duration_minutes = duration_minutes(start_timestamp_utc, end_timestamp_utc),
          number_observers = count_observers(paste(observers_survey, collapse = ",")),
-         comments_survey = str_c(comments_survey, collapse = ", "),
+         comments_survey = na.omit(comments_survey)[1],
          survey_quality = first(survey_quality),
-         description = str_c(description, collapse = ", "),
+         description = na.omit(description)[1],
          uuid_name = paste0(visit_id, detection_type, transect, start_time, observers_survey),
          survey_id = ifelse(is.na(survey_id),
                             UUIDfromName("831e1d81-169a-4574-911a-a6cf3792cc0c", uuid_name),
@@ -808,9 +802,6 @@ tray = compare_for_staging(db_sample %>% collect(), subset_sample, "sample_id", 
 upsert_sample = bind_rows(tray$insert,
                           tray$update)
 
-if (nrow(tray$update) > 0) {
-  warning("Sample updates may indicate duplicate capture_ids. Investigation recommended")
-}
 
 x_capture = (nrow(upsert_capture_survey) > 0) | (nrow(insert_capture_taxa) > 0) | (nrow(upsert_capture) > 0 | nrow(upsert_cmr) > 0 | nrow(upsert_sample) > 0)
 ```
@@ -862,6 +853,7 @@ db_survey = tbl(dbcon, Id("survey_data", "survey"))
 db_capture = tbl(dbcon, Id("survey_data", "capture"))
 db_sample = tbl(dbcon, Id("survey_data", "sample"))
 ```
+
 
 ```{r}
 dbDisconnect(dbcon)
