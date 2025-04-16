@@ -182,3 +182,14 @@ s_70397_2023 = db_sample %>%
   collect()
 
 ```
+
+# pull and compare data
+```{r}
+data_old = read_csv(here("staging", "amm_sn_captured_individuals_2025-04-10.csv"))
+data_new = read_csv(here("staging", "amm_sn_captured_individuals_2025-04-16.csv"))
+
+site_old = read_csv(here("staging", "amm_sn_site_summary_2025-04-10.csv"))
+site_new = read_csv(here("staging", "amm_sn_site_summary_2025-04-16.csv"))
+
+
+```
