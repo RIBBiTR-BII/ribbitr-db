@@ -102,6 +102,8 @@ results_unmatched = db_bd %>%
 results_unmatched_pa = results_unmatched %>%
   filter(grepl("pan", qpcr_plate_name))
 
+write_csv(results_unmatched, here("staging", paste0("bd_results_unmatched_", today(), ".csv")))
+
 samples_unmatched = db_bd %>%
   right_join(db_sample, by = "sample_id") %>%
   filter(is.na(result_id),
@@ -121,8 +123,9 @@ samples_unmatched = db_bd %>%
   collect() %>%
   arrange(sample_name)
 
+write_csv(samples_unmatched, here("staging", paste0("bd_samples_unmatched_panama_", today(), ".csv")))
 
-samples_unmatched_agg
+
 ```
 
 # sample inventory panama
