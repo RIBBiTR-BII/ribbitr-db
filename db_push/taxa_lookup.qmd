@@ -539,3 +539,35 @@ tryCatch(
   })
 
 ```
+
+# iucn status lookup
+```{r}
+# collect tsn
+iucn_taxon = db_taxa %>%
+  select(iucn_taxon) %>%
+  filter(!is.na(iucn_taxon)) %>%
+  collect() %>%
+  arrange(iucn_taxon) %>%
+  mutate(iucn_status = NA_character_)
+
+for (ii in iucn_taxon$iucn_taxon) {
+  report = iucn_summary(ii, key = Sys.getenv("iucn_token"))
+  if (length(report[[1]]) > 1) {
+    iucn_taxon$iucn_status[iucn_taxon$iucn_taxon == ii] = report[[1]]$red_list_category$description$en
+    Sys.sleep(1)
+  }
+}
+
+update_taxa = db_taxa %>%
+  collect() %>%
+  select(-iucn_status) %>%
+  left_join(iucn_taxon, by = "iucn_taxon")
+
+```
+
+```{r}
+temp_taxa = stage_to_temp(dbcon, db_taxa, update_taxa)
+pointer = tbl(dbcon, temp_taxa)
+rows_update(db_taxa, pointer, by="taxon_id", in_place=TRUE, unmatched="ignore")
+
+```
