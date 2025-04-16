@@ -653,15 +653,21 @@ unified_cmr = unified_capture %>%
   filter(!is.na(local_cmr_id)) %>%
   rename(taxon_cmr = taxon_capture) %>%
   select(local_cmr_id, taxon_cmr, site_id, date, capture_id, tag_new) %>%
-  left_join(db_cmr %>% collect(), by = c("local_cmr_id", "taxon_cmr", "site_id" = "site_id_tagged")) %>%
+  left_join(db_cmr %>%
+              select(cmr_id,
+                     local_cmr_id,
+                     date_tagged,
+                     site_id_tagged,
+                     id_type) %>%
+              collect(), by = "local_cmr_id") %>%
   arrange(date_tagged, date) %>%
   group_by(local_cmr_id) %>%
-  slice_head(n = 1) %>%
+  slice_min(date, n = 1) %>%
   ungroup() %>%
   mutate(cmr_id = ifelse(is.na(cmr_id), capture_id, cmr_id),
          date_tagged = as.Date(ifelse(is.na(date_tagged), date, date_tagged)),
-         id_type = ifelse(is.na(id_type), "pit_tag", id_type)) %>%
-  rename(site_id_tagged = site_id)
+         id_type = ifelse(is.na(id_type), "pit_tag", id_type),
+         site_id_tagged = ifelse(is.na(site_id_tagged), site_id, site_id_tagged))
   
 subset_cmr = unified_cmr %>%
   arrange(date_tagged) %>%
