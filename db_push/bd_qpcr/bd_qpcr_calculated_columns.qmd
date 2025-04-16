@@ -1,0 +1,54 @@
+---
+title: "bd_qpcr_calculated_columns"
+format: html
+---
+
+## Setup
+
+```{r}
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, rio, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+## Connect to DB
+dbcon <- hopToDB("wibbitr")
+
+```
+
+## load table pointers
+
+```{r}
+mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
+  collect()
+
+db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+
+```
+
+# see where dependent columns are missing
+```{r}
+db_bd %>%
+  summarise(count = n(),
+            na_dilution = sum(is.na(qpcr_dilution_factor), na.rm = TRUE),
+            na_extract = sum(is.na(extract_volume_uL), na.rm = TRUE),
+            na_template = sum(is.na(template_dna_volume_uL), na.rm = TRUE),
+            na_type = sum(is.na(standard_target_type), na.rm = TRUE),
+            na_standard = sum(is.na(standard), na.rm = TRUE)) %>%
+  collect()
+
+
+```
+
+# calculations
+
+```{r}
+bd_calc = db_bd %>%
+  mutate(target_quant_per_swab = average_target_quant * qpcr_dilution_factor * extract_volume_uL / template_dna_volume_uL,
+         its1_copies_per_standard_unit = case_match(standard_target_type,
+                                                    "ITS1" ~ 1,
+                                                    "zoospore" ~ 60,
+                                                    .default = NA),
+         average_its1_copies_per_swab = target_quant_per_swab * its1_copies_per_standard_unit)
+
+# add definitions to metadata
+
+```
