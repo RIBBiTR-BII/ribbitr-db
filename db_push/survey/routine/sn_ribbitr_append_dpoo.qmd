@@ -170,6 +170,11 @@ clean_survey = sn_survey %>%
          comments_survey = ifelse(comments_survey == "", NA_character_, comments_survey),
          transect = NA_character_)
 
+# temperaures
+f_to_c = function(x) {
+  (x - 32) * 5/9	
+}
+
 clean_capture = bind_rows(raw_sample_2022,
                          raw_sample_2023 %>%
                            mutate(tag_new = ifelse(tag_new == 0, FALSE, tag_new),
@@ -205,6 +210,8 @@ clean_capture = bind_rows(raw_sample_2022,
          substrate_temp_c = coalesce(substrate_temperature, water_temperature),
          comments_capture = tolower(comments_capture),
          comments_survey = tolower(comments_survey),
+         body_temp_c = ifelse(body_temp_c > 35, f_to_c(body_temp_c), body_temp_c),
+         substrate_temp_c = ifelse(substrate_temp_c > 35, f_to_c(substrate_temp_c), substrate_temp_c),
          taxon_capture = case_match(species,
                                     "buca" ~ "anaxyrus_canorus",
                                     "hyre" ~ "pseudacris_regilla",
@@ -227,7 +234,8 @@ clean_capture = bind_rows(raw_sample_2022,
            !is.na(local_cmr_id) & tag_new ~ "new",
            !is.na(local_cmr_id) & !tag_new ~ "recapture",
            .default = NA_character_),
-         time_of_day = "day")
+         time_of_day = "day") %>%
+  filter(!is.na(species))
 
 
 # RKS36420 -> RKS35420
@@ -243,7 +251,11 @@ clean_capture$capture_type[clean_capture$capture_id == "fa513e2c-ff90-4588-8a8a-
 clean_capture$local_cmr_id[clean_capture$capture_id == "fa513e2c-ff90-4588-8a8a-1603395d5cbd"] = "982091064358197"
 
 # clean_capture$observer_sample[clean_capture$capture_id == "fa513e2c-ff90-4588-8a8a-1603395d5cbd"] = "Smith"
+clean_capture$local_cmr_id[clean_capture$capture_id == "b84ce965-93c9-48fd-8f0b-bee7517947eb"] = "900043000200853"
 
+clean_capture$bd[clean_capture$capture_id == "39526851-83e9-46b7-b971-e902ee67d53e"] = "RKS34982"
+clean_capture$bd[clean_capture$capture_id == "a86f5dae-4eb3-4abf-a360-3b99501c2384"] = "RKS35542"
+clean_capture$bd[clean_capture$capture_id == "f0d98710-038e-407b-894b-648ade3f297a"] = "RKS36429"
 
 ```
 
@@ -379,15 +391,21 @@ unified_cmr = unified_capture %>%
   filter(!is.na(local_cmr_id)) %>%
   rename(taxon_cmr = taxon_capture) %>%
   select(local_cmr_id, taxon_cmr, site_id, date, capture_id, tag_new) %>%
-  left_join(db_cmr %>% collect(), by = c("local_cmr_id", "taxon_cmr", "site_id" = "site_id_tagged")) %>%
+  left_join(db_cmr %>%
+              select(cmr_id,
+                     local_cmr_id,
+                     date_tagged,
+                     site_id_tagged,
+                     id_type) %>%
+              collect(), by = "local_cmr_id") %>%
   arrange(date_tagged, date) %>%
   group_by(local_cmr_id) %>%
-  slice_head(n = 1) %>%
+  slice_min(date, n = 1) %>%
   ungroup() %>%
   mutate(cmr_id = ifelse(is.na(cmr_id), capture_id, cmr_id),
          date_tagged = as.Date(ifelse(is.na(date_tagged), date, date_tagged)),
-         id_type = ifelse(is.na(id_type), "pit_tag", id_type)) %>%
-  rename(site_id_tagged = site_id)
+         id_type = ifelse(is.na(id_type), "pit_tag", id_type),
+         site_id_tagged = ifelse(is.na(site_id_tagged), site_id, site_id_tagged))
   
 subset_cmr = unified_cmr %>%
   arrange(date_tagged) %>%
@@ -440,12 +458,23 @@ coalesce_duplicates <- function(data, suffix = c(".x", ".y")) {
 
 gelled_capture = unified_capture %>%
   left_join(unified_cmr %>%
-              select(local_cmr_id, cmr_id),
+              select(local_cmr_id, cmr_id, date_tagged),
             by = "local_cmr_id") %>%
   arrange(date, site, start_time, survey_quality) %>%
-  mutate(comments_survey = coalesce(comments_survey.x, comments_survey.y)) %>%
+  mutate(comments_survey = coalesce(comments_survey.x, comments_survey.y),
+         marked = !is.na(local_cmr_id),
+         capture_type = case_when(
+           marked & date == date_tagged ~ "new",
+           marked & date != date_tagged ~ "recapture",
+           !marked ~ NA_character_)) %>%
   left_join(db_capture %>%
               collect(), by = "capture_id") %>%
+  mutate(capture_utme = coalesce(capture_utme.y, capture_utme.x),
+         detection_type = "capture") %>%
+  select(-capture_utme.x,
+         -capture_utme.y,
+         -capture_utmn.x,
+         -capture_utmn.y) %>%
   coalesce_duplicates() %>%
   group_by(visit_id,
            detection_type,
@@ -546,21 +575,6 @@ compare_capture = compare_df_cols(db_capture %>%
 
 
 tray = compare_for_staging(db_capture %>% collect(), subset_capture, tbl_pkey('capture', mdc), return_all = TRUE, report = "capture")
-peace = compare_updates(tray, "capture_id")
-
-p1 = peace[[15]]
-
-r1 = subset_capture %>%
-  filter(capture_id == "fa513e2c-ff90-4588-8a8a-1603395d5cbd")
-r2 = db_capture %>%
-  filter(capture_id == "fa513e2c-ff90-4588-8a8a-1603395d5cbd") %>%
-  collect()
-
-rr = bind_rows(r1, r2)
-
-
-
-
 upsert_capture = bind_rows(tray$insert,
                            tray$update)
 
