@@ -1,0 +1,79 @@
+---
+title: "bd_qpcr_plate_qc_table_build"
+format: html
+---
+
+## Setup
+
+```{r}
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, rio, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+## Connect to DB
+dbcon <- hopToDB("wibbitr")
+
+```
+
+## load table pointers
+
+```{r}
+mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
+  collect()
+
+db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+
+```
+
+# extract plate info
+
+```{r}
+results_cols = c("result_id",
+                 "sample_id",
+                 "sample_name_bd",
+                 "detected",
+                 "replicate",  # singlet, etc.
+                 "replicate_count",  # "replicate number (1 - n)
+                 "replicate_detected",  # drop
+                 "average_ct",  # cycle_threshold
+                 "average_target_quant",  # target_quantity
+                 "qpcr_dilution_factor",
+                 "swab_type",
+                 "target_quant_per_swab",
+                 "its1_copies_per_standard_unit",
+                 "average_its1_copies_per_swab",  # its1_copies_per_swab
+                 "qpcr_well",
+                 "plate_id")
+
+# see SN qpcr for example
+qc_cols = c()
+
+plate_cols = c("plate_id",
+               "total_qpcr_volume_uL",
+               "template_dna_volume_uL",
+               "extract_volume_uL",
+               "standard_target_type",
+               "standard",
+               "master_mix",
+               "extraction_plate_name",
+               "extraction_date",
+               "extraction_kit",
+               "extraction_lab",
+               "qpcr_plate_name",
+               "qpcr_plate_run",
+               "qpcr_date",
+               "qpcr_machine",
+               "qpcr_lab",
+               "comments_qpcr")
+
+data_plate = db_bd %>%
+  select(any_of(plate_cols)) %>%
+  distinct()
+
+# is extraction plate 1:1 with qpcr plate? if not, leave in results... or seperate table...?
+
+# drop all controls
+# write controls into push scripts
+
+# drop plate_cols from results table
+
+```
