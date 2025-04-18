@@ -83,7 +83,14 @@ qc_3 = common_data %>%
               standard_target_type) %>%
   group_by(std_type, standard_target_type) %>%
   count()
+
 # some are wrong (zoospore - ITS1)
+
+qc_4 = common_data %>%
+  discrepancy(std_type,
+              standard) %>%
+  group_by(std_type, standard) %>%
+  count()
 
 qa_1 = sn_data %>%
   mutate(year = year(date_start)) %>%
@@ -106,22 +113,17 @@ qa_3 = rb_data %>%
          total_qpcr_volume_uL,
          qpcr_dilution_factor,
          extract_volume_uL,
-         volume_template_dna_uL) %>%
+         template_dna_volume_uL) %>%
   group_by(qpcr_lab,
            standard_target_type,
            standard,
            total_qpcr_volume_uL,
            qpcr_dilution_factor,
            extract_volume_uL,
-           volume_template_dna_uL) %>%
+           template_dna_volume_uL) %>%
   summarise(years = paste(sort(unique(year)), collapse = ","),
          count = n()) %>%
   arrange(qpcr_lab)
-
-inv_1 = rb_data %>%
-  filter(is.na(qpcr_lab)) %>%
-  select(qpcr_plate_name) %>%
-  distinct()
 
 inv_2 = rb_data %>%
   filter(is.na(qpcr_date)) %>%
@@ -131,9 +133,25 @@ inv_2 = rb_data %>%
 inv_3 = rb_data %>%
   filter(qpcr_lab == "rz_lab",
          qpcr_dilution_factor == 10) %>%
-  select(qpcr_plate_name) %>%
-  distinct() %>%
-  arrange(qpcr_plate_name)
+  group_by(qpcr_plate_name) %>%
+  count()
+
+inv_4 = db_bd %>%
+  left_join(db_sample, by = "sample_id") %>%
+  left_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(is.na(qpcr_lab)) %>%
+  select(site, date, region, country) %>%
+  collect()
+
+inv_5 = db_bd %>%
+  group_by(qpcr_lab, extraction_kit, standard, extract_volume_uL) %>%
+  count() %>%
+  collect()
 
 ```
 
@@ -141,7 +159,8 @@ inv_3 = rb_data %>%
 ```{r}
 clean_bd = db_bd %>%
   mutate(standard_target_type = ifelse(standard == "plasmid-pisces", "ITS1", standard_target_type),
-         standard = ifelse(standard == "plasmid" & qpcr_lab == "snarl", "plasmid_birggs", standard),
+         standard_target_type = ifelse(standard == "genomic", "zoospore", standard_target_type),
+         standard = ifelse(standard == "plasmid" & qpcr_lab == "snarl", "plasmid-briggs", standard),
          qpcr_date = case_match(qpcr_plate_name,
                                 "RIBBiTR_qPCR_Penn2023_18August2023_Plate3" ~ as.Date("2023-08-18"),
                                 "vs17-04-01plate 2 field" ~ as.Date("2017-10-31"),
@@ -302,5 +321,46 @@ update_sample = db_bd %>%
   select(all_of(colnames(db_sample)))
 
 rows_update(db_sample, update_sample, by = "sample_id", in_place=TRUE, unmatched = "ignore")
+
+```
+
+# add lab where missing
+```{r}
+update_bd = db_bd %>%
+  filter(is.na(qpcr_lab)) %>%
+  mutate(qpcr_lab = "rz_lab")
+
+db_bd = db_bd %>%
+  rows_update(update_bd, by = "result_id", in_place=TRUE, unmatched = "ignore")
+
+```
+
+# missing dates
+```{r}
+no_date = db_bd %>%
+  filter(is.na(qpcr_date)) %>%
+  group_by(qpcr_plate_name) %>%
+  count() %>%
+  collect()
+
+# pull from plate name?
+```
+
+# extract volume
+```{r}
+ev_bd = db_bd %>%
+  mutate(extract_volume_uL = ifelse(extraction_kit == "qiagen_dneasy", 200, extract_volume_uL))
+
+db_bd = db_bd %>%
+  rows_update(ev_bd, by = "result_id", in_place=TRUE, unmatched = "ignore")
+
+```
+
+# replicate
+```{r}
+rep_bd = db_bd %>%
+  group_by(replicate) %>%
+  count() %>%
+  collect()
 
 ```
