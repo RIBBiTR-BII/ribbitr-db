@@ -1,0 +1,273 @@
+---
+title: "bd qPCR push SNARL"
+format: html
+editor: source
+---
+
+## Setup
+
+```{r}
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, rio, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+## Connect to DB
+dbcon <- hopToDB("wibbitr")
+sncon = hopToDB("qpcr")
+
+```
+
+## load table pointers
+
+```{r}
+mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
+  collect()
+
+db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+
+sn_results = tbl(sncon, Id("results"))
+sn_plates = tbl(sncon, Id("plates"))
+sn_qc = tbl(sncon, Id("qc"))
+sn_results_ucsb = tbl(sncon, Id("results_snarl_import"))
+sn_results_snarl = tbl(sncon, Id("results_ucsb_import"))
+
+```
+
+```{r}
+
+sn_results %>%
+  count() %>%
+  collect()
+
+sn_results_ucsb %>%
+  count() %>%
+  collect()
+
+sn_results_snarl %>%
+  count() %>%
+  collect()
+
+sn_results %>%
+  inner_join(sn_results_ucsb, by = "sample_id") %>%
+  count() %>%
+  collect()
+
+sn_results %>%
+  inner_join(sn_results_snarl, by = "sample_id") %>%
+  count() %>%
+  collect()
+
+```
+
+## load results from file
+
+```{r}
+
+load_results = bind_rows(sn_results %>%
+                            collect(),
+                          sn_results_ucsb %>%
+                            collect()) %>%
+  left_join(sn_plates %>%
+              collect(), by = c("plate_id" = "id"))
+
+clean_results = load_results %>%
+  rename(sample_name_bd = sample_id,
+         qpcr_plate_name = plate_name,
+         qpcr_well = well_id,
+         replicate_id = replicate,
+         cycle_quant = quant_cycle,
+         target_quant = start_quant,
+         comments_qpcr = well_notes,
+         qpcr_dilution_factor = dilution) %>%
+  mutate(standard = coalesce(std_type, standard_type),
+         standard = ifelse(standard == "plasmid", "plasmid-briggs", standard),
+         extraction_plate_name = qpcr_plate_name,
+         standard_target_type = case_match(standard,
+                                           "genomic" ~ "zoospore",
+                                           "gblock" ~ "ITS1",
+                                           "plasmid-briggs" ~ "ITS1"),
+         extraction_lab = "snarl",
+         qpcr_lab = "snarl",
+         swab_type = "mw113",
+         master_mix = "bioline", 
+         qpcr_machine = "biorad_cfx96",
+         total_qpcr_volume_uL = 25,
+         volume_template_dna_uL = 5,
+         extract_volume_uL = 40,
+         extraction_kit = "prepman",
+         detected = ifelse(!is.na(cycle_quant), TRUE, FALSE),
+         replicate_detected = ifelse(detected, "p", "n"),
+         qpcr_plate_run = 1,
+         qpcr_date = as.Date(date_start),
+         sample_type = "bd") %>%
+  group_by(sample_name_bd,
+           qpcr_plate_name) %>%
+  mutate(replicates_per_plate = max(replicate_id),
+         average_ct = mean(average_ct, na.rm = TRUE),
+         average_taget_quant = mean(average_target_quant, na.rm = TRUE)) %>%
+  ungroup() %>%
+
+unique(clean_results$standad)
+unique(clean_results$target)
+
+
+colnames(clean_results)
+
+  rename(qpcr_plate_id = plate_id,
+         qpcr_well = well_id)
+
+# list.files(here(wddir))
+raw_bd_plates = read_csv(here(wddir, "final_plates.csv"))
+raw_bd_qc = read_csv(here(wddir, "final_qc.csv"))
+raw_bd_results = read_csv(here(wddir, "final_results.csv"), col_types = cols(well_notes = "c"))
+
+tz_local = "America/Los_Angeles"
+```
+
+## clean results
+```{r}
+clean_results = raw_bd_results %>%
+  left_join(raw_bd_plates, by = c("plate_id" = "id")) %>%
+  rename(sample_name_bd = sample_id,
+         qpcr_plate_name = plate_name,
+         qpcr_well = well_id,
+         standard_target_type = target,
+         replicate_id = replicate,
+         average_ct = quant_cycle,
+         average_target_quant = start_quant,
+         comments_qpcr = well_notes,
+         qpcr_dilution_factor = dilution,
+         standard = std_type) %>%
+  mutate(extraction_plate_name = qpcr_plate_name,
+         standard_target_type = ifelse(standard_target_type == "ITS", "ITS1", standard_target_type),
+         extraction_lab = "snarl",
+         qpcr_lab = "snarl",
+         swab_type = "mw113",
+         master_mix = "bioline", 
+         qpcr_machine = "biorad_cfx96",
+         total_qpcr_volume_uL = 25,
+         volume_template_dna_uL = 5,
+         extract_volume_uL = 40,
+         extraction_kit = "prepman",
+         detected = ifelse(!is.na(average_ct), TRUE, FALSE),
+         qpcr_plate_run = 1,
+         qpcr_date = as.Date(date_start),
+         sample_type = "bd") %>%
+  group_by(sample_name_bd,
+           qpcr_plate_name) %>%
+  mutate(replicates_per = max(replicate_id),
+         average_ct = mean(average_ct, na.rm = TRUE),
+         average_taget_quant = mean(average_target_quant, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(replicate = case_match(replicate_count,
+                                1 ~ "singlet",
+                                2 ~ "duplicate",
+                                3 ~ "triplicate",
+                                4 ~ "quadruplicate",
+                                5 ~ "quintuplicate",
+                                6 ~ "sextuplicate",
+                                .default = NA)) %>%
+  filter(grepl("RKS", sample_name_bd))  # only from Knapp Smith lab
+
+```
+
+# checks
+```{r}
+violations_unique = get_dupes(clean_results, sample_name_bd)
+
+```
+
+# gelled
+```{r}
+gelled_results = clean_results %>%
+  left_join(db_sample %>% collect(), by = c("sample_name_bd" = "sample_name", "sample_type")) %>%
+  group_by(sample_name_bd) %>%
+  mutate(uuid_name = paste0(sample_name_bd, sample_type),
+         sample_id = ifelse(is.na(sample_id), UUIDfromName("1208e62f-d3a1-462c-984f-0bf1f43f5837", uuid_name), sample_id),
+         sample_name = sample_name_bd) %>%
+  ungroup() %>%
+  left_join(db_bd %>% 
+              select(sample_name_bd,
+                     qpcr_plate_run,
+                     qpcr_well,
+                     result_id) %>%
+              collect(), by = c("sample_name_bd",
+                                "qpcr_plate_run",
+                                "qpcr_well")) %>%
+  group_by(sample_name_bd,
+           qpcr_well,
+           qpcr_plate_name,
+           qpcr_plate_run) %>%
+  mutate(uuid_name = paste0(sample_name_bd, qpcr_well, qpcr_plate_name, qpcr_plate_run),
+         result_id = ifelse(is.na(result_id), UUIDfromName("d41b1f58-5576-49b6-a303-0bddcc94a0f2", uuid_name), result_id)) %>%
+  ungroup()
+
+```
+
+# subset data
+```{r}
+subset_bd_samples = gelled_results %>%
+  select(any_of(colnames(db_sample))) %>%
+  distinct() %>%
+  filter(!is.na(sample_id))
+
+compare_bd_samples = compare_df_cols(db_sample %>%
+                                  filter(FALSE) %>%
+                                  collect(), subset_bd_samples)
+
+tray = compare_for_staging(db_sample %>% collect(), subset_bd_samples, "sample_id", return_all = TRUE, report = "sample")
+final_bd_samples = bind_rows(tray$insert,
+                       tray$update)
+
+peace = tray$insert
+fleace = tray$duplicate
+
+subset_bd = gelled_results %>%
+  select(any_of(colnames(db_bd))) %>%
+  distinct() %>%
+  filter(!is.na(sample_id))
+
+compare_bd = compare_df_cols(db_bd %>%
+                               filter(FALSE) %>%
+                               collect(), subset_bd)
+
+tray = compare_for_staging(db_bd %>% collect(), subset_bd, "result_id", return_all = TRUE, report = "bd")
+final_bd = bind_rows(tray$insert,
+                       tray$update)
+
+peace = compare_updates(tray)
+
+```
+
+# commit
+
+```{r}
+
+dbBegin(dbcon)
+
+tryCatch(
+  {
+    
+    temp_sample = stage_to_temp(dbcon, db_sample, final_bd_samples)
+    pointer = tbl(dbcon, temp_sample)
+    rows_upsert(db_sample, pointer, by="sample_id", in_place=TRUE)
+    
+    temp_bd = stage_to_temp(dbcon, db_bd, final_bd)
+    pointer = tbl(dbcon, temp_bd)
+    rows_upsert(db_bd, pointer, by="result_id", in_place=TRUE)
+    
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful!")
+    
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
+
+```
+
+```{r}
+dbDisconnect(dbcon)
+```
