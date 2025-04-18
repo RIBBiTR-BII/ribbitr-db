@@ -27,12 +27,17 @@ db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
 # see where dependent columns are missing
 ```{r}
 db_bd %>%
+  collect()
   summarise(count = n(),
-            na_dilution = sum(is.na(qpcr_dilution_factor), na.rm = TRUE),
-            na_extract = sum(is.na(extract_volume_uL), na.rm = TRUE),
-            na_template = sum(is.na(template_dna_volume_uL), na.rm = TRUE),
-            na_type = sum(is.na(standard_target_type), na.rm = TRUE),
-            na_standard = sum(is.na(standard), na.rm = TRUE)) %>%
+            na_dilution = sum(is.na(qpcr_dilution_factor)),
+            na_extract = sum(is.na(extract_volume_uL)),
+            na_template = sum(is.na(template_dna_volume_uL)),
+            na_type = sum(is.na(standard_target_type)),
+            na_standard = sum(is.na(standard)))
+
+peace = db_bd %>%
+  select(standard) %>%
+  distinct() %>%
   collect()
 
 
