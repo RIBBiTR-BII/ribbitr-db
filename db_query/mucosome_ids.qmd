@@ -26,32 +26,34 @@ db_country = tbl(dbcon, Id("survey_data", "country"))
 
 # filter & pull data
 ```{r}
+
 data_mucosome = db_sample %>%
+  filter(sample_type == "bd" | sample_type == "mucosome") %>%
+  pivot_wider(id_cols = "capture_id", names_from = "sample_type", values_from = "sample_name") %>%
   left_join(db_capture, by = "capture_id") %>%
   left_join(db_survey, by = "survey_id") %>%
   left_join(db_visit, by = "visit_id") %>%
   left_join(db_site, by = "site_id") %>%
   left_join(db_region, by = "region_id") %>%
   left_join(db_country, by = "country_id") %>%
-  filter(country == "brazil" |
-           country == "panama" |
-           region == "california",
-         sample_type == "mucosome" | sample_type == "bd") %>%
-  select(sample_name,
-         sample_type,
-         capture_id,
-         taxon_capture,
+  filter(country %in% c("brazil", "panama") |
+           region %in% c("california"),
+         !is.na(mucosome)) %>%
+  rename("bd_swab_id" = "bd",
+         "mucosome_id" = "mucosome",
+         "species" = "taxon_capture") %>%
+  select(capture_id,
+         body_mass_g,
+         mucosome_id,
+         bd_swab_id,
+         species,
          date,
          site,
          geographic_area,
          region,
          country) %>%
   collect() %>%
-  pivot_wider(names_from = sample_type, values_from = sample_name) %>%
-  rename("bd_swab_id" = "bd",
-         "mucosome_id" = "mucosome",
-         "species" = "taxon_capture") %>%
-  filter(!is.na(mucosome_id))
+  arrange(country, mucosome_id)
 
 write_csv(data_mucosome, here("staging", paste0("mucosome_ids_", today(), ".csv")))
 ```
