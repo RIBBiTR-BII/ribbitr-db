@@ -34,6 +34,7 @@ pop = tibble(
            "54188",
            "50837",
            "50895",
+           "50899",
            "50731",
            "52127",
            "70397",
@@ -46,6 +47,7 @@ pop = tibble(
                  "conness",
                  "kuna",
                  "trapdoor",
+                 "independence_crk",
                  "independence_crk",
                  "independence_crk",
                  "sleet",
@@ -93,15 +95,6 @@ data_samps = db_sample %>%
           bd)
 
 write_csv(data_samps, here("staging", paste0("amm_sn_captured_individuals_", today(), ".csv")))
-
-data_10196 = data_samps %>%
-  filter(site == "10196")
-
-data_2017 = data_samps %>%
-  mutate(year = year(date)) %>%
-  filter(year == "2017") %>%
-  group_by(site) %>%
-  count()
 
 data_proj = data_samps %>%
   group_by(project) %>%
@@ -191,5 +184,8 @@ data_new = read_csv(here("staging", "amm_sn_captured_individuals_2025-04-16.csv"
 site_old = read_csv(here("staging", "amm_sn_site_summary_2025-04-10.csv"))
 site_new = read_csv(here("staging", "amm_sn_site_summary_2025-04-16.csv"))
 
+
+kuna = data_samps %>%
+  filter(site == "70459")
 
 ```
