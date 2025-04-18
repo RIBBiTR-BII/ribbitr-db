@@ -175,7 +175,13 @@ f_to_c = function(x) {
   (x - 32) * 5/9	
 }
 
-clean_capture = bind_rows(raw_sample_2022,
+test = raw_sample_2022 %>%
+  select(mucosome_id) %>%
+  filter(!is.na(mucosome_id)) %>%
+  arrange(mucosome_id)
+
+clean_capture = bind_rows(raw_sample_2022 %>%
+                            mutate(amp_id = mucosome_id),
                          raw_sample_2023 %>%
                            mutate(tag_new = ifelse(tag_new == 0, FALSE, tag_new),
                                   tag_new = as.logical(tag_new)),
