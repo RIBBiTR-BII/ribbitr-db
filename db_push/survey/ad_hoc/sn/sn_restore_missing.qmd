@@ -1,0 +1,374 @@
+---
+title: "sn_restore_missing"
+format: html
+---
+
+# Setup
+
+```{r}
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+## Connect to RIBBiTR DB
+dbcon <- hopToDB("wibbitr")
+
+## Connect to SN amphibians DB
+recon <- hopToDB("restore")
+
+## Pull metadata from database
+mdc = tbl(dbcon, Id("public", "all_columns")) %>%
+  filter(table_schema == "survey_data") %>%
+  collect()
+
+```
+
+# pointers
+```{r}
+# pull relevant chain tables from RIBBiTR DB
+db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+db_aural = tbl(dbcon, Id("survey_data", "aural"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_edna = tbl(dbcon, Id("survey_data", "edna"))
+db_env = tbl(dbcon, Id("survey_data", "environmental"))
+db_ves = tbl(dbcon, Id("survey_data", "ves"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+db_cmr = tbl(dbcon, Id("survey_data", "cmr"))
+db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
+
+# pull relevant chain tables from RIBBiTR DB
+re_sample = tbl(recon, Id("survey_data", "sample"))
+re_aural = tbl(recon, Id("survey_data", "aural"))
+re_capture = tbl(recon, Id("survey_data", "capture"))
+re_edna = tbl(recon, Id("survey_data", "edna"))
+re_env = tbl(recon, Id("survey_data", "environmental"))
+re_ves = tbl(recon, Id("survey_data", "ves"))
+re_survey = tbl(recon, Id("survey_data", "survey"))
+re_visit = tbl(recon, Id("survey_data", "visit"))
+re_site = tbl(recon, Id("survey_data", "site"))
+re_region = tbl(recon, Id("survey_data", "region"))
+re_country = tbl(recon, Id("survey_data", "country"))
+re_cmr = tbl(recon, Id("survey_data", "cmr"))
+re_taxa = tbl(recon, Id("survey_data", "taxonomy"))
+```
+
+# identify missing visits
+```{r}
+tbl_nkey("visit", mdc)
+
+data_revisit = re_visit %>%
+  left_join(re_site, by = "site_id") %>%
+  left_join(re_region, by = "region_id") %>%
+  select(site,
+         date,
+         time_of_day,
+         region) %>%
+  collect()
+
+data_visit = db_visit %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  select(site,
+         date,
+         time_of_day,
+         region) %>%
+  collect()
+
+missing_visit = data_revisit %>%
+  anti_join(data_visit, by = c("site", "date", "time_of_day"))
+
+```
+
+# identify missing survey
+```{r}
+tbl_nkey("survey", mdc)
+
+data_resurvey = re_survey %>%
+  left_join(re_visit, by = "visit_id") %>%
+  left_join(re_site, by = "site_id") %>%
+  left_join(re_region, by = "region_id") %>%
+  select(start_time,
+         detection_type,
+         site,
+         date,
+         time_of_day,
+         region,
+         observers_survey,
+         transect) %>%
+  mutate(src = "restore") %>%
+  collect()
+
+data_survey = db_survey %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  select(start_time,
+         detection_type,
+         site,
+         date,
+         time_of_day,
+         region) %>%
+  mutate(src = "current") %>%
+  collect()
+
+missing_survey = data_resurvey %>%
+  anti_join(data_survey, by = c("start_time", "detection_type", "site", "date", "time_of_day"))
+
+pissing_survey = data_survey %>%
+  anti_join(data_resurvey, by = c("start_time", "detection_type", "site", "date", "time_of_day"))
+
+maligned = bind_rows(missing_survey,
+                     pissing_survey) %>%
+  arrange(date, site, time_of_day, detection_type, start_time, src)
+
+```
+
+```{r}
+peace = get_dupes(data_resurvey, site, date, time_of_day, detection_type, start_time, observers_survey, transect)
+```
+
+# samples as key
+```{r}
+data_resample = re_sample %>%
+  filter(!is.na(capture_id)) %>%
+  collect()
+
+data_sample = db_sample %>%
+  filter(!is.na(capture_id)) %>%
+  collect()
+
+missing_sample = data_resample %>%
+  anti_join(data_sample, by = c("sample_name", "sample_type"))
+
+missing_sample_rev = data_sample %>%
+  anti_join(data_resample, by = c("sample_name", "sample_type"))
+
+missing_capture = re_capture %>%
+  left_join(re_survey, by = "survey_id") %>%
+  left_join(re_visit, by = "visit_id") %>%
+  left_join(re_site, by = "site_id") %>%
+  left_join(re_region, by = "region_id") %>%
+  collect() %>%
+  right_join(missing_sample, by = "capture_id") %>%
+  arrange(sample_name) %>%
+  select(sample_name, sample_type, everything())
+
+missing_visit = missing_capture %>%
+  group_by(date,
+         site,
+         time_of_day) %>%
+  summarize(count = n(),
+            ex = first(sample_name))
+
+ref_samples = missing_sample %>%
+  select(capture_id) %>%
+  left_join(re_sample %>% collect(), by = "capture_id") %>%
+  pivot_wider(names_from = "sample_type", values_from = "sample_name")
+```
+
+
+# followup investigation
+```{r}
+
+samp_1 = db_sample %>%
+  filter(sample_name == "RKS34629") %>%
+  collect()
+
+res_1 = db_bd %>%
+  filter(sample_name_bd == "RKS34629") %>%
+  collect()
+
+hmm = db_sample %>%
+  filter(grepl(".*_DDC.*", sample_name)) %>%
+  collect()
+
+
+ajs_sample = missing_capture %>%
+  filter(site == "10196",
+         date == "2017-08-15") %>%
+    arrange(taxon_capture,
+          life_stage,
+          sex,
+          sample_name) %>%
+  select(sample_name,
+         sample_type)
+
+
+ajs = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  filter(site == "10196",
+         date == "2017-08-15") %>%
+  collect() %>%
+  select(taxon_capture,
+         life_stage,
+         sex,
+         capture_id) %>%
+  arrange(taxon_capture,
+          life_stage,
+          sex)
+
+all_together_01 = bind_cols(ajs, ajs_sample)
+
+write_csv(all_together_01, here("staging", "ajs_samples_01.csv"))
+
+ajs_sample = missing_capture %>%
+  filter(site == "10198",
+         date == "2017-08-15") %>%
+  select(taxon_capture,
+         life_stage,
+         sex,
+         sample_name,
+         sample_type) %>%
+    arrange(taxon_capture,
+          life_stage,
+          sex,
+          sample_name) %>%
+  select(sample_name,
+         sample_type)
+
+
+
+ajs = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  filter(site == "10198",
+         date == "2017-08-15") %>%
+  collect() %>%
+  select(taxon_capture,
+         life_stage,
+         sex,
+         capture_id) %>%
+  arrange(taxon_capture,
+          life_stage,
+          sex)
+
+all_together_02 = bind_cols(ajs, ajs_sample)
+
+write_csv(all_together_02, here("staging", "ajs_samples_02.csv"))
+
+## try all together
+ajs_samps_all = missing_sample %>%
+  filter(grepl("^AJS.*", sample_name))
+
+ajs_capture = re_sample %>%
+  left_join(re_capture, by = "capture_id") %>%
+  left_join(re_survey, by = "survey_id") %>%
+  left_join(re_visit, by = "visit_id") %>%
+  left_join(re_site, by = "site_id") %>%
+  left_join(re_region, by = "region_id") %>%
+  filter(sample_id %in% ajs_samps_all$sample_id) %>%
+  select(sample_name,
+         sample_type,
+         capture_id,
+         taxon_capture,
+         life_stage,
+         sex,
+         svl_mm,
+         body_mass_g,
+         date,
+         time_of_day,
+         site,
+         detection_type,
+         start_time,
+         observers_survey) %>%
+  collect()
+
+ajs_survey = ajs_capture %>%
+  select(date,
+         time_of_day,
+         site,
+         detection_type,
+         start_time,
+         observers_survey) %>%
+  distinct()
+
+all_capture = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  collect()
+
+soi = ajs_capture %>%
+  filter(date == "2017-08-15") %>%
+  arrange(date,
+          site,
+          taxon_capture,
+          life_stage,
+          sex) %>%
+  select(date,
+         site,
+         taxon_capture,
+         life_stage,
+         sex,
+         sample_name,
+         sample_type)
+
+associated_capture = all_capture %>%
+  inner_join(ajs_survey, by = c("date", "time_of_day", "site", "detection_type")) %>%
+  filter(observer_capture == "Jani") %>%
+  arrange(date,
+          site,
+          taxon_capture,
+          life_stage,
+          sex) %>%
+  select(capture_id,
+         date,
+         site,
+         taxon_capture,
+         life_stage,
+         sex)
+
+recon = bind_cols(associated_capture, soi)
+
+umm = db_sample %>%
+  filter(capture_id %in% associated_capture$capture_id) %>%
+  collect()
+
+```
+
+# resolve some
+```{r}
+
+ajs_multi = re_sample %>%
+  filter(capture_id %in% ajs_capture$capture_id) %>%
+  collect() %>%
+  pivot_wider(id_cols = "capture_id", names_from = "sample_type", values_from = "sample_name") %>%
+  filter(!is.na(bd)) %>%
+  select(bd,
+         microbiome)
+
+write_csv(ajs_multi, here("staging", "ajs_multi_samples.csv"))
+
+# with above file
+
+insert_sample = db_sample %>%
+  filter(sample_name %in% ajs_multi$bd,
+         sample_type == "bd") %>%
+  collect() %>%
+  left_join(ajs_multi, by = c("sample_name" = "bd")) %>%
+  select(-sample_name,
+         -sample_id) %>%
+  mutate(sample_type = "microbiome") %>%
+  rename(sample_name = microbiome) %>%
+  mutate(sample_id = UUIDfromName("1208e62f-d3a1-462c-984f-0bf1f43f5837", paste0(sample_name, sample_type)))
+
+temp_sample = stage_to_temp(dbcon, db_sample, insert_sample)
+pointer = tbl(dbcon, temp_sample)
+rows_insert(db_sample, pointer, by="sample_id", in_place=TRUE, conflict = "ignore")
+
+```
+
+
+```{r}
+all_together = bind_rows
+```
