@@ -28,49 +28,87 @@ db_sample = tbl(dbcon, Id("survey_data", "sample"))
 sn_results = tbl(sncon, Id("results"))
 sn_plates = tbl(sncon, Id("plates"))
 sn_qc = tbl(sncon, Id("qc"))
-sn_results_ucsb = tbl(sncon, Id("results_snarl_import"))
-sn_results_snarl = tbl(sncon, Id("results_ucsb_import"))
+sn_results_ucsb = tbl(sncon, Id("results_ucsb_import"))
+sn_results_snarl = tbl(sncon, Id("results_snarl_import"))
 
 ```
 
+# load related data
 ```{r}
+## Point to local data directory
+ddir = Sys.getenv("data_dir")  # data directory
+# Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
+wddir = here(ddir, "sierra") # working data directory
 
-sn_results %>%
-  count() %>%
-  collect()
+# list.files(here(wddir))
+raw_2024_plates = read_csv(here(wddir,"2025-03-18", "final_plates.csv"))
+raw_2024_qc = read_csv(here(wddir,"2025-03-18", "final_qc.csv"))
+raw_2024_results = read_csv(here(wddir,"2025-03-18", "final_results.csv"), col_types = cols(well_notes = "c"))
 
-sn_results_ucsb %>%
-  count() %>%
-  collect()
+raw_km = read_csv(here(wddir,"km_pep", "km_pep_bd_qpcr_results.csv"))
 
-sn_results_snarl %>%
-  count() %>%
-  collect()
-
-sn_results %>%
-  inner_join(sn_results_ucsb, by = "sample_id") %>%
-  count() %>%
-  collect()
-
-sn_results %>%
-  inner_join(sn_results_snarl, by = "sample_id") %>%
-  count() %>%
-  collect()
+tz_local = "America/Los_Angeles"
 
 ```
 
-## load results from file
+## load results from db
 
 ```{r}
+
+file_results = raw_2024_results %>%
+  left_join(raw_2024_plates, by = c("plate_id" = "id"))
+
+peace = sn_results %>%
+  collect() %>%
+  filter(sample_id == "MISC0189")
+
+peace = get_dupes(sn_results %>% collect(), sample_id, plate_id, well_id)
+
 
 load_results = bind_rows(sn_results %>%
-                            collect(),
+                            collect() %>%
+                           filter(!(plate_id == "278" & replicate == "2")),
                           sn_results_ucsb %>%
                             collect()) %>%
   left_join(sn_plates %>%
-              collect(), by = c("plate_id" = "id"))
+              collect(), by = c("plate_id" = "id")) %>%
+  bind_rows(file_results) %>%
+  mutate(std_type = coalesce(std_type.x, std_type.y)) %>%
+  select(-std_type.x,
+         -std_type.y)
 
-clean_results = load_results %>%
+names_sn = load_results %>%
+  filter(grepl("^[A-Z]{2,6}[0-9,\\.]+$", sample_id)) %>%
+  mutate(sample_prefix = gsub("[0-9,\\.]+", "", sample_id)) %>%
+  select(sample_prefix) %>%
+  distinct() %>%
+  arrange(sample_prefix)
+
+names_db_current = db_bd %>%
+  filter(grepl("^[A-Z]{2,6}[0-9,\\.]+$", sample_name_bd)) %>%
+  collect()
+
+names_db = db_sample %>%
+  filter(grepl("^[A-Z]{2,6}[0-9,\\.]+$", sample_name)) %>%
+  select(sample_name) %>%
+  collect() %>%
+  mutate(sample_prefix = gsub("[0-9,\\.]+", "", sample_name)) %>%
+  group_by(sample_prefix) %>%
+  count()
+
+any_missing = setdiff(names_db$sample_prefix, names_sn$sample_prefix)
+all_shared = intersect(names_db$sample_prefix, names_sn$sample_prefix)
+
+filtered_results = load_results %>%
+  mutate(sample_prefix = gsub("[0-9,\\.]+", "", sample_id)) %>%
+  filter(sample_prefix %in% all_shared)
+
+```
+
+# clean results
+```{r}
+
+clean_results = filtered_results %>%
   rename(sample_name_bd = sample_id,
          qpcr_plate_name = plate_name,
          qpcr_well = well_id,
@@ -78,8 +116,11 @@ clean_results = load_results %>%
          cycle_quant = quant_cycle,
          target_quant = start_quant,
          comments_qpcr = well_notes,
-         qpcr_dilution_factor = dilution) %>%
-  mutate(standard = coalesce(std_type, standard_type),
+         ucsb_source =  source,
+         standard = std_type) %>%
+  mutate(qpcr_dilution_factor = dilution * 10,
+         other_plate_name = paste0("ucsb_", ucsb_source),
+         qpcr_plate_name = coalesce(qpcr_plate_name, other_plate_name),
          standard = ifelse(standard == "plasmid", "plasmid-briggs", standard),
          extraction_plate_name = qpcr_plate_name,
          standard_target_type = case_match(standard,
@@ -99,67 +140,12 @@ clean_results = load_results %>%
          replicate_detected = ifelse(detected, "p", "n"),
          qpcr_plate_run = 1,
          qpcr_date = as.Date(date_start),
-         sample_type = "bd") %>%
+         sample_type = "bd",
+         comments_qpcr = ifelse(comments_qpcr == "", NA_character_, comments_qpcr)) %>%
   group_by(sample_name_bd,
            qpcr_plate_name) %>%
-  mutate(replicates_per_plate = max(replicate_id),
-         average_ct = mean(average_ct, na.rm = TRUE),
-         average_taget_quant = mean(average_target_quant, na.rm = TRUE)) %>%
-  ungroup() %>%
-
-unique(clean_results$standad)
-unique(clean_results$target)
-
-
-colnames(clean_results)
-
-  rename(qpcr_plate_id = plate_id,
-         qpcr_well = well_id)
-
-# list.files(here(wddir))
-raw_bd_plates = read_csv(here(wddir, "final_plates.csv"))
-raw_bd_qc = read_csv(here(wddir, "final_qc.csv"))
-raw_bd_results = read_csv(here(wddir, "final_results.csv"), col_types = cols(well_notes = "c"))
-
-tz_local = "America/Los_Angeles"
-```
-
-## clean results
-```{r}
-clean_results = raw_bd_results %>%
-  left_join(raw_bd_plates, by = c("plate_id" = "id")) %>%
-  rename(sample_name_bd = sample_id,
-         qpcr_plate_name = plate_name,
-         qpcr_well = well_id,
-         standard_target_type = target,
-         replicate_id = replicate,
-         average_ct = quant_cycle,
-         average_target_quant = start_quant,
-         comments_qpcr = well_notes,
-         qpcr_dilution_factor = dilution,
-         standard = std_type) %>%
-  mutate(extraction_plate_name = qpcr_plate_name,
-         standard_target_type = ifelse(standard_target_type == "ITS", "ITS1", standard_target_type),
-         extraction_lab = "snarl",
-         qpcr_lab = "snarl",
-         swab_type = "mw113",
-         master_mix = "bioline", 
-         qpcr_machine = "biorad_cfx96",
-         total_qpcr_volume_uL = 25,
-         volume_template_dna_uL = 5,
-         extract_volume_uL = 40,
-         extraction_kit = "prepman",
-         detected = ifelse(!is.na(average_ct), TRUE, FALSE),
-         qpcr_plate_run = 1,
-         qpcr_date = as.Date(date_start),
-         sample_type = "bd") %>%
-  group_by(sample_name_bd,
-           qpcr_plate_name) %>%
-  mutate(replicates_per = max(replicate_id),
-         average_ct = mean(average_ct, na.rm = TRUE),
-         average_taget_quant = mean(average_target_quant, na.rm = TRUE)) %>%
-  ungroup() %>%
-  mutate(replicate = case_match(replicate_count,
+  mutate(replicate_count = max(replicate_id),
+         replicates = case_match(replicate_count,
                                 1 ~ "singlet",
                                 2 ~ "duplicate",
                                 3 ~ "triplicate",
@@ -167,40 +153,71 @@ clean_results = raw_bd_results %>%
                                 5 ~ "quintuplicate",
                                 6 ~ "sextuplicate",
                                 .default = NA)) %>%
-  filter(grepl("RKS", sample_name_bd))  # only from Knapp Smith lab
+  ungroup()
+
+unified_results = bind_rows(clean_results,
+                            raw_km %>%
+                              mutate(sample_type = "bd") %>%
+                              select(-"...1",
+                                     -sample_id,
+                                     -result_id))
 
 ```
 
-# checks
 ```{r}
-violations_unique = get_dupes(clean_results, sample_name_bd)
+violations_unique = get_dupes(clean_results, sample_name_bd, qpcr_plate_name, replicate_id)
+```
+
+# drop these samples before reloading...
+```{r}
+drop_bd = db_bd %>%
+  filter(qpcr_lab == "snarl") %>%
+  collect()
+
+# do all rows to be dropped show up in clean_results to be added? If missing, NA on ID?
+check = drop_bd %>%
+  select(sample_name_bd) %>%
+  distinct() %>%
+  left_join(unified_results, by = "sample_name_bd")
+
+# these will be deleted and are not found in new dataset...
+rf = check %>%
+  filter(is.na(extraction_kit))
+
+# samples to drop?
+drop_sample = db_bd %>%
+  filter(qpcr_lab == "snarl") %>%
+  select(sample_id) %>%
+  mutate(sample_type = "bd") %>%
+  left_join(db_sample, by = c("sample_id", "sample_type")) %>%
+  filter(is.na(capture_id)) %>%
+  distinct() %>%
+  collect()
 
 ```
 
 # gelled
 ```{r}
-gelled_results = clean_results %>%
-  left_join(db_sample %>% collect(), by = c("sample_name_bd" = "sample_name", "sample_type")) %>%
+gelled_results = unified_results %>%
+  left_join(db_sample %>% 
+              collect(), by = c("sample_name_bd" = "sample_name", "sample_type")) %>%
   group_by(sample_name_bd) %>%
   mutate(uuid_name = paste0(sample_name_bd, sample_type),
          sample_id = ifelse(is.na(sample_id), UUIDfromName("1208e62f-d3a1-462c-984f-0bf1f43f5837", uuid_name), sample_id),
          sample_name = sample_name_bd) %>%
   ungroup() %>%
   left_join(db_bd %>% 
-              select(sample_name_bd,
-                     qpcr_plate_run,
-                     qpcr_well,
-                     result_id) %>%
+              select(result_id,
+                     sample_name_bd,
+                     replicate_id,
+                     qpcr_plate_name,
+                     standard) %>%
               collect(), by = c("sample_name_bd",
-                                "qpcr_plate_run",
-                                "qpcr_well")) %>%
-  group_by(sample_name_bd,
-           qpcr_well,
-           qpcr_plate_name,
-           qpcr_plate_run) %>%
-  mutate(uuid_name = paste0(sample_name_bd, qpcr_well, qpcr_plate_name, qpcr_plate_run),
-         result_id = ifelse(is.na(result_id), UUIDfromName("d41b1f58-5576-49b6-a303-0bddcc94a0f2", uuid_name), result_id)) %>%
-  ungroup()
+                                "replicate_id",
+                                "qpcr_plate_name",
+                                "standard")) %>%
+  mutate(uuid_name = paste0(sample_name_bd, replicate_id, qpcr_plate_name),
+         result_id = ifelse(is.na(result_id), UUIDfromName("d41b1f58-5576-49b6-a303-0bddcc94a0f2", uuid_name), result_id))
 
 ```
 
@@ -216,11 +233,9 @@ compare_bd_samples = compare_df_cols(db_sample %>%
                                   collect(), subset_bd_samples)
 
 tray = compare_for_staging(db_sample %>% collect(), subset_bd_samples, "sample_id", return_all = TRUE, report = "sample")
-final_bd_samples = bind_rows(tray$insert,
-                       tray$update)
+upsert_sample = bind_rows(tray$insert,
+                          tray$update)
 
-peace = tray$insert
-fleace = tray$duplicate
 
 subset_bd = gelled_results %>%
   select(any_of(colnames(db_bd))) %>%
@@ -231,11 +246,13 @@ compare_bd = compare_df_cols(db_bd %>%
                                filter(FALSE) %>%
                                collect(), subset_bd)
 
-tray = compare_for_staging(db_bd %>% collect(), subset_bd, "result_id", return_all = TRUE, report = "bd")
-final_bd = bind_rows(tray$insert,
-                       tray$update)
+tray = compare_for_staging(db_bd %>%
+                             filter(qpcr_lab == "snarl") %>%
+                             collect(), subset_bd, "result_id", return_all = TRUE, report = "bd")
 
-peace = compare_updates(tray)
+drop_bd = tray$orphan
+upsert_bd = bind_rows(tray$insert,
+                      tray$update)
 
 ```
 
@@ -243,18 +260,24 @@ peace = compare_updates(tray)
 
 ```{r}
 
+# upsert
 dbBegin(dbcon)
-
 tryCatch(
   {
-    
-    temp_sample = stage_to_temp(dbcon, db_sample, final_bd_samples)
+    temp_sample = stage_to_temp(dbcon, db_sample, upsert_sample)
     pointer = tbl(dbcon, temp_sample)
-    rows_upsert(db_sample, pointer, by="sample_id", in_place=TRUE)
+    db_sample = db_sample %>%
+      rows_upsert(pointer, by="sample_id", in_place=TRUE)
     
-    temp_bd = stage_to_temp(dbcon, db_bd, final_bd)
+    temp_bd = stage_to_temp(dbcon, db_bd, drop_bd)
     pointer = tbl(dbcon, temp_bd)
-    rows_upsert(db_bd, pointer, by="result_id", in_place=TRUE)
+    db_bd = db_bd %>%
+      rows_delete(pointer, by="result_id", in_place=TRUE, unmatched = "ignore")
+    
+    temp_bd = stage_to_temp(dbcon, db_bd, upsert_bd)
+    pointer = tbl(dbcon, temp_bd)
+    db_bd = db_bd %>%
+      rows_upsert(pointer, by="result_id", in_place=TRUE)
     
     # Commit the transaction if successful
     dbCommit(dbcon)
@@ -265,6 +288,16 @@ tryCatch(
     dbRollback(dbcon)
     message("Transaction failed: ", e$message)
   })
+
+
+# orphan samples
+drop_samples = db_sample %>%
+  filter(is.na(capture_id),
+         sample_type == "bd") %>%
+  anti_join(db_bd, by = "sample_id")
+
+dB_sample = db_sample %>%
+  rows_delete(drop_samples, by = "sample_id", in_place = TRUE, unmatched = "ignore")
 
 ```
 
