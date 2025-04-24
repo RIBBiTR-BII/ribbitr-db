@@ -47,27 +47,27 @@ ggplot(data=data_sn, aes(x=log(average_target_quant), y=log(target_quant_per_swa
 ```{r}
 # ct -> target_quant
 
-ggplot(data = data_bd, aes(x=average_ct, y=log(average_target_quant), color = standard)) +
+ggplot(data = data_bd, aes(x=cycle_quant, y=log(target_quant), color = standard)) +
       geom_point()
 
 # target_quant -> target_quant_per_swab
 
 back_calc = data_bd %>%
-  mutate(ratio = round(target_quant_per_swab / (average_target_quant * extract_volume_uL/(volume_template_dna_uL * qpcr_dilution_factor)), digits = 1)) %>%
+  mutate(ratio = round(target_quant_per_swab / (target_quant * extract_volume_uL/(template_dna_volume_uL * qpcr_dilution_factor)), digits = 1)) %>%
   group_by(standard, ratio) %>%
   summarise(count = n())
 
 peace = data_bd %>%
   filter(standard == "plasmid")
 
-ggplot(data = data_bd, aes(x=log(average_target_quant * extract_volume_uL/(volume_template_dna_uL * qpcr_dilution_factor)), y=log(target_quant_per_swab), color = standard)) +
+ggplot(data = data_bd, aes(x=log(target_quant * extract_volume_uL/(template_dna_volume_uL * qpcr_dilution_factor)), y=log(target_quant_per_swab), color = standard)) +
       geom_point()
 
-ggplot(data = data_bd, aes(x=log(target_quant_per_swab), y=log(average_its1_copies_per_swab), color = standard)) +
+ggplot(data = data_bd, aes(x=log(target_quant_per_swab), y=log(its1_copies_per_swab), color = standard)) +
       geom_point()
 
 peace = data_bd %>%
-  mutate(ratio = round(average_its1_copies_per_swab / target_quant_per_swab, digits = 0)) %>%
+  mutate(ratio = round(its1_copies_per_swab / target_quant_per_swab, digits = 0)) %>%
   group_by(ratio) %>%
   summarise(count = n()) %>%
   ungroup()

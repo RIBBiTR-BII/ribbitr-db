@@ -58,21 +58,20 @@ tz_local = "America/Los_Angeles"
 file_results = raw_2024_results %>%
   left_join(raw_2024_plates, by = c("plate_id" = "id"))
 
-peace = sn_results %>%
-  collect() %>%
-  filter(sample_id == "MISC0189")
-
-peace = get_dupes(sn_results %>% collect(), sample_id, plate_id, well_id)
-
+peace = load_results %>%
+  filter(is.na(std_type))
 
 load_results = bind_rows(sn_results %>%
                             collect() %>%
-                           filter(!(plate_id == "278" & replicate == "2")),
+                           mutate(src = "db") %>%
+                           filter(!(plate_id == "278" & replicate == "2")),  # check with Alexa
                           sn_results_ucsb %>%
+                           mutate(src = "ucsb_import") %>%
                             collect()) %>%
   left_join(sn_plates %>%
               collect(), by = c("plate_id" = "id")) %>%
-  bind_rows(file_results) %>%
+  bind_rows(file_results %>%
+              mutate(src = "2024")) %>%
   mutate(std_type = coalesce(std_type.x, std_type.y)) %>%
   select(-std_type.x,
          -std_type.y)
@@ -121,6 +120,7 @@ clean_results = filtered_results %>%
   mutate(qpcr_dilution_factor = dilution * 10,
          other_plate_name = paste0("ucsb_", ucsb_source),
          qpcr_plate_name = coalesce(qpcr_plate_name, other_plate_name),
+         standard = ifelse(is.na(standard) & target == "ITS", "plasmid-briggs", standard),
          standard = ifelse(standard == "plasmid", "plasmid-briggs", standard),
          extraction_plate_name = qpcr_plate_name,
          standard_target_type = case_match(standard,
@@ -133,7 +133,7 @@ clean_results = filtered_results %>%
          master_mix = "bioline", 
          qpcr_machine = "biorad_cfx96",
          total_qpcr_volume_uL = 25,
-         volume_template_dna_uL = 5,
+         template_dna_volume_uL = 5,
          extract_volume_uL = 40,
          extraction_kit = "prepman",
          detected = ifelse(!is.na(cycle_quant), TRUE, FALSE),
@@ -157,7 +157,8 @@ clean_results = filtered_results %>%
 
 unified_results = bind_rows(clean_results,
                             raw_km %>%
-                              mutate(sample_type = "bd") %>%
+                              mutate(sample_type = "bd",
+                                     src = "km_pep") %>%
                               select(-"...1",
                                      -sample_id,
                                      -result_id))

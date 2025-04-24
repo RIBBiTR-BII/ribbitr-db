@@ -364,3 +364,28 @@ rep_bd = db_bd %>%
   collect()
 
 ```
+
+# set na target quant to 0 if negative
+```{r}
+bd_zeros = db_bd %>%
+  filter(is.na(target_quant) & detected == FALSE) %>%
+  mutate(target_quant = 0)
+
+db_bd = db_bd %>%
+  rows_update(bd_zeros, by = "result_id", in_place=TRUE, unmatched = "ignore")
+
+```
+
+# singular_sample_results
+```{r}
+ssr = db_bd %>%
+  group_by(sample_name_bd) %>%
+  mutate(samp_count = n(),
+         singular_sample_results = (samp_count == 1)) %>%
+  ungroup() %>%
+  select(-samp_count)
+
+db_bd = db_bd %>%
+  rows_update(ssr, by = "result_id", in_place=TRUE, unmatched = "ignore")
+
+```
