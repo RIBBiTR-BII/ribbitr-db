@@ -15,6 +15,7 @@ dbcon = hopToDB("ribbitr")
 
 # table pointers
 ```{r}
+db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
 db_sample = tbl(dbcon, Id("survey_data", "sample"))
 db_capture = tbl(dbcon, Id("survey_data", "capture"))
 db_survey = tbl(dbcon, Id("survey_data", "survey"))
@@ -55,7 +56,35 @@ data_mucosome = db_sample %>%
   collect() %>%
   arrange(country, mucosome_id)
 
-write_csv(data_mucosome, here("staging", paste0("mucosome_ids_", today(), ".csv")))
+# write_csv(data_mucosome, here("staging", paste0("mucosome_ids_", today(), ".csv")))
+```
+
+# panama sites
+```{r}
+mu_sites = data_mucosome %>%
+  select(site, region, country) %>%
+  distinct() %>%
+  left_join(db_site %>%
+              collect(), by = "site") %>%
+  select(country,
+         region,
+         site,
+         site_latitude,
+         site_longitude,
+         site_elevation_m)
+
+write_csv(mu_sites, here("staging", paste0("mucosome_sites_", today(), ".csv")))
+```
+
+# panama qpcr
+```{r}
+mu_qpcr = data_mucosome %>%
+  left_join(db_bd %>%
+              select(sample_name_bd,
+                     bd_its1_copies_per_swab) %>%
+              collect(), by = c("bd_swab_id" = "sample_name_bd"))
+
+write_csv(mu_qpcr, here("staging", paste0("mucosome_ids_bd_", today(), ".csv")))
 ```
 
 ```{r}
