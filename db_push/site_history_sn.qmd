@@ -1,0 +1,84 @@
+---
+title: "site_history_sn"
+format: html
+---
+
+```{r}
+
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, uuid, RIBBiTR-BII/ribbitrrr)
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+# connect to database
+dbcon = hopToDB("wibbitr")
+
+sncon = hopToDB("amphibians")
+```
+
+# pointers
+```{r}
+db_sh = tbl(dbcon, Id("survey_data", "site_history"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+
+sn_relocate = tbl(sncon, Id("relocate"))
+sn_relocate_frog = tbl(sncon, Id("relocate_frog"))
+
+```
+
+# import
+```{r}
+
+rloc = sn_relocate %>%
+  collect()
+
+data_relocate = sn_relocate_frog %>%
+  left_join(sn_relocate %>%
+              rename(treatment_comment = comment), by = c("relocate_id" = "id")) %>%
+  collect()
+
+release_event = data_relocate %>%
+  group_by(release_siteid1, release_date) %>%
+  summarize(treatment_size = n(),
+            treatment_comment = first(treatment_comment),
+            type = first(type)) %>%
+  ungroup() %>%
+  rename(site = release_siteid1,
+         treatment_date = release_date) %>%
+  mutate(treatment_type = paste0(type, "_release"),
+         site = as.character(site),
+         treatment_life_stage = "adult") %>%
+  filter(!is.na(site))
+
+capture_event = data_relocate %>%
+  group_by(collect_siteid, collect_date) %>%
+  summarize(treatment_count_individuals = n(),
+            treatment_comment = first(treatment_comment),
+            type = first(type),
+            treatment_life_stage = paste0(unique(collect_stage), collapse = ", ")) %>%
+  ungroup() %>%
+  rename(site = collect_siteid,
+         treatment_date = collect_date) %>%
+  mutate(treatment_type = paste0(type, "_collection")) %>%
+  filter(!is.na(site))
+
+upsert_sh = bind_rows(capture_event,
+                       release_event) %>%
+  left_join(db_site %>% select(site_id, site) %>% collect(), by = "site") %>%
+  mutate(treatment_id = UUIDfromName("50c5404a-3c4b-4352-a7b7-f2ad8b0f7a42", paste(site_id, treatment_date, treatment_type, sep = "_"))) %>%
+  select(treatment_id,
+         site_id,
+         treatment_date,
+         treatment_type,
+         treatment_size,
+         treatment_life_stage,
+         treatment_comment) %>%
+  filter(!is.na(site_id))
+
+```
+
+# upsert table
+```{r}
+temp_sh = stage_to_temp(dbcon, db_sh, upsert_sh)
+pointer = tbl(dbcon, temp_sh)
+db_sh = rows_upsert(db_sh, pointer, by="treatment_id", in_place=TRUE)
+```
