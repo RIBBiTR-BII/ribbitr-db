@@ -1,0 +1,22 @@
+---
+title: "what_data_where"
+format: html
+---
+
+```{r}
+# minimal packages for RIBBiTR DB data discovery
+librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, RIBBiTR-BII/ribbitrrr)
+
+# establish database connection
+dbcon <- hopToDB("ribbitr")
+
+# load table metadata
+mdt <- tbl(dbcon, Id("public", "all_tables")) %>%
+  filter(table_schema == "survey_data") %>%
+  collect()
+
+# load column metadata
+mdc <- tbl(dbcon, Id("public", "metadata_columns")) %>%
+  filter(table_schema == "survey_data") %>%
+  collect()
+```
