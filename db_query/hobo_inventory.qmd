@@ -19,14 +19,19 @@ dbcon <- hopToDB("ribbitr")
 
 ```{r}
 
-db_hobo = tbl(dbcon, Id("hobo", "hobo"))
-db_site = tbl(dbcon, Id("hobo", "hobo_site"))
-db_region = tbl(dbcon, Id("hobo", "hobo_region"))
-db_location = tbl(dbcon, Id("hobo", "hobo_location"))
-
+db_logger = tbl(dbcon, Id("microclimate_data", "logger"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
 
 ```
 
 ```{r}
-
+data_sites = db_logger %>%
+  select(site_id) %>%
+  distinct() %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  collect()
 ```
