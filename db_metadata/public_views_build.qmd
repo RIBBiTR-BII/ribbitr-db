@@ -58,6 +58,7 @@ BEGIN
 
     -- Only execute if there are schemas found
     IF NOT first THEN
+        sql := sql || ' ORDER BY table_schema, table_name';
         EXECUTE sql;
     ELSE
         RAISE NOTICE 'No tables named metadata_tables found in the specified schemas.';
@@ -90,6 +91,7 @@ BEGIN
 
     -- Only execute if there are schemas found
     IF NOT first THEN
+        sql := sql || ' ORDER BY table_schema, table_name, ordinal_position';
         EXECUTE sql;
     ELSE
         RAISE NOTICE 'No tables named metadata_columns found in the specified schemas.';
