@@ -1,0 +1,24 @@
+---
+title: "cdec_retrieve"
+format: html
+---
+
+```{r}
+# minimal packages for RIBBiTR DB data discovery
+librarian::shelf(tidyverse, flowwest/CDECRetrieve)
+
+```
+
+
+# pull data
+```{r}
+# download data from DAN, sensor 4, duration hourly
+dan_air_temp <- cdec_query("DAN", "4", "H", "2025-03-01", "2025-04-01")
+```
+
+# visualize
+```{r}
+dan_air_temp %>%
+  ggplot(aes(datetime, parameter_value)) + 
+  geom_line()
+```
