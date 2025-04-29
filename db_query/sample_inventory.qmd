@@ -64,9 +64,72 @@ bd_results_by_year = bd_results %>%
 
 bd_samples_results = bd_samples_by_year %>%
   full_join(bd_results_by_year, by = c("country", "region", "year")) %>%
-  arrange(year, country, region) %>%
+  arrange(country, region, year) %>%
   mutate(bd_result_count = ifelse(is.na(bd_result_count), 0, bd_result_count),
          discrepancy = bd_sample_count - bd_result_count)
 
 # write_csv(bd_samples_results, here("staging", paste0("br_bd_samples_results_count_", today(), ".csv")))
+```
+
+# rz lab report
+```{r}
+ribbitr_samples = bd_samples %>%
+  filter((country %in% c("panama", "brazil")) | region == "pennsylvania",
+         date >= "2021-10-01") %>%
+  mutate(region = ifelse(region == "pennsylvania", region, country))
+
+# all bd sample counts by year
+bd_samples_by_year = ribbitr_samples %>%
+  mutate(year = year(date)) %>%
+  group_by(region, year) %>%
+  summarize(bd_sample_count = n())
+
+# all bd samples with corresponding results in database
+bd_results = db_bd %>%
+  select(sample_id) %>%
+  distinct() %>%
+  collect() %>%
+  inner_join(ribbitr_samples, by = "sample_id")
+
+# all bd result counts by year
+bd_results_by_year = bd_results %>%
+  mutate(year = year(date)) %>%
+  group_by(region, year) %>%
+  summarize(bd_result_count = n())
+
+bd_samples_results = bd_samples_by_year %>%
+  full_join(bd_results_by_year, by = c("region", "year")) %>%
+  arrange(region, year) %>%
+  mutate(bd_result_count = ifelse(is.na(bd_result_count), 0, bd_result_count),
+         discrepancy = bd_sample_count - bd_result_count)
+
+write_csv(bd_samples_results, here("staging", paste0("ribbitr_rz_bd_samples_results_inventory_", today(), ".csv")))
+
+# results absent
+bd_results_missing = ribbitr_samples %>%
+  anti_join(db_bd %>%
+              select(sample_id) %>%
+              distinct() %>%
+              collect(), by = "sample_id") %>%
+  select(sample_name,
+         taxon_capture,
+         date,
+         site,
+         region,
+         country)
+
+write_csv(bd_results_missing, here("staging", paste0("ribbitr_rz_bd_samples_results_absent_", today(), ".csv")))
+
+# unique plates 2021 - 2024
+bd_results_missing = db_bd %>%
+  filter(sample_id %in% bd_results$sample_id) %>%
+  group_by(qpcr_plate_name,
+         qpcr_date) %>%
+  count() %>%
+  collect() %>%
+  arrange(qpcr_date) %>%
+  filter(grepl("^RIBBiTR", qpcr_plate_name))
+
+
+write_csv(bd_results_missing, here("staging", paste0("ribbitr_rz_bd_qpcr_plates_", today(), ".csv")))
 ```
