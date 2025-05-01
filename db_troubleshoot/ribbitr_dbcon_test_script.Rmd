@@ -1,0 +1,60 @@
+---
+title: "ribbitr_dbcon_test_script"
+output: html_document
+---
+
+```{r}
+# install and load "librarian" R package
+if (!require(librarian)){
+  install.packages("librarian")
+}
+
+# update your ribbitrrr package to the latest version
+librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+```
+
+
+```{r}
+# minimal packages for RIBBiTR DB data discovery
+librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, RIBBiTR-BII/ribbitrrr)
+
+# report current environment
+sessionInfo()
+```
+
+
+```{r}
+# test database connection
+tryCatch(
+  {
+    dbcon <- hopToDB("ribbitr")
+
+  }, error = function(e) {
+    cat("Error caught:", e$message, "\n\n")
+    cat("Traceback (most recent calls last):\n\n")
+    calls <- sys.calls()
+    calls_formatted <- utils::limitedLabels(calls)
+    cat(paste(calls_formatted, collapse = "\n"), "\n")
+  })
+
+```
+
+```{r, error = TRUE}
+# test pulling data
+tryCatch(
+  {
+    data_qpcr = tbl(dbcon, Id("survey_data", "bd_qpcr_results")) %>%
+      filter(qpcr_plate_name == "RIBBiTR_PanamaSwabs2022_10022023_Plate1") %>%
+      collect()
+
+    head(data_qpcr)
+
+  }, error = function(e) {
+    cat("Error caught:", e$message, "\n\n")
+    cat("Traceback (most recent calls last):\n\n")
+    calls <- sys.calls()
+    calls_formatted <- utils::limitedLabels(calls)
+    cat(paste(calls_formatted, collapse = "\n"), "\n")
+  })
+
+```
