@@ -33,6 +33,7 @@ db_region = tbl(dbcon, Id("survey_data", "region"))
 db_country = tbl(dbcon, Id("survey_data", "country"))
 
 sn_plates = tbl(sncon, Id("plates"))
+sn_ucsb = tbl(sncon, Id("results_ucsb_import"))
 sn_results = tbl(sncon, Id("results"))
 
 ```
@@ -48,7 +49,7 @@ sn_dupes = get_dupes(sn_data, sample_id)
 
 rb_data = db_bd %>%
   collect() %>%
-  filter(replicate %in% c("singlet", "singley"))
+  filter(replicates %in% c("singlet", "singley"))
 
 rb_dupes = get_dupes(rb_data, sample_name_bd)
 
@@ -104,7 +105,7 @@ qa_2 = rb_data %>%
   distinct() %>%
   arrange(year)
 
-qa_3 = rb_data %>%
+qa_3 = db_bd %>%
   mutate(year = year(qpcr_date)) %>%
   select(qpcr_lab,
          year,
@@ -114,6 +115,7 @@ qa_3 = rb_data %>%
          qpcr_dilution_factor,
          extract_volume_uL,
          template_dna_volume_uL) %>%
+  collect() %>%
   group_by(qpcr_lab,
            standard_target_type,
            standard,
@@ -124,6 +126,10 @@ qa_3 = rb_data %>%
   summarise(years = paste(sort(unique(year)), collapse = ","),
          count = n()) %>%
   arrange(qpcr_lab)
+
+qa_4 = db_bd %>%
+  filter(is.na(total_qpcr_volume_uL)) %>%
+  collect()
 
 inv_2 = rb_data %>%
   filter(is.na(qpcr_date)) %>%
@@ -387,5 +393,114 @@ ssr = db_bd %>%
 
 db_bd = db_bd %>%
   rows_update(ssr, by = "result_id", in_place=TRUE, unmatched = "ignore")
+
+```
+
+# correct qpcr_volumes
+```{r}
+volumes_update = db_bd %>%
+  filter(total_qpcr_volume_uL == 200) %>%
+  mutate(total_qpcr_volume_uL = 25)
+
+db_bd = db_bd %>%
+  rows_update(volumes_update, by = "result_id", in_place=TRUE, unmatched = "ignore")
+
+```
+
+# duplicates in kira miller pep
+```{r}
+bd_sample = db_bd %>%
+  left_join(db_sample, by = "sample_id") %>%
+  inner_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(visit_lab == "km_pep") %>%
+  select(sample_id,
+         sample_name,
+         qpcr_plate_name,
+         target_quant,
+         qpcr_dilution_factor,
+         target_quant_per_swab,
+         capture_id) %>%
+  collect()
+
+peace = get_dupes(bd_sample, sample_id)
+
+hope = db_bd %>%
+  group_by(qpcr_lab,
+           qpcr_dilution_factor,
+           template_dna_volume_uL,
+           extract_volume_uL,
+           standard_target_type) %>%
+  count() %>%
+  collect()
+
+bd_update_df = db_bd %>%
+  filter(qpcr_lab == "snarl",
+         standard_target_type == "ITS1",
+         qpcr_dilution_factor == 1) %>%
+  mutate(qpcr_dilution_factor = 10)
+
+db_bd = db_bd %>%
+  rows_update(bd_update_df, by = "result_id", in_place=TRUE, unmatched = "ignore")
+
+bd_drop_dupes = db_bd %>%
+  filter(qpcr_plate_name %in% c("KM_262", "KM_2"),
+         sample_id %in% peace$sample_id)
+
+db_bd = db_bd %>%
+  rows_delete(bd_drop_dupes, by = "sample_id", in_place = TRUE, unmatched = "ignore")
+
+```
+
+```{r}
+
+update_detected = db_bd %>%
+  mutate(detected = case_match(target_quant,
+                               0 ~ FALSE,
+                               NA ~ NA,
+                               .default = TRUE))
+
+db_bd = db_bd %>%
+  rows_update(update_detected, by = "result_id", in_place=TRUE, unmatched = "ignore")
+
+subset = db_bd %>%
+  filter(is.na(target_quant) & !is.na(detected)) %>%
+  select(sample_name_bd,
+         cycle_quant,
+         target_quant,
+         detected,
+         qpcr_plate_name) %>%
+  collect()
+
+subset = db_bd %>%
+  filter(target_quant == 0 & (detected | is.na(detected))) %>%
+  select(sample_name_bd,
+         cycle_quant,
+         target_quant,
+         detected,
+         qpcr_plate_name) %>%
+  collect()
+
+subset = db_bd %>%
+  filter(target_quant == 0 & cycle_quant > 0) %>%
+  select(sample_name_bd,
+         cycle_quant,
+         target_quant,
+         detected,
+         qpcr_plate_name) %>%
+  collect()
+
+subset = db_bd %>%
+  filter(target_quant > 0 & (!detected | is.na(detected))) %>%
+  select(sample_name_bd,
+         cycle_quant,
+         target_quant,
+         detected,
+         qpcr_plate_name) %>%
+  collect()
 
 ```
