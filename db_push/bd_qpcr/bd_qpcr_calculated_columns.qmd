@@ -52,7 +52,7 @@ bd_calc = db_bd %>%
                                                     "ITS1" ~ 1,
                                                     "zoospore" ~ 60,
                                                     .default = NA),
-         its1_copies_per_swab = target_quant_per_swab * its1_copies_per_standard_unit)
+         bd_its1_copies_per_swab = target_quant_per_swab * its1_copies_per_standard_unit)
 
 db_bd = db_bd %>%
   rows_update(bd_calc, by = "result_id", in_place = TRUE, unmatched = "ignore")
