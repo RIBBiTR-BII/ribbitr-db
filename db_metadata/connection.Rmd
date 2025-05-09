@@ -1,0 +1,44 @@
+---
+title: "connection"
+output: html_document
+---
+
+```{r}
+install.packages("usethis")
+
+# open your local .Reniron file
+usethis::edit_r_environ()
+
+# install and load "librarian" R package
+install.packages("librarian")
+
+# update your ribbitrrr package to the latest version
+librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+```
+
+# test our connection
+```{r}
+# minimal packages for establishing RIBBiTR DB connection
+librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, RIBBiTR-BII/ribbitrrr)
+
+# establish database connection
+dbcon <- hopToDB("ribbitr")
+```
+
+# table pointer
+```{r}
+# lazy table and collect
+db_edna <- tbl(dbcon, Id("survey_data", "edna")) %>%
+  select(edna_id,
+         collection_type) %>%
+  collect()
+
+db_edna_active <- tbl(dbcon, Id("survey_data", "edna")) %>%
+  filter(collection_type == "active")
+
+edna_data = db_edna_active %>%
+  select(edna_id,
+         collection_type) %>%
+  collect()
+
+```
