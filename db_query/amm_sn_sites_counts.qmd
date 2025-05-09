@@ -87,6 +87,7 @@ data_samps = db_sample %>%
          site,
          site_latitude,
          site_longitude,
+         site_elevation_m,
          site_name_alt,
          geographic_area,
          project) %>%
@@ -120,6 +121,7 @@ data_sites = data_samps %>%
            population,
            site_latitude,
            site_longitude,
+           site_elevation_m,
            geographic_area) %>%
   summarise(years = paste(sort(unique(year)), collapse = ","),
             amp_samples = sum(!is.na(amp)),
