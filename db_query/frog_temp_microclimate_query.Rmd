@@ -1,0 +1,139 @@
+---
+title: "frog_temp_microclimate_query"
+output: html_document
+---
+
+# pull data for microclimate & frog body temp where we have both
+
+Considerations
+ - Loggers record at regular intevals generally not aligned with capture times. Fuzzy matching needed.
+ - Not all captures have an associated time_of_capture, next best sit start_time and end_time of survey (usually ~1h range)
+ - How do we want to 
+
+```{r}
+
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, here, RPostgres, DBI, RIBBiTR-BII/ribbitrrr)
+
+# connect to database
+dbcon = hopToDB("ribbitr")
+
+```
+
+# table pointers
+```{r}
+# survey data
+db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_env = tbl(dbcon, Id("survey_data", "environmental"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
+# microclimate data
+db_ts_temp = tbl(dbcon, Id("microclimate_data", "ts_temperature"))
+db_sensor = tbl(dbcon, Id("microclimate_data", "sensor"))
+db_logger = tbl(dbcon, Id("microclimate_data", "logger"))
+```
+
+# joining data
+```{r}
+logger_site_date = db_ts_temp %>%
+  left_join(db_sensor, by = "sensor_id") %>%
+  left_join(db_logger, by = "logger_id") %>%
+  group_by(site_id) %>%
+  summarise(ts_start_date = date(min(timestamp_utc)),
+            .groups = "drop")
+
+# survey data
+data_capture = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  inner_join(logger_site_date, by = "site_id") %>%
+  filter(date >= ts_start_date,
+         !is.na(body_temp_c))
+
+visit_ids = data_capture %>%
+  select(visit_id) %>%
+  distinct() %>%
+  pull(visit_id)
+
+# environmental surveys
+data_env = db_env %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  filter(visit_id %in% visit_ids,
+         !is.na(air_temp_c) | !is.na(water_temp_c)) %>%
+  group_by(visit_id) %>%
+  slice_min(order_by = tibble("air_time", "water_time"), n = 1) %>%
+  ungroup() %>%
+  select(visit_id,
+         air_temp_c,
+         air_time,
+         water_temp_c,
+         water_time)
+
+# bd qpcr results
+data_bd = db_bd %>%
+  inner_join(db_sample, by = "sample_id") %>%
+  group_by(sample_id, sample_name_bd, capture_id) %>%
+  summarise(bd_qpcr_replicates = n(),
+            bd_detected = any(detected, na.rm = TRUE),
+            bd_mean_its1_copies_per_swab = mean(bd_its1_copies_per_swab, na.rm = TRUE),
+            .groups = "drop")
+
+data_frog = data_capture %>%
+  left_join(data_env, by = "visit_id") %>%
+  left_join(data_bd, by = "capture_id") %>%
+  rename(survey_start_time = start_time,
+         survey_end_time = end_time) %>%
+  select(capture_id,
+         taxon_capture,
+         svl_mm,
+         body_mass_g,
+         sex,
+         sample_name_bd,
+         bd_qpcr_replicates,
+         bd_detected,
+         bd_mean_its1_copies_per_swab,
+         body_temp_c,
+         substrate_temp_c,
+         microhabitat_type,
+         microhabitat_wet,
+         microhabitat_detailed,
+         time_of_capture,
+         air_temp_c,
+         air_time,
+         water_temp_c,
+         water_time,
+         survey_start_time,
+         survey_end_time,
+         date,
+         site_id,
+         site,
+         region,
+         country,
+         time_zone) %>%
+  collect()
+
+```
+
+# explore data
+```{r}
+frog_summary = data_frog %>%
+  mutate(year = year(date)) %>%
+  group_by(country, region, year) %>%
+  count()
+
+```
+
+# demo of microclimate pairing script
+```{r}
+
+```
