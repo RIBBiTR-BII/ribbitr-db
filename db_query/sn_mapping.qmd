@@ -1,0 +1,57 @@
+---
+title: "sn_mapping"
+format: html
+---
+
+```{r}
+
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr, sf)
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+# connect to database
+sncon = hopToDB("amphibians")
+dbcon = hopToDB("ribbitr")
+
+```
+# pull_data
+```{r}
+mdc = tbl(dbcon, "all_columns") %>%
+  collect()
+
+# observation_tables
+db_aural = tbl(dbcon, Id("survey_data", "aural"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_ves = tbl(dbcon, Id("survey_data", "ves"))
+db_cmr = tbl(dbcon, Id("survey_data", "cmr"))
+
+# lookup tables
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+
+# taxa table
+db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
+
+sn_surveyor = tbl(sncon, "surveyor")
+
+```
+
+```{r}
+
+data_surveyor = sn_surveyor %>%
+  select(name) %>%
+  collect()
+
+write_csv(data_surveyor, here("staging", paste0("sn_surveyor_names_", today(), ".csv")))
+
+library(dplyr)
+
+data_visit = db_visit %>%
+  select(observers_survey) %>%
+  collect()
+
+peace = data_survey %>%
+  mutate(surveyors = purrr::map_chr(stringr::str_split(observers_survey, "\\s*,\\s*"), ~ stringr::str_c(sort(.x), collapse = ", ")))
+```
