@@ -504,3 +504,44 @@ subset = db_bd %>%
   collect()
 
 ```
+
+# SERDP dilution factor to 10
+```{r}
+update_dilution = db_bd %>%
+  filter(qpcr_lab == "rz_lab",
+         qpcr_date <= "2022-01-01")
+  group_by(qpcr_lab,
+           qpcr_plate_name,
+           qpcr_date) %>%
+  count() %>%
+  collect() %>%
+  arrange(qpcr_lab,
+          qpcr_date)
+  
+mitest = db_bd %>%
+  filter(qpcr_plate_name %in% c("SERDP_147_102419", "RIBBiTR_PanamaSwabs2022_10022023_Plate1")) %>%
+  collect()
+
+otrotest = db_bd %>%
+  group_by(qpcr_lab, qpcr_dilution_factor, master_mix) %>%
+  count() %>%
+  collect()
+
+tercerotest = db_bd %>%
+  filter(qpcr_lab == "rz_lab",
+         qpcr_dilution_factor == 10) %>%
+  collect()
+
+cuartotest = db_bd %>%
+  filter(qpcr_lab %in% c("rz_lab", "ple")) %>%
+  group_by(qpcr_dilution_factor,
+           qpcr_plate_name,
+           qpcr_date) %>%
+  summarise(count = n()) %>%
+  collect() %>%
+  arrange(qpcr_dilution_factor,
+          qpcr_date)
+
+write.csv(cuartotest, here("staging", "rz_ple_qpcr_plates_dilution.csv"))
+
+```
