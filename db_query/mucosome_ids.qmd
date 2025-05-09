@@ -56,10 +56,10 @@ data_mucosome = db_sample %>%
   collect() %>%
   arrange(country, mucosome_id)
 
-# write_csv(data_mucosome, here("staging", paste0("mucosome_ids_", today(), ".csv")))
+write_csv(data_mucosome, here("staging", paste0("mucosome_ids_", today(), ".csv")))
 ```
 
-# panama sites
+# mucosome sites
 ```{r}
 mu_sites = data_mucosome %>%
   select(site, region, country) %>%
@@ -76,7 +76,7 @@ mu_sites = data_mucosome %>%
 write_csv(mu_sites, here("staging", paste0("mucosome_sites_", today(), ".csv")))
 ```
 
-# panama qpcr
+# associates qpcr
 ```{r}
 mu_qpcr = data_mucosome %>%
   left_join(db_bd %>%

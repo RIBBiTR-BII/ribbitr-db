@@ -22,7 +22,8 @@ mdc = tbl(dbcon, Id("public", "all_columns")) %>%
 ## Point to local data directory
 ddir = Sys.getenv("data_dir")  # data directory
 # Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
-wddir = here(ddir, "fulcrum", 'panama', '2024-11-18', "panama_field_3_0") # working data directory
+# wddir = here(ddir, "fulcrum", 'panama', '2024-11-18', "panama_field_3_0") # working data directory
+wddir = here(ddir, "fulcrum", 'panama', '2025-05-09', "panama_field_3_0") # working data directory
 
 ```
 
@@ -77,7 +78,7 @@ db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
 - name related tables similarly for natural grouping
 
 ```{r}
-# list.files(path = here(wddir))
+list.files(path = here(wddir))
 
 # general visit table
 raw_visit_info <- read_csv(here(wddir, "panama_field_3_0.csv"))
@@ -94,6 +95,8 @@ raw_cmr <- read_csv(here(wddir, "panama_field_3_0_individual_cmr.csv"))
 
 # edna
 raw_edna <- read_csv(here(wddir, "panama_field_3_0_edna_samples.csv"))
+
+raw_hobo = read_csv(here(wddir, "panama_field_3_0_hobos_data.csv"))
 
 
 # # non RIBBiTR
@@ -167,6 +170,7 @@ clean_visit_info = raw_visit_info %>%
          site = str_to_lower(site),
          site = str_replace_all(site, "-", "_"),
          site = str_replace_all(site, " ", "_"),
+         site = ifelse(site == "río_jordanal", "jordinal", site),
          region = str_to_lower(region),
          region = str_replace_all(region, "-", "_"),
          region = str_replace_all(region, " ", "_"),
@@ -606,11 +610,11 @@ compare_env_survey = compare_df_cols(db_survey %>%
                                   collect(), subset_env_survey)
 
 tray = compare_for_staging(db_survey %>% collect(), subset_env_survey, "survey_id", return_all = TRUE, report = "env_survey")
-peace = compare_updates(tray)
+
 upsert_env_survey = bind_rows(tray$insert,
                              tray$update)
 
-# aural
+# env
 subset_env = gelled_env%>%
   select(any_of(colnames(db_env))) %>%
   distinct() %>%
@@ -697,7 +701,7 @@ if (nrow(unified_edna %>% filter(is.na(site_id))) > 0) {
 gelled_edna = unified_edna %>%
   mutate(filter_date = date) %>%
   group_by_at(tbl_nkey("survey", mdc)) %>%
-  mutate(comments_survey = str_c(comments_survey, collapse = ", "),
+  mutate(comments_survey = str_c(unique(comments_survey), collapse = ", "),
          start_timestamp_utc = start_timestamp_utc(date, start_time, local_tz),
          number_observers = count_observers(paste(observers_survey, collapse = ",")),
          uuid_name = paste0(visit_id, start_time, transect, detection_type),
@@ -1236,6 +1240,7 @@ compare_capture = compare_df_cols(db_capture %>%
 
 
 tray = compare_for_staging(db_capture %>% collect(), subset_capture, tbl_pkey('capture', mdc), return_all = TRUE, report = "capture")
+peace = compare_updates(tray)
 upsert_capture = bind_rows(tray$insert,
                            tray$update)
 
