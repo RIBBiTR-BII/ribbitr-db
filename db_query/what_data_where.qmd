@@ -16,7 +16,71 @@ mdt <- tbl(dbcon, Id("public", "all_tables")) %>%
   collect()
 
 # load column metadata
-mdc <- tbl(dbcon, Id("public", "metadata_columns")) %>%
+mdc <- tbl(dbcon, Id("public", "all_columns")) %>%
   filter(table_schema == "survey_data") %>%
   collect()
+```
+
+# pointers
+```{r}
+# pointers for all tables of interest
+db_bdqpcr = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+```
+
+# join data
+```{r}
+# inner join capture and bd samples
+# left join supporting tables
+data_bd_capture = db_bdqpcr %>%
+  inner_join(db_sample, by = "sample_id") %>%
+  inner_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id")
+
+# see what columns are available
+colnames(data_bd_capture)
+```
+
+# summarise
+```{r}
+report = data_bd_capture %>%
+  count() %>%
+  collect()
+
+report_region = data_bd_capture %>%
+  group_by(country, region) %>%
+  count() %>%
+  collect()
+
+report_region = data_bd_capture %>%
+  group_by(life_stage) %>%
+  count() %>%
+  collect() %>%
+  arrange(desc(n))
+
+report_plates = data_bd_capture %>%
+  group_by(year(date), qpcr_plate_name) %>%
+  summarise(count = n(),
+            sample_ex = min(sample_name_bd)) %>%
+  collect()
+
+```
+
+# pull
+```{r}
+sn_data = data_bd_capture %>%
+  filter(region == "california",
+         year(date) >= 2020) %>%
+  collect()
+
 ```
