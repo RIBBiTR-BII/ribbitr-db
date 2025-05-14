@@ -1145,6 +1145,7 @@ gelled_capture = unified_capture %>%
                             UUIDfromName("f7b367fb-bbb6-40a8-85db-07d2760e7b95", uuid_name),
                             survey_id)) %>%
   ungroup() %>%
+  timestamp_of_capture_utc(tz = local_tz) %>%
   arrange(date, site, time_of_capture) %>%
   select(-temp_survey_id) %>%
   drop_na(visit_id)

@@ -776,6 +776,7 @@ group_by(visit_id,
          observers_survey = ifelse(observers_survey == "NA", NA_character_, observers_survey),
          number_observers = ifelse(is.na(observers_survey), NA, number_observers)) %>%
   ungroup() %>%
+  timestamp_of_capture_utc(tz = local_tz) %>%
   filter(!is.na(site))
 
 peace = get_dupes(gelled_capture, capture_id)

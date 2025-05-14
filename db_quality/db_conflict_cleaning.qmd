@@ -1119,3 +1119,38 @@ ggplot(svl_model, aes(svl_mm, body_mass_g)) +
 m1 = lm(svl_mm ~ body_mass_g + 0, svl_model)
 summary(m1)
 ```
+
+# timestamp of capture
+```{r}
+data_capture = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  select(capture_id,
+         time_of_capture,
+         start_timestamp_utc,
+         end_timestamp_utc,
+         date,
+         time_zone) %>%
+  collect()
+
+timestamp_capture = data_capture %>%
+  mutate(timestamp_of_capture_utc = start_timestamp_utc(date, time_of_capture, time_zone),
+         timestamp_of_capture_utc = as_datetime(ifelse(timestamp_of_capture_utc < start_timestamp_utc,
+                                           timestamp_of_capture_utc + hours(24),
+                                           timestamp_of_capture_utc))) %>%
+  filter(!is.na(timestamp_of_capture_utc)) %>%
+  select(capture_id, timestamp_of_capture_utc)
+
+update_capture = db_capture %>%
+  select(-timestamp_of_capture_utc) %>%
+  filter(!is.na(time_of_capture)) %>%
+  collect() %>%
+  right_join(timestamp_capture, by = "capture_id")
+
+temp_capture = stage_to_temp(dbcon, db_capture, update_capture)
+pointer = tbl(dbcon, temp_capture)
+rows_update(db_capture, pointer, by = "capture_id", in_place=TRUE, unmatched = "ignore")
+
+```
