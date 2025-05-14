@@ -24,39 +24,35 @@ db_region = tbl(dbcon, Id("survey_data", "region"))
 db_country = tbl(dbcon, Id("survey_data", "country"))
 ```
 
+# data
+```{r}
+# import travel times excell 
+ddir = Sys.getenv("data_dir")  # data directory
+# Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
+wddir = here(ddir, "sierra") # working data directory
+
+sierra_travel_times = rio::import(here(wddir, "SN_AMP_sampleTransportCovariates.xlsx")) %>%
+  mutate(site = as.character(site))
+
+```
+
 # query
 ```{r}
 pop = tibble(
   site = c("72808",
            "72336",
-           "72996",
-           "70459",
-           "54188",
            "50837",
            "50895",
            "50899",
-           "50731",
-           "52127",
-           "70397",
-           "50783",
-           "70641",
            "10196",
            "10198"),
-  population = c("unicorn",
-                 "unicorn",
-                 "conness",
-                 "kuna",
-                 "trapdoor",
-                 "independence_crk",
-                 "independence_crk",
-                 "independence_crk",
-                 "sleet",
-                 "ameletus",
-                 "east_evelyn",
-                 "mulkey",
-                 "dog",
-                 "rambaud",
-                 "rambaud")
+  population = c("72808",
+                 "72808",
+                 "50899",
+                 "50899",
+                 "50899",
+                 "10196",
+                 "10196")
 )
 
 data_samps = db_sample %>%
@@ -88,12 +84,16 @@ data_samps = db_sample %>%
          site_latitude,
          site_longitude,
          site_elevation_m,
-         site_name_alt,
          geographic_area,
          project) %>%
   collect() %>%
   arrange(date,
-          bd)
+          bd) %>%
+  left_join(sierra_travel_times %>%
+              select(site,
+                     est_transport_time), by = "site") %>%
+  left_join(pop, by = "site") %>%
+  mutate(population = ifelse(is.na(population), site, population))
 
 write_csv(data_samps, here("staging", paste0("amm_sn_captured_individuals_", today(), ".csv")))
 
@@ -115,14 +115,16 @@ data_species = data_samps %>%
 
 data_sites = data_samps %>%
   mutate(year = year(date)) %>%
-  left_join(pop, by = "site") %>%
+  group_by(population) %>%
+  mutate(est_transport_time = first(na.omit(est_transport_time))) %>%
+  ungroup() %>%
   group_by(site,
-           site_name_alt,
            population,
            site_latitude,
            site_longitude,
            site_elevation_m,
-           geographic_area) %>%
+           geographic_area,
+           est_transport_time) %>%
   summarise(years = paste(sort(unique(year)), collapse = ","),
             amp_samples = sum(!is.na(amp)),
             microbiome_samples = sum(!is.na(microbiome)),
