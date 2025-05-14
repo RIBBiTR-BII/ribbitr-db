@@ -169,7 +169,7 @@ water_temp_st = water_temp %>%
   mutate(sensor_time = timestamp_utc)
 ```
 
-# rolling joins (data.table pakage) for aligning frog captures with water temperature
+# rolling joins (data.table package) for aligning frog captures with water temperature
 ```{r}
 # NEAREST in time
 # align with site & nearest temp measurements in time
