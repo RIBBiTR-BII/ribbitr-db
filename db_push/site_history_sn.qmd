@@ -37,12 +37,16 @@ data_relocate = sn_relocate_frog %>%
   collect()
 
 release_event = data_relocate %>%
-  group_by(release_siteid1, release_date) %>%
-  summarize(treatment_size = n(),
+  pivot_longer(cols = c("release_siteid1", "release_siteid2"),
+               names_to = "site_type",
+               values_to = "release_siteid") %>%
+  filter(!is.na(release_siteid)) %>%
+  group_by(release_siteid, release_date) %>%
+  summarize(treatment_size = NA,
             treatment_comment = first(treatment_comment),
             type = first(type)) %>%
   ungroup() %>%
-  rename(site = release_siteid1,
+  rename(site = release_siteid,
          treatment_date = release_date) %>%
   mutate(treatment_type = paste0(type, "_release"),
          site = as.character(site),
@@ -50,8 +54,10 @@ release_event = data_relocate %>%
   filter(!is.na(site))
 
 capture_event = data_relocate %>%
+  mutate(collect_siteid = str_split(collect_siteid, ",")) %>%
+  unnest(collect_siteid) %>%
   group_by(collect_siteid, collect_date) %>%
-  summarize(treatment_count_individuals = n(),
+  summarize(treatment_count_individuals = NA,
             treatment_comment = first(treatment_comment),
             type = first(type),
             treatment_life_stage = paste0(unique(collect_stage), collapse = ", ")) %>%
