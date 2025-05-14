@@ -14,7 +14,7 @@ sncon = hopToDB("amphibians")
 dbcon = hopToDB("ribbitr")
 
 ```
-# pull_data
+# pointers
 ```{r}
 mdc = tbl(dbcon, "all_columns") %>%
   collect()
@@ -26,32 +26,200 @@ db_ves = tbl(dbcon, Id("survey_data", "ves"))
 db_cmr = tbl(dbcon, Id("survey_data", "cmr"))
 
 # lookup tables
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
 db_survey = tbl(dbcon, Id("survey_data", "survey"))
 db_visit = tbl(dbcon, Id("survey_data", "visit"))
 db_site = tbl(dbcon, Id("survey_data", "site"))
 db_region = tbl(dbcon, Id("survey_data", "region"))
 
-# taxa table
-db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
-
 sn_surveyor = tbl(sncon, "surveyor")
+sn_relocate = tbl(sncon, "relocate")
 
 ```
 
+# cmr between sites
 ```{r}
-
-data_surveyor = sn_surveyor %>%
-  select(name) %>%
+cmr_exchange = db_capture %>%
+  inner_join(db_cmr, by = "cmr_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  filter(region == "california") %>%
+  group_by(cmr_id, local_cmr_id) %>%
+  summarise(n = n_distinct(site),
+            sites = str_flatten(distinct(site), collapse = ", ")) %>%
+  filter(n > 1) %>%
+  ungroup() %>%
   collect()
 
-write_csv(data_surveyor, here("staging", paste0("sn_surveyor_names_", today(), ".csv")))
-
-library(dplyr)
-
-data_visit = db_visit %>%
-  select(observers_survey) %>%
+cmr_exchange_points = db_capture %>%
+  inner_join(db_cmr, by = "cmr_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  filter(cmr_id %in% cmr_exchange$cmr_id) %>%
+  group_by(site, site_latitude, site_longitude) %>%
+  summarise(count_exchanges = n()) %>%
   collect()
 
-peace = data_survey %>%
-  mutate(surveyors = purrr::map_chr(stringr::str_split(observers_survey, "\\s*,\\s*"), ~ stringr::str_c(sort(.x), collapse = ", ")))
+
+
+cmr_exchange_pairs = cmr_exchange %>%
+  mutate(sites = str_split(sites, ", ")) %>%
+  unnest(sites) %>%
+  arrange(sites) %>%
+  group_by(cmr_id, local_cmr_id) %>%
+  reframe(sites = combn(sites, 2, simplify = FALSE)) %>%
+  mutate(site_1 = map_chr(sites, ~ .x[1]),
+         site_2 = map_chr(sites, ~ .x[2])) %>%
+  group_by(site_1, site_2) %>%
+  summarise(count_exchanges = n()) %>%
+  left_join(db_site %>%
+              select(site,
+                     site_latitude,
+                     site_longitude) %>%
+              collect(),
+            by = c("site_1" = "site")) %>%
+  rename(site_longitude_1 = site_longitude,
+         site_latitude_1 = site_latitude) %>%
+  left_join(db_site %>%
+              select(site,
+                     site_latitude,
+                     site_longitude) %>%
+              collect(),
+            by = c("site_2" = "site")) %>%
+  rename(site_longitude_2 = site_longitude,
+         site_latitude_2 = site_latitude)
+
+
+```
+# translocations between sites
+```{r}
+data_relocate = sn_relocate %>%
+  collect()
+
+relocate_events = data_relocate %>%
+  pivot_longer(cols = c("release_siteid1", "release_siteid2"),
+               names_to = "site_type",
+               values_to = "release_siteid") %>%
+  filter(!is.na(release_siteid)) %>%
+  select(-site_type) %>%
+  mutate(collect_siteid = str_split(collect_siteid, ","),
+         release_siteid = as.character(release_siteid)) %>%
+  unnest(collect_siteid)
+
+relocate_points = relocate_events %>%
+  pivot_longer(cols = c("collect_siteid", "release_siteid"),
+               names_to = "event_type",
+               values_to = "site") %>%
+  mutate(event_type = case_match(event_type,
+                                 "collect_siteid" ~ "collect",
+                                 "release_siteid" ~ "release")) %>%
+  group_by(site, event_type) %>%
+  count() %>%
+  left_join(db_site %>%
+              select(site,
+                     site_latitude,
+                     site_longitude) %>%
+              collect(),
+            by = "site")
+
+relocate_lines = relocate_events %>%
+  group_by(collect_siteid, release_siteid) %>%
+  count() %>%
+    left_join(db_site %>%
+              select(site,
+                     site_latitude,
+                     site_longitude) %>%
+              collect(),
+            by = c("collect_siteid" = "site")) %>%
+  rename(site_longitude_1 = site_longitude,
+         site_latitude_1 = site_latitude) %>%
+  left_join(db_site %>%
+              select(site,
+                     site_latitude,
+                     site_longitude) %>%
+              collect(),
+            by = c("release_siteid" = "site")) %>%
+  rename(site_longitude_2 = site_longitude,
+         site_latitude_2 = site_latitude)
+  
+
+# Convert the point data to an sf object
+points_sfx = relocate_points %>%
+  st_as_sf(coords = c("site_longitude", "site_latitude"), crs = 4326)
+
+# Convert start and end points to sf POINT objects
+start_points <- st_as_sf(relocate_lines, coords = c("site_longitude_1", "site_latitude_1"), crs = 4326)
+end_points <- st_as_sf(relocate_lines, coords = c("site_longitude_2", "site_latitude_2"), crs = 4326)
+
+# Create LINESTRING geometries by combining start and end points
+lines = map2(start_points$geometry, end_points$geometry, ~ st_linestring(rbind(st_coordinates(.x), st_coordinates(.y))))
+
+# Create an sf object with the linestrings and include the attribute variable
+lines_sfx <- st_sf(
+  count_exchanges = relocate_lines$n,
+  geometry = st_sfc(lines),
+  crs = 4326
+)
+
+# Write to shapefile
+st_write(points_sfx, here("staging", "sn_mapping", "trx_point.shp"), delete_layer = TRUE)
+st_write(lines_sfx, here("staging", "sn_mapping", "trx_line.shp"), delete_layer = TRUE)
+  
+```
+
+# Capture counts per site
+```{r}
+ccs = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  filter(region == "california") %>%
+  select(taxon_capture, life_stage, date, site_id, site, site_latitude, site_longitude) %>%
+  collect() %>%
+  mutate(year = year(date))
+
+
+ccs_sum = ccs %>%
+  group_by(site, site_latitude, site_longitude) %>%
+  summarise(count = n(),
+            adult_count = sum(life_stage == "adult"),
+            subadult_count = sum(life_stage == "subadult"),
+            tadpole_count = sum(life_stage == "tadpole"),
+            years = n_distinct(year)) %>%
+  ungroup() %>%
+  filter(!is.na(site_longitude))
+
+write_csv(ccs_sum, here("staging", "sn_mapping", "capture_counts.csv"))
+```
+
+# bd swab counts per site
+```{r}
+bdcs = db_sample %>%
+  left_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  filter(region == "california",
+         sample_type == "bd") %>%
+  select(taxon_capture, life_stage, date, site_id, site, site_latitude, site_longitude) %>%
+  collect() %>%
+  mutate(year = year(date))
+
+bdcs_sum = bdcs %>%
+  group_by(site, site_latitude, site_longitude) %>%
+  summarise(count = n(),
+            adult_count = sum(life_stage == "adult"),
+            subadult_count = sum(life_stage == "subadult"),
+            tadpole_count = sum(life_stage == "tadpole"),
+            years = n_distinct(year)) %>%
+  ungroup() %>%
+  filter(!is.na(site_longitude))
+
+write_csv(bdcs_sum, here("staging", "sn_mapping", "bd_sample_counts.csv"))
+
 ```
