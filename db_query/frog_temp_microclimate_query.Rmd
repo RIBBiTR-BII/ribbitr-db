@@ -13,7 +13,7 @@ Considerations
 ```{r}
 
 # librarian downloads, if not already downloaded, and reads in needed packages
-librarian::shelf(tidyverse, dbplyr, here, RPostgres, DBI, RIBBiTR-BII/ribbitrrr)
+librarian::shelf(tidyverse, dbplyr, here, RPostgres, DBI, RIBBiTR-BII/ribbitrrr, data.table)
 
 # connect to database
 dbcon = hopToDB("ribbitr")
@@ -41,14 +41,15 @@ db_logger = tbl(dbcon, Id("microclimate_data", "logger"))
 
 # joining data
 ```{r}
+# microclimate data
 logger_site_date = db_ts_temp %>%
   left_join(db_sensor, by = "sensor_id") %>%
   left_join(db_logger, by = "logger_id") %>%
   group_by(site_id) %>%
-  summarise(ts_start_date = date(min(timestamp_utc)),
+  summarise(ts_start_date = date(min(timestamp_utc, na.rm = TRUE)),
             .groups = "drop")
 
-# survey data
+# survey data, filtered to captures at sites with hobo loggers, placed before capture
 data_capture = db_capture %>%
   left_join(db_survey, by = "survey_id") %>%
   left_join(db_visit, by = "visit_id") %>%
@@ -59,12 +60,13 @@ data_capture = db_capture %>%
   filter(date >= ts_start_date,
          !is.na(body_temp_c))
 
+# list of unique visit ids
 visit_ids = data_capture %>%
   select(visit_id) %>%
   distinct() %>%
   pull(visit_id)
 
-# environmental surveys
+# environmental surveys, filtered to visit ids
 data_env = db_env %>%
   left_join(db_survey, by = "survey_id") %>%
   left_join(db_visit, by = "visit_id") %>%
@@ -79,7 +81,7 @@ data_env = db_env %>%
          water_temp_c,
          water_time)
 
-# bd qpcr results
+# bd qpcr results, summarised across replicates
 data_bd = db_bd %>%
   inner_join(db_sample, by = "sample_id") %>%
   group_by(sample_id, sample_name_bd, capture_id) %>%
@@ -88,6 +90,7 @@ data_bd = db_bd %>%
             bd_mean_its1_copies_per_swab = mean(bd_its1_copies_per_swab, na.rm = TRUE),
             .groups = "drop")
 
+# bring data queries together, select vars of interest, collect data
 data_frog = data_capture %>%
   left_join(data_env, by = "visit_id") %>%
   left_join(data_bd, by = "capture_id") %>%
@@ -108,12 +111,15 @@ data_frog = data_capture %>%
          microhabitat_wet,
          microhabitat_detailed,
          time_of_capture,
+         timestamp_of_capture_utc,
          air_temp_c,
          air_time,
          water_temp_c,
          water_time,
          survey_start_time,
+         start_timestamp_utc,
          survey_end_time,
+         end_timestamp_utc,
          date,
          site_id,
          site,
@@ -122,9 +128,12 @@ data_frog = data_capture %>%
          time_zone) %>%
   collect()
 
+# export
+write_csv(data_frog, here("staging", paste0("frog_temp_", today(), ".csv")))
+
 ```
 
-# explore data
+# summarize data
 ```{r}
 frog_summary = data_frog %>%
   mutate(year = year(date)) %>%
@@ -133,7 +142,56 @@ frog_summary = data_frog %>%
 
 ```
 
-# demo of microclimate pairing script
+# Example aligning frog temps with microclimate data
+
+## collect water temp data
 ```{r}
 
+# pull water temps (big data pulll)
+water_temperature = db_ts_temp %>%
+  left_join(db_sensor, by = "sensor_id") %>%
+  left_join(db_logger, by = "logger_id") %>%
+  inner_join(logger_site_date, by = "site_id") %>%
+  filter(timestamp_utc >= ts_start_date,
+         microhabitat == "water") %>%  # filter for water temp sensors only, multiple depths per site may be included
+  pivot_wider(id_cols = c("site_id", "timestamp_utc"),
+              names_from = c("microhabitat", "height_cm"),
+              values_from = temperature_c_01_raw) %>%
+  collect() %>%
+  arrange(site_id,
+          timestamp_utc)
+
+# convert data_temperature to data.table
+water_temp = as.data.table(water_temperature)
+
+# include "sensor_time" column for nearest joins
+water_temp_st = water_temp %>%
+  mutate(sensor_time = timestamp_utc)
+```
+
+# rolling joins (data.table pakage) for aligning frog captures with water temperature
+```{r}
+# NEAREST in time
+# align with site & nearest temp measurements in time
+frog_temp_nearest = water_temp_st[data_frog, on = .(site_id, timestamp_utc = timestamp_of_capture_utc), roll = "nearest"] %>%
+  rename(timestamp_of_cature_utc = timestamp_utc) %>%
+  select(capture_id,
+         any_of(colnames(db_capture)),
+         everything())
+
+
+# 15-day MEDIAN
+# align with site & 15-day rolling median temp measurements in time
+data_frog_dt = as.data.table(data_frog %>%
+                               select(capture_id,
+                                      site_id,
+                                      timestamp_of_capture_utc))
+
+frog_temp_15day_median = data_frog_dt[water_temp, on = .(site_id, timestamp_of_capture_utc = timestamp_utc), roll = days(-15), nomatch = NULL] %>%
+  group_by(capture_id) %>%
+  summarise(across(starts_with("water_"), ~ max(.x, na.rm = TRUE), .names = "{.col}_15d_med")) %>%
+  right_join(data_frog, by = "capture_id") %>%
+  select(capture_id,
+         any_of(colnames(db_capture)),
+         everything())
 ```
