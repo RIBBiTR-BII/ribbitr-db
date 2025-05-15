@@ -60,7 +60,7 @@ cmr_exchange_points = db_capture %>%
   left_join(db_site, by = "site_id") %>%
   filter(cmr_id %in% cmr_exchange$cmr_id) %>%
   group_by(site, site_latitude, site_longitude) %>%
-  summarise(count_exchanges = n()) %>%
+  summarise(n = n()) %>%
   collect()
 
 
@@ -74,7 +74,7 @@ cmr_exchange_pairs = cmr_exchange %>%
   mutate(site_1 = map_chr(sites, ~ .x[1]),
          site_2 = map_chr(sites, ~ .x[2])) %>%
   group_by(site_1, site_2) %>%
-  summarise(count_exchanges = n()) %>%
+  summarise(n = n()) %>%
   left_join(db_site %>%
               select(site,
                      site_latitude,
@@ -92,6 +92,28 @@ cmr_exchange_pairs = cmr_exchange %>%
   rename(site_longitude_2 = site_longitude,
          site_latitude_2 = site_latitude)
 
+
+# Convert the point data to an sf object
+points_sf = cmr_exchange_points %>%
+  st_as_sf(coords = c("site_longitude", "site_latitude"), crs = 4326)
+
+# Convert start and end points to sf POINT objects
+start_points <- st_as_sf(cmr_exchange_pairs, coords = c("site_longitude_1", "site_latitude_1"), crs = 4326)
+end_points <- st_as_sf(cmr_exchange_pairs, coords = c("site_longitude_2", "site_latitude_2"), crs = 4326)
+
+# Create LINESTRING geometries by combining start and end points
+lines = map2(start_points$geometry, end_points$geometry, ~ st_linestring(rbind(st_coordinates(.x), st_coordinates(.y))))
+
+# Create an sf object with the linestrings and include the attribute variable
+lines_sf <- st_sf(
+  count_exchanges = cmr_exchange_pairs$n,
+  geometry = st_sfc(lines),
+  crs = 4326
+)
+
+# Write to shapefile
+# st_write(points_sf, here("staging", "sn_mapping", "cmr_point.shp"), delete_layer = TRUE)
+# st_write(lines_sf, here("staging", "sn_mapping", "cmr_line.shp"), delete_layer = TRUE)
 
 ```
 # translocations between sites
@@ -165,8 +187,8 @@ lines_sfx <- st_sf(
 )
 
 # Write to shapefile
-st_write(points_sfx, here("staging", "sn_mapping", "trx_point.shp"), delete_layer = TRUE)
-st_write(lines_sfx, here("staging", "sn_mapping", "trx_line.shp"), delete_layer = TRUE)
+# st_write(points_sfx, here("staging", "sn_mapping", "trx_point.shp"), delete_layer = TRUE)
+# st_write(lines_sfx, here("staging", "sn_mapping", "trx_line.shp"), delete_layer = TRUE)
   
 ```
 
@@ -189,7 +211,8 @@ ccs_sum = ccs %>%
             adult_count = sum(life_stage == "adult"),
             subadult_count = sum(life_stage == "subadult"),
             tadpole_count = sum(life_stage == "tadpole"),
-            years = n_distinct(year)) %>%
+            years = n_distinct(year),
+            years_all = paste0(sort(unique(year)), collapse = ", ")) %>%
   ungroup() %>%
   filter(!is.na(site_longitude))
 
@@ -216,7 +239,8 @@ bdcs_sum = bdcs %>%
             adult_count = sum(life_stage == "adult"),
             subadult_count = sum(life_stage == "subadult"),
             tadpole_count = sum(life_stage == "tadpole"),
-            years = n_distinct(year)) %>%
+            years = n_distinct(year),
+            years_all = paste0(sort(unique(year)), collapse = ", ")) %>%
   ungroup() %>%
   filter(!is.na(site_longitude))
 
