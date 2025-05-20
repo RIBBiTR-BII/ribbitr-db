@@ -195,7 +195,6 @@ clean_survey_info = raw_survey_info %>%
          sample_location_description = varm_transect_meters,
          environmental_utme = utme,
          environmental_utmn = utmn,
-         environmental_utm_zone = utmz,
          environmental_elevation_m = elevation_m,
          precipitation_during_visit = precipitation,
          soil_moisture_m3_m3 = soil_humidity_m3m3) %>%
@@ -347,22 +346,98 @@ clean_edna = raw_edna %>%
   select(-any_of(to_drop)) %>%
   filter(!if_all(everything(), is.na))
 
-
-# value corrections
-clean_survey_info$environmental_utm_zone[clean_survey_info$temp_survey_id == "271fe5d3-ae5b-4c2e-bd1f-4d1f356dcc37"] = 17
+# coordinate corrections
 clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "271fe5d3-ae5b-4c2e-bd1f-4d1f356dcc37"] = 545764
 clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "271fe5d3-ae5b-4c2e-bd1f-4d1f356dcc37"] = 953809
 
-clean_survey_info$environmental_utm_zone[clean_survey_info$temp_survey_id == "6d327912-04e3-409d-8cd8-82cc3e202a84"] = 17
 clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "271fe5d3-ae5b-4c2e-bd1f-4d1f356dcc37"] = 545075
 clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "271fe5d3-ae5b-4c2e-bd1f-4d1f356dcc37"] = 958539
 
+clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "271fe5d3-ae5b-4c2e-bd1f-4d1f356dcc37"] = 545764
+clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "271fe5d3-ae5b-4c2e-bd1f-4d1f356dcc37"] = 953809
+
+clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "6d327912-04e3-409d-8cd8-82cc3e202a84"] = 545075
+clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "6d327912-04e3-409d-8cd8-82cc3e202a84"] = 958539
+
+clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "e806380e-18ed-468b-b76c-e74037155b1e"] = 489181
+clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "e806380e-18ed-468b-b76c-e74037155b1e"] = 947197
+
+clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "f87507f0-0b50-4a31-9a44-84400b653366"] = 545058
+clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "f87507f0-0b50-4a31-9a44-84400b653366"] = 958503
+
+clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "1c8f5e34-a51c-4792-a7a5-eede6d55ca6c"] = 597753
+clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "1c8f5e34-a51c-4792-a7a5-eede6d55ca6c"] = 952341
+
+clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "735c6e61-07f6-4630-befb-9262e5b9be97"] = 597764
+clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "735c6e61-07f6-4630-befb-9262e5b9be97"] = 952350
+
+clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "aa8f67de-f5a6-42c7-aa4b-e92b4ae8de9a"] = 600519
+clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "aa8f67de-f5a6-42c7-aa4b-e92b4ae8de9a"] = 956467
+
+clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "7cfa8e05-081f-45f6-843a-d16478f86415"] = 607348
+clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "7cfa8e05-081f-45f6-843a-d16478f86415"] = 946587
+
+clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "3b4a9ffb-89d0-4aa4-8794-bf4be8d2ceb8"] = 607338
+clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "3b4a9ffb-89d0-4aa4-8794-bf4be8d2ceb8"] = 946580
+
+clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "ef69fcb2-38b8-4538-bd18-90427c008f9c"] = 545772
+clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "ef69fcb2-38b8-4538-bd18-90427c008f9c"] = 953805
+
+clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "09c8a67e-521e-4c4a-bb6a-9ae2a2462f35"] = 545758
+clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "09c8a67e-521e-4c4a-bb6a-9ae2a2462f35"] = 953803
+
+clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "314ab0c2-9048-4beb-8f49-aa8c4d1982ea"] = 617897
+clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "314ab0c2-9048-4beb-8f49-aa8c4d1982ea"] = 960475
+	
+clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "1ebae3e8-10b4-40ec-aa50-437fb098adcd"] = 617952
+clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "1ebae3e8-10b4-40ec-aa50-437fb098adcd"] = 960505
+
+clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "b230dc46-4311-4c06-bcdf-a2061445fc57"] = 544157
+clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "b230dc46-4311-4c06-bcdf-a2061445fc57"] = 959050
+
+clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "abf6edff-54f8-482c-ae18-971f75ebb9ef"] = 544147
+clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "abf6edff-54f8-482c-ae18-971f75ebb9ef"] = 959042
+
+clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "0ddabb21-c3cc-440b-9481-86466e41c66f"] = 601596
+clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "0ddabb21-c3cc-440b-9481-86466e41c66f"] = 955492
+
+clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "4b96f212-0cc9-4a21-9f14-6df4bd08e81c"] = 535131
+clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "4b96f212-0cc9-4a21-9f14-6df4bd08e81c"] = 950746
+
+# utme only
 clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "1f244904-98e3-4165-aa92-49e1023122bf"] = 545074
 clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "c593b1d5-ca35-4698-9c47-bbe557d858c7"] = 485752
 clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "2582cd39-8edc-4af2-a99a-6a6d351ee987"] = 607336
+clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "a7dc3ca6-16f0-4999-9351-e95f2a0bbf9e"] = 486605
+clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "e5dbadab-3202-4a88-9a24-fec56c7f17f7"] = 545075
+clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "507f8780-7f44-4b2b-bdb8-821961d0156b"] = 600573
+clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "0644b2ce-8102-4e6c-a3f4-b2981111a5f1"] = 607338
+clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "2bad0d17-2dd7-4a11-95c1-b8ddd6bd86e5"] = 607352
+clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "3926e2fd-a4e1-4426-bda9-f23ddac54f37"] = 601548
+clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "29dafc75-8b27-4a99-827e-b9bf7da32e8b"] = 535105
 
+
+
+# utmn only
 clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "bb484e0c-a982-4f48-b274-72a9cd3934ef"] = 955380
+clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "b2a7828c-0723-4028-96c9-e6f3cc2f9b8b"] = 941276
+clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "744dc9e5-9e78-4d9a-a42b-f87a3433618a"] = 941234
+clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "7c9b9b50-246b-47c3-a257-59a086acc5e2"] = 959963
+clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "76afee2b-9513-4df7-93a1-074d85cd02f4"] = 952271
+clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "dfbdc92a-0b8e-4018-ae24-336655618658"] = 956448
+clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "d651072e-2534-4f5a-a556-9764c0e5657f"] = 950764
+clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "f1d0850c-821c-45f0-b181-d2c969531cc0"] = 941285
+clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "c85ce067-5c1f-4b30-80d9-6d8176ecbf74"] = 941285
 
+# peace =  clean_visit_info %>%
+#   left_join(clean_survey_info, by = c("temp_visit_id" = "visit_fulcrum_id")) %>%
+#   select(site,
+#          temp_survey_id,
+#          utmz,
+#          environmental_utme,
+#          environmental_utmn) %>%
+#     arrange(site,
+#             environmental_utmn)
 
 ```
 
@@ -561,7 +636,9 @@ unified_env = clean_visit_info %>%
             by = tbl_nkey("survey", mdc)) %>%
   filter(rowSums(is.na(select(., air_temp_c, water_temp_c, precipitation_during_visit, environmental_utme))) < 4) %>%
   group_by(visit_id, air_temp_c, water_temp_c, precipitation_during_visit, environmental_utme) %>%
-  summarise(across(everything(), ~ first(na.omit(.)), .names = "{col}"), .groups = "drop") %>%
+  # summarise(across(everything(), ~ first(na.omit(.)), .names = "{col}"), .groups = "drop") %>%
+  summarise(across(everything(), ~ if(all(is.na(.))) NA else first(na.omit(.))), .groups = "drop") %>%
+  # reframe(across(everything(), ~ if(all(is.na(.))) NA_character_ else first(na.omit(.)))) %>%
   ungroup() %>%
   filter(!is.na(site),
          !is.na(date))
