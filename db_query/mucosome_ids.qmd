@@ -15,6 +15,7 @@ dbcon = hopToDB("ribbitr")
 
 # table pointers
 ```{r}
+# survey data
 db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
 db_sample = tbl(dbcon, Id("survey_data", "sample"))
 db_capture = tbl(dbcon, Id("survey_data", "capture"))
@@ -23,6 +24,11 @@ db_visit = tbl(dbcon, Id("survey_data", "visit"))
 db_site = tbl(dbcon, Id("survey_data", "site"))
 db_region = tbl(dbcon, Id("survey_data", "region"))
 db_country = tbl(dbcon, Id("survey_data", "country"))
+
+# microclimate data
+db_ts_temp = tbl(dbcon, Id("microclimate_data", "ts_temperature"))
+db_sensor = tbl(dbcon, Id("microclimate_data", "sensor"))
+db_logger = tbl(dbcon, Id("microclimate_data", "logger"))
 ```
 
 # filter & pull data
@@ -44,14 +50,18 @@ data_mucosome = db_sample %>%
          "mucosome_id" = "mucosome",
          "species" = "taxon_capture") %>%
   select(capture_id,
+         species,
          body_mass_g,
+         body_temp_c,
+         timestamp_of_capture_utc,
          mucosome_id,
          bd_swab_id,
-         species,
          date,
          site,
+         site_id,
          geographic_area,
          region,
+         time_zone,
          country) %>%
   collect() %>%
   arrange(country, mucosome_id)
@@ -62,16 +72,18 @@ write_csv(data_mucosome, here("staging", paste0("mucosome_ids_", today(), ".csv"
 # mucosome sites
 ```{r}
 mu_sites = data_mucosome %>%
-  select(site, region, country) %>%
+  select(site, region, time_zone, country) %>%
   distinct() %>%
   left_join(db_site %>%
               collect(), by = "site") %>%
   select(country,
          region,
          site,
+         site_id,
          site_latitude,
          site_longitude,
-         site_elevation_m)
+         site_elevation_m,
+         time_zone)
 
 write_csv(mu_sites, here("staging", paste0("mucosome_sites_", today(), ".csv")))
 ```
@@ -85,6 +97,60 @@ mu_qpcr = data_mucosome %>%
               collect(), by = c("bd_swab_id" = "sample_name_bd"))
 
 write_csv(mu_qpcr, here("staging", paste0("mucosome_ids_bd_", today(), ".csv")))
+```
+
+# microclimate data
+```{r}
+# pull temps (big data pulll)
+data_temperature = db_ts_temp %>%
+  left_join(db_sensor, by = "sensor_id") %>%
+  left_join(db_logger, by = "logger_id") %>%
+  filter(site_id %in% mu_sites$site_id) %>%  # filter for water temp sensors only, multiple depths per site may be included
+  pivot_wider(id_cols = c("site_id", "timestamp_utc"),
+              names_from = c("microhabitat", "height_cm"),
+              values_from = temperature_c_01_raw) %>%
+  collect() %>%
+  arrange(site_id,
+          timestamp_utc)
+
+# convert data_temperature to data.table
+data_temp = as.data.table(data_temperature)
+
+# include "sensor_time" column for nearest joins
+data_temp_st = data_temp %>%
+  mutate(sensor_time = timestamp_utc)
+
+```
+
+# rolling joins (data.table package) for aligning frog captures with temperature
+```{r}
+# NEAREST in time
+# align with site & nearest temp measurements in time
+data_mucosome_temp_nearest = data_temp_st[data_mucosome, on = .(site_id, timestamp_utc = timestamp_of_capture_utc), roll = "nearest"] %>%
+  rename(timestamp_of_cature_utc = timestamp_utc) %>%
+  select(capture_id,
+         any_of(colnames(db_capture)),
+         everything())
+
+
+# 15-day MEDIAN
+# align with site & 15-day rolling median temp measurements in time
+dm_dt = as.data.table(data_mucosome %>%
+                               select(capture_id,
+                                      site_id,
+                                      date)) %>%
+  mutate(date_time = force_tz(as_datetime(paste0(date, " 17:00:00"))), tzone = "UTC")
+
+data_mucosome_15d_mean_max = dm_dt[data_temp, on = .(site_id, date_time = timestamp_utc), roll = days(-15), nomatch = NULL] %>%
+  group_by(capture_id, date) %>%
+  summarise(across(starts_with("water_") | starts_with("soil_") | starts_with("sun_") | starts_with("shade_"), ~ max(.x, na.rm = TRUE), .names = "{.col}")) %>%
+  group_by(capture_id) %>%
+  summarise(across(starts_with("water_") | starts_with("soil_") | starts_with("sun_") | starts_with("shade_"), ~ mean(.x, na.rm = TRUE), .names = "{.col}_15d_max_mean")) %>%
+  right_join(data_mucosome, by = "capture_id") %>%
+  select(capture_id,
+         any_of(colnames(db_capture)),
+         everything()) %>%
+  mutate(across(starts_with("water_"), ~ ifelse(!is.finite(.x), NA_real_, .x)))
 ```
 
 ```{r}
