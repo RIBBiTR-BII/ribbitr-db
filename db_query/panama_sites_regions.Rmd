@@ -1,0 +1,132 @@
+---
+title: "panama_sites_regions"
+output: html_document
+---
+
+```{r}
+
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, here, RPostgres, DBI, RIBBiTR-BII/ribbitrrr, sf)
+
+# connect to database
+dbcon = hopToDB("wibbitr")
+
+db_env = tbl(dbcon, Id("survey_data", "environmental"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
+```
+
+
+```{r}
+
+all_ribbitr_sites = db_site %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  collect()
+
+write_csv(all_ribbitr_sites, here("staging", "all_ribbitr_sites_2.csv"))
+
+```
+
+# pull panama coords from captures
+```{r}
+
+panama_env_sites = db_env %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(country == "panama",
+         !is.na(environmental_latitude)) %>%
+  select(environmental_utme,
+         environmental_utmn,
+         environmental_latitude,
+         environmental_longitude,
+         environmental_elevation_m,
+         site,
+         site_utme,
+         site_utmn,
+         site_latitude,
+         site_longitude,
+         site_elevation_m,
+         region) %>%
+  collect()
+
+panama_env_sites_med = panama_env_sites %>%
+  group_by(site, site_utmn, site_utme, site_latitude, site_longitude, site_elevation_m, region) %>%
+  summarise(environmental_utmn_med = median(environmental_utmn, na.rm = TRUE),
+         environmental_utme_med = median(environmental_utme, na.rm = TRUE),
+         environmental_latitude_med = median(environmental_latitude, na.rm = TRUE),
+         environmental_longitude_med = median(environmental_longitude, na.rm = TRUE),
+         environmental_elevation_m_med = median(environmental_elevation_m, na.rm = TRUE),
+         n = sum(!is.na(environmental_utmn)),
+         .groups = "drop") %>%
+  select(environmental_utme_med,
+         environmental_utmn_med,
+         environmental_latitude_med,
+         environmental_longitude_med,
+         environmental_elevation_m_med,
+         n,
+         site,
+         site_utme,
+         site_utmn,
+         site_latitude,
+         site_longitude,
+         site_elevation_m,
+         region)
+
+
+write_csv(panama_env_sites, here("staging", "panama_env_sites.csv"))
+write_csv(panama_env_sites_med, here("staging", "panama_env_sites_med.csv"))
+
+```
+
+# line data
+```{r}
+
+# Convert start and end points to sf POINT objects
+start_points <- st_as_sf(panama_env_sites, coords = c("site_longitude", "site_latitude"), crs = 4326)
+end_points <- st_as_sf(panama_env_sites, coords = c("environmental_longitude", "environmental_latitude"), crs = 4326)
+
+# Create LINESTRING geometries by combining start and end points
+lines = map2(start_points$geometry, end_points$geometry, ~ st_linestring(rbind(st_coordinates(.x), st_coordinates(.y))))
+
+# Create an sf object with the linestrings and include the attribute variable
+lines_sf <- st_sf(
+  site = panama_env_sites$site,
+  geometry = st_sfc(lines),
+  crs = 4326
+)
+
+# Write to shapefile
+st_write(lines_sf, here("staging", "panama_env_sites.shp"), delete_layer = TRUE)
+
+```
+
+# update site coords 
+```{r}
+site_update = db_site %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(country == "panama") %>%
+  collect() %>%
+  left_join(panama_env_sites_med %>%
+              select(site,
+                     environmental_utme_med,
+                     environmental_utmn_med), by = "site") %>%
+  mutate(site_utme = coalesce(round(environmental_utme_med), site_utme),
+         site_utmn = coalesce(round(environmental_utmn_med), site_utmn)) %>%
+  select(all_of(colnames(db_site)))
+
+temp_site = stage_to_temp(dbcon, db_site, site_update)
+pointer = tbl(dbcon, temp_site)
+db_site = db_site %>%
+  rows_update(pointer, by="site_id", unmatched = "ignore", in_place=TRUE)
+
+```
