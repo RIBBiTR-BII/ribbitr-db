@@ -1,0 +1,122 @@
+---
+title: "amps_processing"
+output: html_document
+---
+
+```{r}
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, rio, RIBBiTR-BII/ribbitrrr)
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+## Connect to RIBBiTR DB
+dbcon <- hopToDB("ribbitr")
+
+## Pull metadata from database
+mdc = tbl(dbcon, Id("public", "all_columns")) %>%
+  filter(table_schema == "survey_data") %>%
+  collect()
+
+## Point to local data directory
+ddir = Sys.getenv("data_dir")  # data directory
+# Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
+wddir = here(ddir, "amps", "2025-05-16", "ribbitr") # working data directory
+
+```
+
+# load files
+```{r}
+# dput(list.files(path = here(wddir, "sierra nevada")))
+
+# brazil
+raw_maldi_br_2022 = read_csv(here(wddir, "brazil", "BII Brazil 2022 MALDI peak list.csv"))
+raw_peptide_br_2022 = read_csv(here(wddir, "brazil", "BII Brazil 2022 peptides.csv"))
+
+raw_maldi_br_2023 = read_csv(here(wddir, "brazil", "Brazil 2023 MALDI peak list.csv"))
+raw_peptide_br_2023 = read_csv(here(wddir, "brazil", "RIBBiTR_Brazil_totalpeptides2023_upload.csv"))
+
+# panama
+raw_peptide_pa_2022_cpan = read_csv(here(wddir, "panama", "BII Panama 2022 Cpan peptide quantity.csv"))
+raw_maldi_pa_2022_cpan = read_csv(here(wddir, "panama", "BII Panama 2022 Cpan MALDI peak list.csv"))
+raw_peptide_pa_2022_lwarz = read_csv(here(wddir, "panama", "BII Panama 2022 Lwarz peptide quantity.csv"))
+raw_maldi_pa_2022_lwarz = read_csv(here(wddir, "panama", "BII Panama 2022 Lwarz MALDI peak list.csv"))
+raw_intensity_pa_2022_lwarz = read_csv(here(wddir, "panama", "BII Panama 2022 Lwarz AMP intensity.csv"))
+
+raw_peptide_pa_2023 = read_csv(here(wddir, "panama", "Panama 2023 peptide quantities.csv"))
+raw_maldi_pa_2023 = read_csv(here(wddir, "panama", "Panama MALDI 2023.csv"))
+raw_intensity_pa_2023_lwarz = read_csv(here(wddir, "panama", "BII 2023 Lwarz amps intensity.csv"))
+
+# pennsylvania
+raw_peptide_pe_2022 = read_csv(here(wddir, "pennsylvania", "PLE peptide quantity 2022 upload.csv"))
+raw_maldi_pe_2022 = read_csv(here(wddir, "pennsylvania", "PLE MALDI 2022 230718.csv"))
+raw_intensity_pe_2022_rpip = read_csv(here(wddir, "pennsylvania", "PLE 2022 R pipiens amp intensity.csv"))
+raw_intensity_pe_2022_rcat = read_csv(here(wddir, "pennsylvania", "PLE 2022 R catesbeiana amp intensity.csv"))
+
+raw_peptide_pe_2023 = read_csv(here(wddir, "pennsylvania", "2023_AMP PLE peptide quantity mBCA data.csv"))
+raw_maldi_pe_2023 = read_csv(here(wddir, "pennsylvania", "PLE MALDI peak list 2023 species combined.csv"))
+raw_intensity_pe_2023_rpip = read_csv(here(wddir, "pennsylvania", "2023_ PA R. pipiens amp ID intensity.csv"))
+raw_intensity_pe_2023_rcat = read_csv(here(wddir, "pennsylvania", "2023_ PA R. catesbeiana amp ID intensity.csv"))
+raw_intensity_pe_2023_rcla = read_csv(here(wddir, "pennsylvania","2023_ PA R. clamitans amp ID intensity.csv"))
+
+# sierra nevada
+raw_peptide_sn_2022 = read_csv(here(wddir, "sierra nevada", "BII Sierra 2022 peptides.csv"))
+raw_maldi_sn_2022 = read_csv(here(wddir, "sierra nevada", "BII Sierra 2022 MALDI peak list.csv"))
+raw_intensity_sn_2022 = read_csv(here(wddir, "sierra nevada", "2022 Sierra Nevada amps intensity.csv"))
+
+raw_peptide_sn_2023 = read_csv(here(wddir, "sierra nevada", "Sierra peptide quantities 2023.csv"))
+raw_maldi_sn_2023 = read_csv(here(wddir, "sierra nevada", "BII SN 2023 peak list.csv"))
+raw_intensity_sn_2023 = read_csv(here(wddir, "sierra nevada", "2023 Sierra Nevada amp intensity.csv"))
+
+raw_peptide_sn_2024 = read_csv(here(wddir, "sierra nevada", "Sierra peptide quantities 2024.csv"))
+raw_maldi_sn_2024 = read_csv(here(wddir, "sierra nevada", "SN maldi 2024 MALDI.csv"))
+raw_intensity_sn_2024 = read_csv(here(wddir, "sierra nevada", "2024 Sierra Nevada amp intensity.csv"))
+
+```
+
+# combine similar and clean
+```{r}
+# Combine all peptide data
+cols_pep = c("amp_id",
+             "Total.peptides.ug",
+             "Total.peptides.gbw",
+             "frog.surface.area",
+             "body_mass_g",
+             "peptides.ug.ml.mucus",
+             "Bath vol",
+             "notes")
+
+clean_peptide = bind_rows(raw_peptide_br_2022 %>%
+                            rename(amp_id = amp_id_1) %>%
+                            select(any_of(cols_pep)),
+                          raw_peptide_br_2023 %>%
+                            select(any_of(cols_pep)),
+                          raw_peptide_pa_2022_cpan %>%
+                            rename(amp_id = Sample_ID,
+                                   body_mass_g = Weight)%>%
+                            select(any_of(cols_pep)),
+                          raw_peptide_pa_2022_lwarz %>%
+                            rename(amp_id = Sample_ID,
+                                   body_mass_g = Weight) %>%
+                            select(any_of(cols_pep)),
+                          raw_peptide_pa_2023 %<%
+                            rename(amp_id = capt_swab_id) %>%
+                            select(any_of(cols_pep)),
+                          raw_peptide_pe_2022 %>%
+                            rename(notes = BCA.notes) %>%
+                            select(any_of(cols_pep)),
+                          raw_peptide_pe_2023 %>%
+                            rename(notes = Notes) %>%
+                            mutate(notes = ifelse(!is.na(amp_id_2), paste0(notes,". Pooled fractions from: ", paste0(amp_id, amp_id_2, amp_id_3, amp_id_4)), notes)),
+                          raw_peptide_sn_2022,
+                          raw_peptide_sn_2023,
+                          raw_peptide_sn_2024)
+
+str_replace_na(c(NA, "abc", "def"), replacement='')
+
+peace = raw_peptide_pe_2023 %>%
+  rename(notes = "Notes") %>%
+  mutate(notes = ifelse(!is.na(amp_id_2), paste0(notes,". Pooled fractions from: ", str_replace_na(c(amp_id, amp_id_2, amp_id_3, amp_id_4), collapse = ", ")), notes))
+
+  clean_names() %>%
+  mutate(across(everything(), ~ na_if(., "")))
+
+
+```
