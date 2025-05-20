@@ -149,7 +149,8 @@ relocate_points = relocate_events %>%
 
 relocate_lines = relocate_events %>%
   group_by(collect_siteid, release_siteid) %>%
-  count() %>%
+  summarise(n = n(),
+            release_years = paste0(sort(unique(year(release_date))), collapse = ", ")) %>%
     left_join(db_site %>%
               select(site,
                      site_latitude,
@@ -182,6 +183,7 @@ lines = map2(start_points$geometry, end_points$geometry, ~ st_linestring(rbind(s
 # Create an sf object with the linestrings and include the attribute variable
 lines_sfx <- st_sf(
   count_exchanges = relocate_lines$n,
+  release_years = relocate_lines$release_years,
   geometry = st_sfc(lines),
   crs = 4326
 )
