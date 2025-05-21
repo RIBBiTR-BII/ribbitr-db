@@ -163,7 +163,11 @@ clean_survey = sn_survey %>%
          sky = as.character(sky)) %>%
   collect() %>%
   left_join(clean_survey_surveyor, by = "sn_survey_id") %>%
-  mutate(detection_type = case_match(detection_type,
+  mutate(detection_subtype = case_match(detection_type,
+                                     "swab" ~ "swab",
+                                     "cmr" ~ "cmr",
+                                     .default = NA_character_),
+         detection_type = case_match(detection_type,
                                      "visual" ~ "visual",
                                      "swab" ~ "capture",
                                      "cmr" ~ "capture"),
@@ -174,11 +178,6 @@ clean_survey = sn_survey %>%
 f_to_c = function(x) {
   (x - 32) * 5/9	
 }
-
-test = raw_sample_2022 %>%
-  select(mucosome_id) %>%
-  filter(!is.na(mucosome_id)) %>%
-  arrange(mucosome_id)
 
 clean_capture = bind_rows(raw_sample_2022 %>%
                             mutate(amp_id = mucosome_id),
@@ -381,10 +380,10 @@ unified_capture = clean_capture %>%
               collect(),
             by = c("site_id", "date", "time_of_day")) %>%
   left_join(db_survey %>%
-              select(survey_id, visit_id, detection_type, start_time) %>%
+              select(survey_id, visit_id, detection_type, detection_subtype, start_time) %>%
               filter(!is.na(visit_id)) %>%
               collect(),
-            by = c("visit_id", "detection_type", "start_time")) %>%
+            by = c("visit_id", "detection_type", "detection_subtype", "start_time")) %>%
   filter(!is.na(site),
          !is.na(date)) %>%
   distinguish_muscosa_sierrae(taxon_capture)
@@ -396,7 +395,7 @@ unified_capture = clean_capture %>%
 unified_cmr = unified_capture %>%
   filter(!is.na(local_cmr_id)) %>%
   rename(taxon_cmr = taxon_capture) %>%
-  select(local_cmr_id, taxon_cmr, site_id, date, capture_id, tag_new) %>%
+  select(local_cmr_id, taxon_cmr, site_id, date, start_time, capture_id, capture_type) %>%
   left_join(db_cmr %>%
               select(cmr_id,
                      local_cmr_id,
@@ -404,9 +403,9 @@ unified_cmr = unified_capture %>%
                      site_id_tagged,
                      id_type) %>%
               collect(), by = "local_cmr_id") %>%
-  arrange(date_tagged, date) %>%
+  arrange(local_cmr_id, date_tagged, date, start_time, capture_type) %>%
   group_by(local_cmr_id) %>%
-  slice_min(date, n = 1) %>%
+  slice_head(n = 1) %>%
   ungroup() %>%
   mutate(cmr_id = ifelse(is.na(cmr_id), capture_id, cmr_id),
          date_tagged = as.Date(ifelse(is.na(date_tagged), date, date_tagged)),
@@ -420,7 +419,7 @@ subset_cmr = unified_cmr %>%
 compare_cmr = compare_df_cols(db_cmr %>%
                                   filter(FALSE) %>%
                                   collect(), subset_cmr)
-
+peace = get_dupes(subset_cmr, cmr_id)
 tray = compare_for_staging(db_cmr %>% collect(), subset_cmr, "cmr_id", return_all = TRUE, report = "cmr")
 
 upsert_cmr = bind_rows(tray$insert,
@@ -484,6 +483,7 @@ gelled_capture = unified_capture %>%
   coalesce_duplicates() %>%
   group_by(visit_id,
            detection_type,
+           detection_subtype,
            transect,
            start_time,
            observers_survey) %>%
@@ -495,7 +495,7 @@ gelled_capture = unified_capture %>%
          comments_survey = na.omit(comments_survey)[1],
          survey_quality = first(survey_quality),
          description = na.omit(description)[1],
-         uuid_name = paste0(visit_id, detection_type, transect, start_time, observers_survey),
+         uuid_name = paste0(visit_id, detection_type, detection_subtype, transect, start_time, observers_survey),
          survey_id = ifelse(is.na(survey_id),
                             UUIDfromName("831e1d81-169a-4574-911a-a6cf3792cc0c", uuid_name),
                             survey_id)) %>%
@@ -553,7 +553,6 @@ subset_capture_survey = gelled_capture %>%
 compare_capture_survey = compare_df_cols(db_survey %>%
                                   filter(FALSE) %>%
                                   collect(), subset_capture_survey)
-
 tray = compare_for_staging(db_survey %>% collect(), subset_capture_survey, "survey_id", return_all = TRUE, report = "capture_survey")
 upsert_capture_survey = bind_rows(tray$insert,
                                   tray$update)
@@ -598,7 +597,6 @@ compare_sample = compare_df_cols(db_sample %>%
 tray = compare_for_staging(db_sample %>% collect(), subset_sample, "sample_id", return_all = TRUE, report = "sample")
 upsert_sample = bind_rows(tray$insert,
                           tray$update)
-
 
 x_capture = (nrow(upsert_capture_survey) > 0) | (nrow(insert_capture_taxa) > 0) | (nrow(upsert_capture) > 0 | nrow(upsert_cmr) > 0 | nrow(upsert_sample) > 0)
 ```
