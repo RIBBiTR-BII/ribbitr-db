@@ -154,7 +154,7 @@ clean_survey = sn_survey %>%
          sky = as.character(sky)) %>%
   collect() %>%
   left_join(clean_survey_surveyor, by = "sn_survey_id") %>%
-  mutate(detection_subtype= case_match(detection_type,
+  mutate(detection_subtype = case_match(detection_type,
                                      "swab" ~ "swab",
                                      "cmr" ~ "cmr",
                                      .default = NA_character_),
