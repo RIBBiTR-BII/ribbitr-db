@@ -81,39 +81,108 @@ cols_pep = c("amp_id",
              "body_mass_g",
              "peptides.ug.ml.mucus",
              "Bath vol",
+             "Fractions pooled?",
              "notes")
 
 clean_peptide = bind_rows(raw_peptide_br_2022 %>%
-                            rename(amp_id = amp_id_1) %>%
-                            select(any_of(cols_pep)),
-                          raw_peptide_br_2023 %>%
-                            select(any_of(cols_pep)),
+                            rename(amp_id = amp_id_1),
+                          raw_peptide_br_2023,
                           raw_peptide_pa_2022_cpan %>%
                             rename(amp_id = Sample_ID,
-                                   body_mass_g = Weight)%>%
-                            select(any_of(cols_pep)),
+                                   body_mass_g = Weight),
                           raw_peptide_pa_2022_lwarz %>%
                             rename(amp_id = Sample_ID,
-                                   body_mass_g = Weight) %>%
-                            select(any_of(cols_pep)),
-                          raw_peptide_pa_2023 %<%
-                            rename(amp_id = capt_swab_id) %>%
-                            select(any_of(cols_pep)),
+                                   body_mass_g = Weight),
+                          raw_peptide_pa_2023 %>%
+                            rename(amp_id = capt_swab_id),
                           raw_peptide_pe_2022 %>%
-                            rename(notes = BCA.notes) %>%
-                            select(any_of(cols_pep)),
+                            rename(notes = BCA.notes),
                           raw_peptide_pe_2023 %>%
-                            rename(notes = Notes) %>%
-                            mutate(notes = ifelse(!is.na(amp_id_2), paste0(notes,". Pooled fractions from: ", paste0(amp_id, amp_id_2, amp_id_3, amp_id_4)), notes)),
-                          raw_peptide_sn_2022,
+                            rename(notes = "Notes") %>%
+                            mutate(notes = ifelse(!is.na(amp_id_2),
+                                                  gsub(", NA", "", paste0(notes,
+                                                                          ". Pooled fractions from: ",
+                                                                          paste(amp_id,
+                                                                                amp_id_2,
+                                                                                amp_id_3,
+                                                                                amp_id_4,
+                                                                                sep = ", "))),
+                                                  notes)),
+                          raw_peptide_sn_2022 %>%
+                            rename(amp_id = mucosome_id,
+                                   body_mass_g = weight) %>%
+                            mutate(site_id = as.character(site_id)),
                           raw_peptide_sn_2023,
-                          raw_peptide_sn_2024)
+                          raw_peptide_sn_2024  %>%
+                            rename(body_mass_g = weight)) %>%
+  select(all_of(cols_pep)) %>%
+  clean_names() %>%
+  select(amp_id,
+         total_peptides_ug,
+         bath_vol,
+         fractions_pooled,
+         notes)
+
+clean_intensity = bind_rows(raw_intensity_pa_2022_lwarz %>%
+                            rename(amp_id = Sample_ID),
+                          raw_intensity_pa_2023_lwarz,
+                          raw_intensity_pe_2022_rcat,
+                          raw_intensity_pe_2022_rpip,
+                          raw_intensity_pe_2023_rcat %>%
+                            mutate(notes = ifelse(is.na(amp_id_2),
+                                                  NA_character_,
+                                                  gsub(", NA", "", paste0("Pooled fractions from: ",
+                                                                          paste(amp_id,
+                                                                                amp_id_2,
+                                                                                amp_id_3,
+                                                                                amp_id_4,
+                                                                                amp_id_5,
+                                                                                sep = ", "))))),
+                          raw_intensity_pe_2023_rcla %>%
+                            mutate(notes = ifelse(is.na(amp_id_2),
+                                                  NA_character_,
+                                                  gsub(", NA", "", paste0("Pooled fractions from: ",
+                                                                          paste(amp_id,
+                                                                                amp_id_2,
+                                                                                sep = ", "))))),
+                          raw_intensity_pe_2023_rpip,
+                          raw_intensity_sn_2022 %>%
+                            rename(amp_id = mucosome_id),
+                          raw_intensity_sn_2023,
+                          raw_intensity_sn_2024) %>%
+  clean_names()
+
+# row join all maldi data
+clean_maldi = bind_rows(raw_maldi_br_2022 %>%
+                            rename(amp_id = amp_id_1) %>%
+                          clean_names(),
+                          raw_maldi_br_2023 %>%
+                          clean_names(),
+                          raw_maldi_pa_2022_cpan %>%
+                            rename(amp_id = Sample_ID) %>%
+                          clean_names(),
+                          raw_maldi_pa_2022_lwarz %>%
+                            rename(amp_id = Sample_ID) %>%
+                          clean_names,
+                          raw_maldi_pa_2023 %>%
+                          clean_names(),
+                          raw_maldi_pe_2022 %>%
+                          clean_names(),
+                          raw_maldi_pe_2023 %>%
+                          clean_names(),
+                          raw_maldi_sn_2022 %>%
+                            rename(amp_id = mucosome_id) %>%
+                          clean_names(),
+                          raw_maldi_sn_2023 %>%
+                          clean_names(),
+                          raw_maldi_sn_2024 %>%
+                          clean_names())
 
 str_replace_na(c(NA, "abc", "def"), replacement='')
 
 peace = raw_peptide_pe_2023 %>%
   rename(notes = "Notes") %>%
-  mutate(notes = ifelse(!is.na(amp_id_2), paste0(notes,". Pooled fractions from: ", str_replace_na(c(amp_id, amp_id_2, amp_id_3, amp_id_4), collapse = ", ")), notes))
+  mutate(notes = ifelse(!is.na(amp_id_2), gsub(", NA", "", paste0(notes,"Pooled fractions from: ", paste(amp_id, amp_id_2, amp_id_3, amp_id_4, sep = ", "))), notes))
 
   clean_names() %>%
   mutate(across(everything(), ~ na_if(., "")))
