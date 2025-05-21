@@ -95,7 +95,7 @@ data_samps = db_sample %>%
   left_join(pop, by = "site") %>%
   mutate(population = ifelse(is.na(population), site, population))
 
-write_csv(data_samps, here("staging", paste0("amm_sn_captured_individuals_", today(), ".csv")))
+# write_csv(data_samps, here("staging", paste0("amm_sn_captured_individuals_", today(), ".csv")))
 
 data_proj = data_samps %>%
   group_by(project) %>%
@@ -133,7 +133,7 @@ data_sites = data_samps %>%
             all_samples = sum(!is.na(amp) & !is.na(microbiome) & !is.na(mucosome))) %>%
   arrange(site)
 
-write_csv(data_sites, here("staging", paste0("amm_sn_site_summary_", today(), ".csv")))
+# write_csv(data_sites, here("staging", paste0("amm_sn_site_summary_", today(), ".csv")))
 
 
 data_summary = data_samps %>%
