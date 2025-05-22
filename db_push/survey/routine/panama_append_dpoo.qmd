@@ -171,6 +171,7 @@ clean_visit_info = raw_visit_info %>%
          site = str_replace_all(site, "-", "_"),
          site = str_replace_all(site, " ", "_"),
          site = ifelse(site == "río_jordanal", "jordinal", site),
+         site = ifelse(site == "pera_q", "quebrada_pera", site),
          region = str_to_lower(region),
          region = str_replace_all(region, "-", "_"),
          region = str_replace_all(region, " ", "_"),
