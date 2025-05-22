@@ -130,3 +130,12 @@ db_site = db_site %>%
   rows_update(pointer, by="site_id", unmatched = "ignore", in_place=TRUE)
 
 ```
+
+# quebrada pera
+```{r}
+
+qp = db_visit %>%
+  left_join(db_site, by = "site_id") %>%
+  filter(site %in% c("pera_q", "quebrada_pera")) %>%
+  collect()
+```
