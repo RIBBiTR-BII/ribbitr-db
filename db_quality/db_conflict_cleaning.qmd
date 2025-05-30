@@ -1177,3 +1177,49 @@ srv_inq = db_survey %>%
   collect()
 
 ```
+
+# inquiry bd sample names
+```{r}
+pa_2023 = db_sample %>%
+  left_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(sample_type == "bd",
+         date >= "2023-11-01",
+         date < "2024-01-01") %>%
+  select(sample_name) %>%
+  collect()
+
+br_2023 = db_sample %>%
+  left_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(country == "brazil",
+         sample_type == "bd",
+         year(date) == 2023) %>%
+  select(all_of(colnames(db_sample))) %>%
+  collect()
+
+peace = get_dupes(br_2023, capture_id)
+
+```
+
+# align sample_name for bd
+```{r}
+
+bd_update = db_bd %>%
+  inner_join(db_sample, by = "sample_id") %>%
+  filter(sample_name != sample_name_bd) %>%
+  mutate(sample_name_bd = sample_name) %>%
+  select(all_of(colnames(db_bd)))
+
+db_bd = db_bd %>%
+  rows_update(bd_update, by = "result_id", unmatched = "ignore", in_place = TRUE)
+
+```

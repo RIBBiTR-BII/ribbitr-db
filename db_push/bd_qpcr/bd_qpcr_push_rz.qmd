@@ -16,7 +16,7 @@ dbcon <- hopToDB("wibbitr")
 ## Point to local data directory
 ddir = Sys.getenv("data_dir")  # data directory
 # Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
-wddir = here(ddir, "bd_qpcr_results") # working data directory
+wddir = here(ddir, "bd_qpcr_results", "ribbitr_data_2025-05-30", "ribbitr_data") # working data directory
 
 ```
 
@@ -38,51 +38,62 @@ db_sample = tbl(dbcon, Id("survey_data", "sample"))
 
 # brasil
 ## 2022
-raw_br_2022_01 = import_list(here(wddir, "brazil", "2022", "RIBBiTR_BrazilSwabs2022_10132023_Plate1_RERUN2_RESULTS.xlsx"))
-raw_br_2022_03 = import_list(here(wddir, "brazil", "2022", "RIBBiTR_BrazilSwabs2022_08172023_Plate3_RERUN_Results.xlsx"))
-raw_br_2022_04 = import_list(here(wddir, "brazil", "2022", "RIBBiTR_BrazilSwabs2022_10132023_Plate4_RESULTS.xlsx"))
+raw_br_2022_01 = import_list(here(wddir, "Brazil2022", "RIBBiTR_BrazilSwabs2022_10132023_Plate1_RERUN2_RESULTS.xlsx"))
+raw_br_2022_03 = import_list(here(wddir, "Brazil2022", "RIBBiTR_BrazilSwabs2022_08172023_Plate3_RERUN_Results.xlsx"))
+raw_br_2022_04 = import_list(here(wddir, "Brazil2022", "RIBBiTR_BrazilSwabs2022_10132023_Plate4_RESULTS.xlsx"))
 ## 2023
-raw_br_2023_01 = import_list(here(wddir, "brazil", "2023", "RIBBiTR_BrazilSwabs2023_03252024_plate1_RERUN_results.xlsx"))
-raw_br_2023_02 = import_list(here(wddir, "brazil", "2023", "RIBBiTR_BrazilSwabs2023_03082024_plate2_Results.xlsx"))
-raw_br_2023_03 = import_list(here(wddir, "brazil", "2023", "RIBBiTR_BrazilSwabs2023_03112024_plate3_Results.xlsx"))
-raw_br_2023_04 = import_list(here(wddir, "brazil", "2023", "RIBBiTR_BrazilSwabs2023_03142024_plate4_Results.xlsx"))
-raw_br_2023_05 = import_list(here(wddir, "brazil", "2023", "RIBBiTR_BrazilSwabs2023_03142024_plate5_Results.xlsx"))
-raw_br_2023_06 = import_list(here(wddir, "brazil", "2023", "RIBBiTR_BrazilSwabs2023_03262024_plate6_Results.xlsx"))
-raw_br_2023_07 = import_list(here(wddir, "brazil", "2023", "RIBBiTR_BrazilSwabs2023_04122024_plate7_results.xlsx"))
+raw_br_2023_01 = import_list(here(wddir, "Brazil2023", "RIBBiTR_BrazilSwabs2023_03252024_plate1_RERUN_results.xlsx"))
+raw_br_2023_02 = import_list(here(wddir, "Brazil2023", "RIBBiTR_BrazilSwabs2023_03082024_plate2_Results.xlsx"))
+raw_br_2023_03 = import_list(here(wddir, "Brazil2023", "RIBBiTR_BrazilSwabs2023_03112024_plate3_Results.xlsx"))
+raw_br_2023_04 = import_list(here(wddir, "Brazil2023", "RIBBiTR_BrazilSwabs2023_03142024_plate4_Results.xlsx"))
+raw_br_2023_05 = import_list(here(wddir, "Brazil2023", "RIBBiTR_BrazilSwabs2023_03142024_plate5_Results.xlsx"))
+raw_br_2023_06 = import_list(here(wddir, "Brazil2023", "RIBBiTR_BrazilSwabs2023_03262024_plate6_Results.xlsx"))
+raw_br_2023_07 = import_list(here(wddir, "Brazil2023", "RIBBiTR_BrazilSwabs2023_04122024_plate7_results.xlsx"))
 
 # panama
 ## 2022
-raw_pa_2022_01 = import_list(here(wddir, "panama", "2022", "RIBBiTR_PanamaSwabs2022_10022023_Plate1_Results.xlsx"))
-raw_pa_2022_02 = import_list(here(wddir, "panama", "2022", "RIBBiTR_PanamaSwabs2022_10232023_Plate2_Results.xlsx"))
-raw_pa_2022_03 = import_list(here(wddir, "panama", "2022", "RIBBiTR_PanamaSwabs2022_11062023_Plate3_Results.xlsx"))
-raw_pa_2022_04 = import_list(here(wddir, "panama", "2022", "RIBBiTR_PanamaSwabs2022_01082024_Plate4_RERUN2_Results.xlsx"))
-raw_pa_2022_05 = import_list(here(wddir, "panama", "2022", "RIBBiTR_PanamaSwabs2022_01112024_Plate5_Results.xlsx"))
+raw_pa_2022_01 = import_list(here(wddir, "Panama2022", "RIBBiTR_PanamaSwabs2022_10022023_Plate1_Results.xlsx"))
+raw_pa_2022_02 = import_list(here(wddir, "Panama2022", "RIBBiTR_PanamaSwabs2022_10232023_Plate2_Results.xlsx"))
+raw_pa_2022_03 = import_list(here(wddir, "Panama2022", "RIBBiTR_PanamaSwabs2022_11062023_Plate3_Results.xlsx"))
+raw_pa_2022_04 = import_list(here(wddir, "Panama2022", "RIBBiTR_PanamaSwabs2022_01082024_Plate4_RERUN2_Results.xlsx"))
+raw_pa_2022_05 = import_list(here(wddir, "Panama2022", "RIBBiTR_PanamaSwabs2022_01112024_Plate5_Results.xlsx"))
 ## 2023
-raw_pa_2023_01 = import_list(here(wddir, "panama", "2023", "RIBBiTR_PanamaSwabs2023_05022024_plate1_results.xlsx"))
-raw_pa_2023_02 = import_list(here(wddir, "panama", "2023", "RIBBiTR_PanamaSwabs2023_05022024_plate2_results.xlsx"))
-raw_pa_2023_03 = import_list(here(wddir, "panama", "2023", "RIBBiTR_PanamaSwabs2023_05062024_plate3_results.xlsx"))
-raw_pa_2023_04 = import_list(here(wddir, "panama", "2023", "RIBBiTR_PanamaSwabs2023_05092024_plate4_results.xlsx"))
-raw_pa_2023_05 = import_list(here(wddir, "panama", "2023", "RIBBiTR_PanamaSwabs2023_05312024_plate5_results.xlsx"))
-raw_pa_2023_06 = import_list(here(wddir, "panama", "2023", "RIBBiTR_PanamaSwabs2023_07032024_plate6_results.xlsx"))
-raw_pa_2023_07 = import_list(here(wddir, "panama", "2023", "RIBBiTR_PanamaSwabs2023_06112024_plate7_results.xlsx"))
-raw_pa_2023_08 = import_list(here(wddir, "panama", "2023", "RIBBiTR_PanamaSwabs2023_07032024_plate8_results.xlsx"))
-raw_pa_2023_09 = import_list(here(wddir, "panama", "2023", "RIBBiTR_PanamaSwabs2023_07082024_plate9_results.xlsx"))
-raw_pa_2023_10 = import_list(here(wddir, "panama", "2023", "RIBBiTR_PanamaSwabs2023_07092024_plate10_results.xlsx"))
-raw_pa_2023_11 = import_list(here(wddir, "panama", "2023", "RIBBiTR_PanamaSwabs2023_07122024_plate11_results.xlsx"))
-raw_pa_2023_12 = import_list(here(wddir, "panama", "2023", "RIBBiTR_PanamaSwabs2023_07122024_plate12_results.xlsx"))
-raw_pa_2023_13 = import_list(here(wddir, "panama", "2023", "RIBBiTR_PanamaSwabs2023_07252024_plate13_results.xlsx"))
-raw_pa_2023_14 = import_list(here(wddir, "panama", "2023", "RIBBiTR_PanamaSwabs2023_07262024_plate14_results.xlsx"))
-raw_pa_2023_15 = import_list(here(wddir, "panama", "2023", "RIBBiTR_PanamaSwabs2023_08062024_plate15_results.xlsx"))
+raw_pa_2023_01 = import_list(here(wddir, "Panama2023", "RIBBiTR_PanamaSwabs2023_05022024_plate1_results.xlsx"))
+raw_pa_2023_02 = import_list(here(wddir, "Panama2023", "RIBBiTR_PanamaSwabs2023_05022024_plate2_results.xlsx"))
+raw_pa_2023_03 = import_list(here(wddir, "Panama2023", "RIBBiTR_PanamaSwabs2023_05062024_plate3_results.xlsx"))
+raw_pa_2023_04 = import_list(here(wddir, "Panama2023", "RIBBiTR_PanamaSwabs2023_05092024_plate4_results.xlsx"))
+raw_pa_2023_05 = import_list(here(wddir, "Panama2023", "RIBBiTR_PanamaSwabs2023_05312024_plate5_results.xlsx"))
+raw_pa_2023_06 = import_list(here(wddir, "Panama2023", "RIBBiTR_PanamaSwabs2023_07032024_plate6_results.xlsx"))
+raw_pa_2023_07 = import_list(here(wddir, "Panama2023", "RIBBiTR_PanamaSwabs2023_06112024_plate7_results.xlsx"))
+raw_pa_2023_08 = import_list(here(wddir, "Panama2023", "RIBBiTR_PanamaSwabs2023_07032024_plate8_results.xlsx"))
+raw_pa_2023_09 = import_list(here(wddir, "Panama2023", "RIBBiTR_PanamaSwabs2023_07082024_plate9_results.xlsx"))
+raw_pa_2023_10 = import_list(here(wddir, "Panama2023", "RIBBiTR_PanamaSwabs2023_07092024_plate10_results.xlsx"))
+raw_pa_2023_11 = import_list(here(wddir, "Panama2023", "RIBBiTR_PanamaSwabs2023_07122024_plate11_results.xlsx"))
+raw_pa_2023_12 = import_list(here(wddir, "Panama2023", "RIBBiTR_PanamaSwabs2023_07122024_plate12_results.xlsx"))
+raw_pa_2023_13 = import_list(here(wddir, "Panama2023", "RIBBiTR_PanamaSwabs2023_07252024_plate13_results.xlsx"))
+raw_pa_2023_14 = import_list(here(wddir, "Panama2023", "RIBBiTR_PanamaSwabs2023_07262024_plate14_results.xlsx"))
+raw_pa_2023_15 = import_list(here(wddir, "Panama2023", "RIBBiTR_PanamaSwabs2023_08062024_plate15_results.xlsx"))
+## 2023NovDec
+raw_pa_2023nd_01 = import_list(here(wddir, "PanamaNovDec2023", "RIBBiTR_PanamaSwabsNovDec2023_11192024_Plate1_results.xlsx"))
+raw_pa_2023nd_02 = import_list(here(wddir, "PanamaNovDec2023", "RIBBiTR_PanamaSwabsNovDec2023_12112024_Plate2_results.xlsx"))
+raw_pa_2023nd_03 = import_list(here(wddir, "PanamaNovDec2023", "RIBBiTR_PanamaSwabsNovDec2023_12192024_Plate3_results.xlsx"))
+
 
 # penn
 ## 2022
-raw_pe_2022_01 = import_list(here(wddir, "penn", "2022", "PaBdSwabs2022_plate1RERUN_03212023_results!.xlsx"))
-raw_pe_2022_02 = import_list(here(wddir, "penn", "2022", "PaBdSwabs2022_04062023_Plate2_Results!.xlsx"))
-# raw_pe_hmm = import_list(here(wddir, "penn", "2022", "PaBdSwabs2022_qPCR_03022023_Plate 1_RBV_RESULTS.xls"))
+raw_pe_2022_01 = import_list(here(wddir, "Penn2022", "PaBdSwabs2022_plate1RERUN_03212023_results!.xlsx"))
+raw_pe_2022_02 = import_list(here(wddir, "Penn2022", "PaBdSwabs2022_04062023_Plate2_Results!.xlsx"))
+# raw_pe_hmm = import_list(here(wddir, "Penn2022", "PaBdSwabs2022_qPCR_03022023_Plate 1_RBV_RESULTS.xls"))
 ## 2023
-raw_pe_2023_01 = import_list(here(wddir, "penn", "2023", "RIBBiTR_qPCR_Penn2023_17August2023_Plate1_RESULTS.xls"))
-raw_pe_2023_02 = import_list(here(wddir, "penn", "2023", "RIBBiTR_qPCR_Penn2023_17August2023_Plate2_RESULTS.xls"))
-raw_pe_2023_03 = import_list(here(wddir, "penn", "2023", "RIBBiTR_qPCR_Penn2023_18August2023_Plate3_Results.xlsx"))
+raw_pe_2023_01 = import_list(here(wddir, "Penn2023", "RIBBiTR_qPCR_Penn2023_17August2023_Plate1_RESULTS.xls"))
+raw_pe_2023_02 = import_list(here(wddir, "Penn2023", "RIBBiTR_qPCR_Penn2023_17August2023_Plate2_RESULTS.xls"))
+raw_pe_2023_03 = import_list(here(wddir, "Penn2023", "RIBBiTR_qPCR_Penn2023_18August2023_Plate3_Results.xlsx"))
+## 2024
+raw_pe_2024_01 = import_list(here(wddir, "Penn2024", "RIBBiTR_PennSwabs2024_02032025_Plate1_Results.xlsx"))
+raw_pe_2024_02 = import_list(here(wddir, "Penn2024", "RIBBiTR_PennSwabs2024_02052025_Plate2_Results.xlsx"))
+raw_pe_2024_03 = import_list(here(wddir, "Penn2024", "RIBBiTR_PennSwabs2024_02102025_Plate3_Results.xlsx"))
+raw_pe_2024_04 = import_list(here(wddir, "Penn2024", "RIBBiTR_PennSwabs2024_02112025_Plate4_Results.xlsx"))
+raw_pe_2024_05 = import_list(here(wddir, "Penn2024", "RIBBiTR_PennSwabs2024_02272025_Plate5_Rerun_results.xlsx"))
 
 tz_local = "America/New_York"
 
@@ -164,6 +175,10 @@ clean_pa_2023_13 = scrape_qpcr_xls(raw_pa_2023_13)
 clean_pa_2023_14 = scrape_qpcr_xls(raw_pa_2023_14)
 clean_pa_2023_15 = scrape_qpcr_xls(raw_pa_2023_15)
 
+clean_pa_2023nd_01 = scrape_qpcr_xls(raw_pa_2023nd_01)
+clean_pa_2023nd_02 = scrape_qpcr_xls(raw_pa_2023nd_02)
+clean_pa_2023nd_03 = scrape_qpcr_xls(raw_pa_2023nd_03)
+
 clean_pe_2022_01 = scrape_qpcr_xls(raw_pe_2022_01)
 clean_pe_2022_02 = scrape_qpcr_xls(raw_pe_2022_02) %>%
   mutate(bd_quantity_mean = as.numeric(bd_quantity_mean))
@@ -176,6 +191,12 @@ clean_pe_2023_02 = scrape_qpcr_xls(raw_pe_2023_02) %>%
          bd_quantity_mean = quantity_mean) %>%
   mutate(bd_quantity_mean = as.numeric(bd_quantity_mean))
 clean_pe_2023_03 = scrape_qpcr_xls(raw_pe_2023_03)
+
+clean_pe_2024_01 = scrape_qpcr_xls(raw_pe_2024_01)
+clean_pe_2024_02 = scrape_qpcr_xls(raw_pe_2024_02)
+clean_pe_2024_03 = scrape_qpcr_xls(raw_pe_2024_03)
+clean_pe_2024_04 = scrape_qpcr_xls(raw_pe_2024_04)
+clean_pe_2024_05 = scrape_qpcr_xls(raw_pe_2024_05)
 
 clean_pe_2022_02$bd_quantity_mean[clean_pe_2022_02$sample_name == "2022-05-18-admin-rapi18"] = 11603.6640625
 clean_pe_2022_02$bd_quantity_mean[clean_pe_2022_02$sample_name == "2022-05-18‚Äêadmin-rapi16"] = 11241.6748046875
@@ -210,15 +231,23 @@ bind_results = bind_rows(clean_br_2022_01,
                          clean_pa_2023_13,
                          clean_pa_2023_14,
                          clean_pa_2023_15,
+                         clean_pa_2023nd_01,
+                         clean_pa_2023nd_02,
+                         clean_pa_2023nd_03,
                          clean_pe_2022_01,
                          clean_pe_2022_02,
                          clean_pe_2023_01,
                          clean_pe_2023_02,
-                         clean_pe_2023_03)
+                         clean_pe_2023_03,
+                         clean_pe_2024_01,
+                         clean_pe_2024_02,
+                         clean_pe_2024_03,
+                         clean_pe_2024_04,
+                         clean_pe_2024_05)
 
 clean_results = bind_results %>%
-  rename(average_ct = bd_ct_mean,
-         average_target_quant = bd_quantity_mean,
+  rename(cycle_quant = bd_ct_mean,
+         target_quant = bd_quantity_mean,
          sample_control = sample_type,
          qpcr_well = well,
          comments_qpcr = comments) %>%
@@ -226,11 +255,10 @@ clean_results = bind_results %>%
          detected = case_when(bd_pos_neg == "Positive" ~ 1,
                               bd_pos_neg == "Negative" ~ 0,
                               TRUE ~ NA_real_),
-         replicate_results = ifelse(detected, "p", "n"),
-         replicate = "singlet",
-         replicate_count = 1,
          qpcr_well = as.character(qpcr_well),
          qpcr_lab = "rz_lab",
+         replicate_id = 1,
+         replicates = "singlet",
          extraction_lab = "rz_lab",
          extraction_kit = "qiagen_dneasy",
          standard = "plasmid-pisces",
@@ -238,11 +266,16 @@ clean_results = bind_results %>%
          qpcr_machine = "quantstudio_3",
          swab_type = "mw113",
          qpcr_dilution_factor = 1,
-         volume_template_dna_uL = 5,
+         template_dna_volume_uL = 5,
          extract_volume_uL = 20,
          total_qpcr_volume_uL = 25,
-         target_quant_per_swab = average_target_quant * extract_volume_uL/(volume_template_dna_uL * qpcr_dilution_factor),
-         sample_control = ifelse(sample_name %in% c("qPCR Negative", "Negative Swab", "Positive Swab", "POS EXTRACT CONTROL", "NEG EXTRACT CONTROL"), "Control", sample_control)) %>%
+         sample_control = ifelse(sample_name %in% c("qPCR Negative", "Negative Swab", "Positive Swab", "POS EXTRACT CONTROL", "NEG EXTRACT CONTROL"), "Control", sample_control),
+         target_quant_per_swab = target_quant * qpcr_dilution_factor * extract_volume_uL / template_dna_volume_uL,
+         its1_copies_per_standard_unit = case_match(standard_target_type,
+                                                    "ITS1" ~ 1,
+                                                    "zoospore" ~ 60,
+                                                    .default = NA),
+         bd_its1_copies_per_swab = target_quant_per_swab * its1_copies_per_standard_unit) %>%
   filter(!is.na(sample_name),
          sample_control != "Control" | is.na(sample_control),
          !str_detect(sample_name, "^Pisces"),
@@ -285,11 +318,11 @@ gelled_results = clean_results %>%
   mutate(sample_name_bd = sample_name) %>%
   left_join(db_bd %>% 
               select(sample_name_bd,
-                     qpcr_plate_run,
+                     qpcr_plate_name,
                      qpcr_well,
                      result_id) %>%
               collect(), by = c("sample_name_bd",
-                                "qpcr_plate_run",
+                                "qpcr_plate_name",
                                 "qpcr_well")) %>%
   group_by(sample_name_bd,
            qpcr_plate_name,
@@ -313,7 +346,7 @@ compare_bd_samples = compare_df_cols(db_sample %>%
 
 tray = compare_for_staging(db_sample %>% collect(), subset_bd_samples, "sample_id", return_all = TRUE, report = "sample")
 final_bd_samples = bind_rows(tray$insert,
-                       tray$update)
+                             tray$update)
 
 subset_bd = gelled_results %>%
   select(any_of(colnames(db_bd))) %>%
