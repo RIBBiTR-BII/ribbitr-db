@@ -1154,3 +1154,26 @@ pointer = tbl(dbcon, temp_capture)
 rows_update(db_capture, pointer, by = "capture_id", in_place=TRUE, unmatched = "ignore")
 
 ```
+
+# inquiry kira survey date
+```{r}
+ves_inq = db_ves %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(date == "2023-07-26",
+         site == "54188") %>%
+  collect()
+
+srv_inq = db_survey %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(date %in% c("2023-07-26", "2023-07-27"),
+         site == "54188") %>%
+  collect()
+
+```
