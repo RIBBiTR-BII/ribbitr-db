@@ -1,0 +1,62 @@
+---
+title: "amps_restructure"
+output: html_document
+---
+
+```{r}
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, rio, RIBBiTR-BII/ribbitrrr)
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+## Connect to RIBBiTR DB
+dbcon <- hopToDB("wibbitr")
+```
+
+# pull amp gia info
+```{r}
+amp_gia = tbl(dbcon, Id("survey_data", "amp_totals")) %>%
+  collect()
+
+amp_gia_simple = amp_gia %>%
+  select(amp_id,
+         date_gia,
+         gia_final_reading,
+         mic,
+         "percent_inhibition_16_ug_ml",
+         "percent_inhibition_31_ug_ml",
+         "percent_inhibition_63_ug_ml",
+         "percent_inhibition_125_ug_ml",
+         "percent_inhibition_250_ug_ml",
+         "percent_inhibition_500_ug_ml",
+         "gia_notes") %>%
+  filter(!is.na(date_gia) | !is.na(percent_inhibition_63_ug_ml))
+
+dbWriteTable(dbcon, Id("survey_data", "amp_gia"), amp_gia_simple, overwrite = TRUE)
+
+```
+
+# scrape intensity
+```{r}
+amp_rapi = tbl(dbcon, Id("survey_data", "amp_rapi")) %>%
+  collect()
+
+amp_rasp = tbl(dbcon, Id("survey_data", "amp_rasp")) %>%
+  collect()
+
+write_csv(amp_rapi, here("staging", "amp_rapi.csv"))
+write_csv(amp_rasp, here("staging", "amp_rasp.csv"))
+
+```
+
+# scrape gia
+```{r}
+amp_gia = tbl(dbcon, Id("survey_data", "amp_gia")) %>%
+  collect()
+write_csv(amp_gia, here("staging", "amp_gia_serdp.csv"))
+```
+
+# scrape total
+```{r}
+amp_total = tbl(dbcon, Id("survey_data", "amp_total")) %>%
+  collect()
+write_csv(amp_total, here("staging", "amp_total_serdp.csv"))
+```

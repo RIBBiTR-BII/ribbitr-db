@@ -8,7 +8,7 @@ librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr
 # librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 
 ## Connect to RIBBiTR DB
-dbcon <- hopToDB("ribbitr")
+dbcon <- hopToDB("wibbitr")
 
 ## Pull metadata from database
 mdc = tbl(dbcon, Id("public", "all_columns")) %>%
@@ -18,142 +18,130 @@ mdc = tbl(dbcon, Id("public", "all_columns")) %>%
 ## Point to local data directory
 ddir = Sys.getenv("data_dir")  # data directory
 # Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
-wddir = here(ddir, "amps", "2025-05-16", "ribbitr") # working data directory
+ri_wddir = here(ddir, "amps", "2025-05-16", "ribbitr")
+sr_wddir = here(ddir, "amps", "serdp")
+```
+
+# table pointers
+```{r}
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+db_total = tbl(dbcon, Id("survey_data", "amp_total"))
+db_peak = tbl(dbcon, Id("survey_data", "amp_maldi_peak"))
+db_intensity = tbl(dbcon, Id("survey_data", "amp_maldi_intensity"))
+db_gia = tbl(dbcon, Id("survey_data", "amp_gia"))
 
 ```
 
 # load files
 ```{r}
-# dput(list.files(path = here(wddir, "sierra nevada")))
+# dput(list.files(path = here(wddir, "gia_data")))
+
+# serdp
+# raw_intensity_serpd_rapi = read_csv(here(wddir, "serdp", "amp_rapi.csv"))
+# raw_intensity_serpd_rasp = read_csv(here(wddir, "serdp", "amp_rasp.csv"))
 
 # brazil
-raw_maldi_br_2022 = read_csv(here(wddir, "brazil", "BII Brazil 2022 MALDI peak list.csv"))
-raw_peptide_br_2022 = read_csv(here(wddir, "brazil", "BII Brazil 2022 peptides.csv"))
+raw_maldi_br_2022 = read_csv(here(ri_wddir, "brazil", "BII Brazil 2022 MALDI peak list.csv"))
+raw_peptide_br_2022 = read_csv(here(ri_wddir, "brazil", "BII Brazil 2022 peptides.csv"))
 
-raw_maldi_br_2023 = read_csv(here(wddir, "brazil", "Brazil 2023 MALDI peak list.csv"))
-raw_peptide_br_2023 = read_csv(here(wddir, "brazil", "RIBBiTR_Brazil_totalpeptides2023_upload.csv"))
+raw_maldi_br_2023 = read_csv(here(ri_wddir, "brazil", "Brazil 2023 MALDI peak list.csv"))
+raw_peptide_br_2023 = read_csv(here(ri_wddir, "brazil", "RIBBiTR_Brazil_totalpeptides2023_upload.csv"))
 
 # panama
-raw_peptide_pa_2022_cpan = read_csv(here(wddir, "panama", "BII Panama 2022 Cpan peptide quantity.csv"))
-raw_maldi_pa_2022_cpan = read_csv(here(wddir, "panama", "BII Panama 2022 Cpan MALDI peak list.csv"))
-raw_peptide_pa_2022_lwarz = read_csv(here(wddir, "panama", "BII Panama 2022 Lwarz peptide quantity.csv"))
-raw_maldi_pa_2022_lwarz = read_csv(here(wddir, "panama", "BII Panama 2022 Lwarz MALDI peak list.csv"))
-raw_intensity_pa_2022_lwarz = read_csv(here(wddir, "panama", "BII Panama 2022 Lwarz AMP intensity.csv"))
+raw_peptide_pa_2022_cpan = read_csv(here(ri_wddir, "panama", "BII Panama 2022 Cpan peptide quantity.csv"))
+raw_maldi_pa_2022_cpan = read_csv(here(ri_wddir, "panama", "BII Panama 2022 Cpan MALDI peak list.csv"))
+raw_peptide_pa_2022_lwarz = read_csv(here(ri_wddir, "panama", "BII Panama 2022 Lwarz peptide quantity.csv"))
+raw_maldi_pa_2022_lwarz = read_csv(here(ri_wddir, "panama", "BII Panama 2022 Lwarz MALDI peak list.csv"))
+raw_intensity_pa_2022_lwarz = read_csv(here(ri_wddir, "panama", "BII Panama 2022 Lwarz AMP intensity.csv"))
 
-raw_peptide_pa_2023 = read_csv(here(wddir, "panama", "Panama 2023 peptide quantities.csv"))
-raw_maldi_pa_2023 = read_csv(here(wddir, "panama", "Panama MALDI 2023.csv"))
-raw_intensity_pa_2023_lwarz = read_csv(here(wddir, "panama", "BII 2023 Lwarz amps intensity.csv"))
+raw_peptide_pa_2023 = read_csv(here(ri_wddir, "panama", "Panama 2023 peptide quantities.csv"))
+raw_maldi_pa_2023 = read_csv(here(ri_wddir, "panama", "Panama MALDI 2023.csv"))
+raw_intensity_pa_2023_lwarz = read_csv(here(ri_wddir, "panama", "BII 2023 Lwarz amps intensity.csv"))
 
 # pennsylvania
-raw_peptide_pe_2022 = read_csv(here(wddir, "pennsylvania", "PLE peptide quantity 2022 upload.csv"))
-raw_maldi_pe_2022 = read_csv(here(wddir, "pennsylvania", "PLE MALDI 2022 230718.csv"))
-raw_intensity_pe_2022_rpip = read_csv(here(wddir, "pennsylvania", "PLE 2022 R pipiens amp intensity.csv"))
-raw_intensity_pe_2022_rcat = read_csv(here(wddir, "pennsylvania", "PLE 2022 R catesbeiana amp intensity.csv"))
+raw_peptide_pe_2022 = read_csv(here(ri_wddir, "pennsylvania", "PLE peptide quantity 2022 upload.csv"))
+raw_maldi_pe_2022 = read_csv(here(ri_wddir, "pennsylvania", "PLE MALDI 2022 230718.csv"))
+raw_intensity_pe_2022_rpip = read_csv(here(ri_wddir, "pennsylvania", "PLE 2022 R pipiens amp intensity.csv"))
+raw_intensity_pe_2022_rcat = read_csv(here(ri_wddir, "pennsylvania", "PLE 2022 R catesbeiana amp intensity.csv"))
 
-raw_peptide_pe_2023 = read_csv(here(wddir, "pennsylvania", "2023_AMP PLE peptide quantity mBCA data.csv"))
-raw_maldi_pe_2023 = read_csv(here(wddir, "pennsylvania", "PLE MALDI peak list 2023 species combined.csv"))
-raw_intensity_pe_2023_rpip = read_csv(here(wddir, "pennsylvania", "2023_ PA R. pipiens amp ID intensity.csv"))
-raw_intensity_pe_2023_rcat = read_csv(here(wddir, "pennsylvania", "2023_ PA R. catesbeiana amp ID intensity.csv"))
-raw_intensity_pe_2023_rcla = read_csv(here(wddir, "pennsylvania","2023_ PA R. clamitans amp ID intensity.csv"))
+raw_peptide_pe_2023 = read_csv(here(ri_wddir, "pennsylvania", "2023_AMP PLE peptide quantity mBCA data.csv"))
+raw_maldi_pe_2023 = read_csv(here(ri_wddir, "pennsylvania", "PLE MALDI peak list 2023 species combined.csv"))
+raw_intensity_pe_2023_rpip = read_csv(here(ri_wddir, "pennsylvania", "2023_ PA R. pipiens amp ID intensity.csv"))
+raw_intensity_pe_2023_rcat = read_csv(here(ri_wddir, "pennsylvania", "2023_ PA R. catesbeiana amp ID intensity.csv"))
+raw_intensity_pe_2023_rcla = read_csv(here(ri_wddir, "pennsylvania","2023_ PA R. clamitans amp ID intensity.csv"))
 
 # sierra nevada
-raw_peptide_sn_2022 = read_csv(here(wddir, "sierra nevada", "BII Sierra 2022 peptides.csv"))
-raw_maldi_sn_2022 = read_csv(here(wddir, "sierra nevada", "BII Sierra 2022 MALDI peak list.csv"))
-raw_intensity_sn_2022 = read_csv(here(wddir, "sierra nevada", "2022 Sierra Nevada amps intensity.csv"))
+raw_peptide_sn_2022 = read_csv(here(ri_wddir, "sierra nevada", "BII Sierra 2022 peptides.csv"))
+raw_maldi_sn_2022 = read_csv(here(ri_wddir, "sierra nevada", "BII Sierra 2022 MALDI peak list.csv"))
+raw_intensity_sn_2022 = read_csv(here(ri_wddir, "sierra nevada", "2022 Sierra Nevada amps intensity.csv"))
 
-raw_peptide_sn_2023 = read_csv(here(wddir, "sierra nevada", "Sierra peptide quantities 2023.csv"))
-raw_maldi_sn_2023 = read_csv(here(wddir, "sierra nevada", "BII SN 2023 peak list.csv"))
-raw_intensity_sn_2023 = read_csv(here(wddir, "sierra nevada", "2023 Sierra Nevada amp intensity.csv"))
+raw_peptide_sn_2023 = read_csv(here(ri_wddir, "sierra nevada", "Sierra peptide quantities 2023.csv"))
+raw_maldi_sn_2023 = read_csv(here(ri_wddir, "sierra nevada", "BII SN 2023 peak list.csv"))
+raw_intensity_sn_2023 = read_csv(here(ri_wddir, "sierra nevada", "2023 Sierra Nevada amp intensity.csv"))
 
-raw_peptide_sn_2024 = read_csv(here(wddir, "sierra nevada", "Sierra peptide quantities 2024.csv"))
-raw_maldi_sn_2024 = read_csv(here(wddir, "sierra nevada", "SN maldi 2024 MALDI.csv"))
-raw_intensity_sn_2024 = read_csv(here(wddir, "sierra nevada", "2024 Sierra Nevada amp intensity.csv"))
+raw_peptide_sn_2024 = read_csv(here(ri_wddir, "sierra nevada", "Sierra peptide quantities 2024.csv"))
+raw_maldi_sn_2024 = read_csv(here(ri_wddir, "sierra nevada", "SN maldi 2024 MALDI.csv"))
+raw_intensity_sn_2024 = read_csv(here(ri_wddir, "sierra nevada", "2024 Sierra Nevada amp intensity.csv"))
+
+# gia data
+raw_gia_pa = read_csv(here(ri_wddir, "gia_data", "2025-03-25", "Summary PA GIAs-BF&GF 1-8-25_CONSOLODATED.csv"))
+raw_gia_serdp = read_csv(here(sr_wddir, "amp_gia_serdp.csv"))
+
+raw_total_serdp = read_csv(here(sr_wddir, "amp_total_serdp.csv"))
 
 ```
 
 # combine similar and clean
 ```{r}
-# Combine all peptide data
-cols_pep = c("amp_id",
-             "Total.peptides.ug",
-             "Total.peptides.gbw",
-             "frog.surface.area",
-             "body_mass_g",
-             "peptides.ug.ml.mucus",
-             "Bath vol",
-             "Fractions pooled?",
-             "notes")
-
-clean_peptide = bind_rows(raw_peptide_br_2022 %>%
-                            rename(amp_id = amp_id_1),
-                          raw_peptide_br_2023,
-                          raw_peptide_pa_2022_cpan %>%
-                            rename(amp_id = Sample_ID,
-                                   body_mass_g = Weight),
-                          raw_peptide_pa_2022_lwarz %>%
-                            rename(amp_id = Sample_ID,
-                                   body_mass_g = Weight),
-                          raw_peptide_pa_2023 %>%
-                            rename(amp_id = capt_swab_id),
-                          raw_peptide_pe_2022 %>%
-                            rename(notes = BCA.notes),
-                          raw_peptide_pe_2023 %>%
-                            rename(notes = "Notes") %>%
-                            mutate(notes = ifelse(!is.na(amp_id_2),
-                                                  gsub(", NA", "", paste0(notes,
-                                                                          ". Pooled fractions from: ",
-                                                                          paste(amp_id,
-                                                                                amp_id_2,
-                                                                                amp_id_3,
-                                                                                amp_id_4,
-                                                                                sep = ", "))),
-                                                  notes)),
-                          raw_peptide_sn_2022 %>%
-                            rename(amp_id = mucosome_id,
-                                   body_mass_g = weight) %>%
-                            mutate(site_id = as.character(site_id)),
-                          raw_peptide_sn_2023,
-                          raw_peptide_sn_2024  %>%
-                            rename(body_mass_g = weight)) %>%
-  select(all_of(cols_pep)) %>%
+# Combine all total peptide data
+clean_total = bind_rows(raw_peptide_br_2022 %>%
+                          rename(amp_id = amp_id_1),
+                        raw_peptide_br_2023,
+                        raw_peptide_pa_2022_cpan %>%
+                          rename(amp_id = Sample_ID,
+                                 body_mass_g = Weight),
+                        raw_peptide_pa_2022_lwarz %>%
+                          rename(amp_id = Sample_ID,
+                                 body_mass_g = Weight),
+                        raw_peptide_pa_2023 %>%
+                          rename(amp_id = capt_swab_id),
+                        raw_peptide_pe_2022 %>%
+                          rename(notes = BCA.notes),
+                        raw_peptide_pe_2023 %>%
+                          rename(notes = "Notes") %>%
+                          mutate(notes = ifelse(!is.na(amp_id_2),
+                                                gsub(", NA", "", paste0(notes,
+                                                                        ". Pooled fractions from: ",
+                                                                        paste(amp_id,
+                                                                              amp_id_2,
+                                                                              amp_id_3,
+                                                                              amp_id_4,
+                                                                              sep = ", "))),
+                                                notes)),
+                        raw_peptide_sn_2022 %>%
+                          rename(amp_id = mucosome_id,
+                                 body_mass_g = weight) %>%
+                          mutate(site_id = as.character(site_id)),
+                        raw_peptide_sn_2023,
+                        raw_peptide_sn_2024  %>%
+                          rename(body_mass_g = weight),
+                        raw_total_serdp %>%
+                          rename(notes = peptide_notes,
+                                 amp_id = sample_name_amp) %>%
+                          select(amp_id,
+                                 total_peptides_ug,
+                                 notes))%>%
   clean_names() %>%
+  mutate(total_peptides_ug = ifelse(is.na(fractions_pooled) | fractions_pooled == "yes", total_peptides_ug, NA)) %>%
+  filter(!is.na(total_peptides_ug)) %>%
   select(amp_id,
          total_peptides_ug,
-         bath_vol,
-         fractions_pooled,
-         notes)
-
-clean_intensity = bind_rows(raw_intensity_pa_2022_lwarz %>%
-                            rename(amp_id = Sample_ID),
-                          raw_intensity_pa_2023_lwarz,
-                          raw_intensity_pe_2022_rcat,
-                          raw_intensity_pe_2022_rpip,
-                          raw_intensity_pe_2023_rcat %>%
-                            mutate(notes = ifelse(is.na(amp_id_2),
-                                                  NA_character_,
-                                                  gsub(", NA", "", paste0("Pooled fractions from: ",
-                                                                          paste(amp_id,
-                                                                                amp_id_2,
-                                                                                amp_id_3,
-                                                                                amp_id_4,
-                                                                                amp_id_5,
-                                                                                sep = ", "))))),
-                          raw_intensity_pe_2023_rcla %>%
-                            mutate(notes = ifelse(is.na(amp_id_2),
-                                                  NA_character_,
-                                                  gsub(", NA", "", paste0("Pooled fractions from: ",
-                                                                          paste(amp_id,
-                                                                                amp_id_2,
-                                                                                sep = ", "))))),
-                          raw_intensity_pe_2023_rpip,
-                          raw_intensity_sn_2022 %>%
-                            rename(amp_id = mucosome_id),
-                          raw_intensity_sn_2023,
-                          raw_intensity_sn_2024) %>%
-  clean_names()
+         notes) %>%
+  rename(sample_name = amp_id) %>%
+  mutate(amp_lab = "rs_lab")
 
 # row join all maldi data
-clean_maldi = bind_rows(raw_maldi_br_2022 %>%
+clean_peak = bind_rows(raw_maldi_br_2022 %>%
                             rename(amp_id = amp_id_1) %>%
                           clean_names(),
                           raw_maldi_br_2023 %>%
@@ -176,16 +164,472 @@ clean_maldi = bind_rows(raw_maldi_br_2022 %>%
                           raw_maldi_sn_2023 %>%
                           clean_names(),
                           raw_maldi_sn_2024 %>%
-                          clean_names())
+                          clean_names()) %>%
+  mutate(notes = ifelse(!is.na(amp_id_2),
+                       gsub(", NA", "", paste0("Pooled fractions from: ",
+                                               paste(amp_id,
+                                                     amp_id_2,
+                                                     sep = ", "))),
+                       NA_character_)) %>%
+  select(-sheet,
+         -species,
+         -amp_id_2) %>%
+  rename(sample_name = amp_id) %>%
+  mutate(amp_lab = "rs_lab")
+                            
+unified_intensity = bind_rows(raw_intensity_pa_2022_lwarz %>%
+                                clean_names() %>%
+                                rename(amp_id = sample_id),
+                              raw_intensity_pa_2023_lwarz %>%
+                                clean_names() %>%
+                                rename(species = species_capture),
+                              raw_intensity_pe_2022_rcat %>%
+                                clean_names(),
+                              raw_intensity_pe_2022_rpip %>%
+                                clean_names(),
+                              raw_intensity_pe_2023_rcat%>%
+                                clean_names(),
+                              raw_intensity_pe_2023_rcla %>%
+                                clean_names(),
+                              raw_intensity_pe_2023_rpip %>%
+                                clean_names() %>%
+                                rename(species = species_capture),
+                              raw_intensity_sn_2022 %>%
+                                rename(amp_id = mucosome_id) %>%
+                                clean_names(),
+                              raw_intensity_sn_2023 %>%
+                                clean_names(),
+                              raw_intensity_sn_2024 %>%
+                                clean_names()) %>%
+  mutate(notes = ifelse(!is.na(amp_id_2),
+                        gsub(", NA", "", paste0("Pooled fractions from: ",
+                                                paste(amp_id,
+                                                      amp_id_2,
+                                                      amp_id_3,
+                                                      amp_id_4,
+                                                      amp_id_5,
+                                                      sep = ", "))),
+                        NA_character_)) %>%
+  select(-amp_id_2,
+         -amp_id_3,
+         -amp_id_4,
+         -amp_id_5,
+         -x16,
+         -x17,
+         -x18,
+         -x19,
+         -x20,
+         -sample_id,
+         -conc_mg_ml,
+         -concentration_ug_ml,
+         -species)
 
-str_replace_na(c(NA, "abc", "def"), replacement='')
+pivot_intensity = unified_intensity %>%
+  pivot_longer(
+      cols = -c(amp_id,
+                notes),
+      names_to = c("column"),
+      values_to = "value") %>%
+  filter(!is.na(value))
 
-peace = raw_peptide_pe_2023 %>%
-  rename(notes = "Notes") %>%
-  mutate(notes = ifelse(!is.na(amp_id_2), gsub(", NA", "", paste0(notes,"Pooled fractions from: ", paste(amp_id, amp_id_2, amp_id_3, amp_id_4, sep = ", "))), notes))
+pivot_cols = colnames(unified_intensity %>%
+                        select(-amp_id,
+                               -notes))
 
-  clean_names() %>%
-  mutate(across(everything(), ~ na_if(., "")))
+process_peptide_cols <- function(x) {
+    # Extract all 3-4 digit numbers (known peaks)
+    numbers <- str_extract_all(x, "\\d{3,4}(?:_\\d)?")[[1]]
+    known_peak_str = paste(gsub("_", ".", numbers), collapse = "/")
+    
+    if (length(numbers) == 0) {
+      known_peak_str = NA_character_
+    }
+    
+    metric = str_extract(x, "(intensity|observed_peak)$")
+    
+    # Split string by these numbers to get peptide parts
+    parts_a = str_replace_all(x, "(_intensity|_observed_peak)$", "")
+    
+    parts <- str_split(parts_a, "\\d{3,4}(?:_\\d)?")[[1]]
+    
+    # Clean leading/trailing underscores from parts
+    parts <- str_replace_all(parts, "^_+|_+$", "")
+    
+    if (length(parts) == 1) {
+      parts = str_split(parts_a, "_")[[1]]
+      
+      if (length(parts) == 2) {
+        # If only two parts, assume it's a single peptide
+        parts = paste(parts[1], parts[2], sep = "_")
+      } else if (length(parts) == 4) {
+        # If more than two parts, join them as a single peptide
+        parts = c(paste(parts[1], parts[2], sep = "_"),
+                  paste(parts[3], parts[4], sep = "_"))
+      }
+    }
+    
+    # Remove empty strings
+    peptides <- parts[parts != ""]
+    
+    # Join peptides and numbers with "/"
+    peptide_str <- paste(peptides, collapse = "/")
+    
+    tibble(column = x, peptide = peptide_str, known_peak = known_peak_str, metric = metric)
+  }
 
+pivot_cols_proc = map_df(pivot_cols, ~process_peptide_cols(.x))
+
+clean_intensity = pivot_intensity %>%
+  left_join(pivot_cols_proc, by = "column") %>%
+  arrange(amp_id, peptide, known_peak) %>%
+  group_by(amp_id, notes, peptide) %>%
+  mutate(known_peak = first(known_peak)) %>%
+  ungroup() %>%
+  pivot_wider(
+    id_cols = c(amp_id, notes, peptide, known_peak),
+    names_from = metric,
+    values_from = value) %>%
+  arrange(amp_id, known_peak, peptide) %>%
+  select(amp_id, peptide, known_peak, observed_peak, intensity, notes)  %>%
+  rename(sample_name = amp_id) %>%
+  mutate(amp_lab = "rs_lab")
+
+clean_gia = bind_rows(raw_gia_pa %>%
+                        clean_names() %>%
+                        rename(date_gia = date_of_gia,
+                               lab_tech = person,
+                               percent_inhibition_500_ug_ml = x500,
+                               percent_inhibition_250_ug_ml = x250,
+                               percent_inhibition_125_ug_ml = x125,
+                               percent_inhibition_62_5_ug_ml = x62_5,
+                               percent_inhibition_31_2_ug_ml = x31_25,
+                               percent_inhibition_15_6_ug_ml = x15_625,
+                               percent_inhibition_7_81_ug_ml = x7_8125,
+                               percent_inhibition_3_91_ug_ml = x3_9,
+                               percent_inhibition_1_95_ug_ml = x2,
+                               day_7_positive_optical_density = dy7_pos_o_d,
+                               gia_notes = notes),
+                      raw_gia_serdp %>%
+                        rename(day_7_positive_optical_density = gia_final_reading,
+                               percent_inhibition_31_2_ug_ml = percent_inhibition_31_25_ug_ml,
+                               percent_inhibition_15_6_ug_ml = percent_inhibition_15_625_ug_ml) %>%
+                        mutate(mic = as.character(mic))) %>%
+  rename(sample_name = amp_id,
+         bd_isolate_id = isolate_tested,
+         notes = gia_notes) %>%
+  mutate(amp_lab = "rs_lab",
+         bd_isolate_id = case_match(bd_isolate_id,
+                                    "JEL197" ~ "JEL197_RIBBiTR",
+                                    "JEL197 (2023)" ~ "JEL197_RIBBiTR",
+                                    .default = bd_isolate_id)) %>%
+    select("sample_name",
+         "date_gia",
+         "bd_isolate_id",
+         "percent_inhibition_500_ug_ml",
+         "percent_inhibition_250_ug_ml", 
+         "percent_inhibition_125_ug_ml",
+         "percent_inhibition_62_5_ug_ml", 
+         "percent_inhibition_31_2_ug_ml",
+         "percent_inhibition_15_6_ug_ml", 
+         "percent_inhibition_7_81_ug_ml",
+         "percent_inhibition_3_91_ug_ml", 
+         "percent_inhibition_1_95_ug_ml",
+         "day_7_positive_optical_density", 
+         "mic",
+         "amp_lab",
+         "notes") %>%
+  group_by(sample_name, bd_isolate_id) %>%
+  mutate(replicate_id = row_number()) %>%
+  ungroup()
+
+```
+
+# align with sample table
+```{r}
+amp_samples = db_sample %>%
+              filter(sample_type == "amp") %>%
+              collect()
+
+# amp_total_peptides
+gelled_total = clean_total %>%
+  left_join(amp_samples, by = "sample_name") %>%
+  left_join(db_total %>%
+              select(result_id, sample_name_amp) %>%
+              collect(), by = c("sample_name" = "sample_name_amp")) %>%
+  mutate(sample_type = "amp",
+         sample_name_amp = sample_name,
+         sample_id = ifelse(is.na(sample_id), UUIDfromName("1208e62f-d3a1-462c-984f-0bf1f43f5837", paste0(sample_name, sample_type)), sample_id),
+         result_id =  ifelse(is.na(result_id), UUIDfromName("6979f9fe-39f5-47b6-8b63-fa688ee5aaa7", sample_name), result_id))
+
+# amp_maldi_peak
+gelled_peak = clean_peak %>%
+  left_join(amp_samples, by = "sample_name") %>%
+  left_join(db_peak %>%
+              select(result_id, sample_name_amp, m_z) %>%
+              collect(), by = c("sample_name" = "sample_name_amp", "m_z")) %>%
+  mutate(sample_type = "amp",
+         sample_name_amp = sample_name,
+         sample_id = ifelse(is.na(sample_id), UUIDfromName("1208e62f-d3a1-462c-984f-0bf1f43f5837", paste0(sample_name, sample_type)), sample_id),
+         result_id =  ifelse(is.na(result_id), UUIDfromName("a12b4a3e-2fa9-43fe-ae73-1682ba31f3f3", paste0(sample_name, m_z)), result_id)) %>%
+  distinct()
+
+# amp_maldi_intensity
+gelled_intensity = clean_intensity %>%
+  left_join(amp_samples, by = "sample_name") %>%
+  left_join(db_intensity %>%
+              select(result_id, sample_name_amp, peptide) %>%
+              collect(), by = c("sample_name" = "sample_name_amp", "peptide")) %>%
+  mutate(sample_type = "amp",
+         sample_name_amp = sample_name,
+         sample_id = ifelse(is.na(sample_id), UUIDfromName("1208e62f-d3a1-462c-984f-0bf1f43f5837", paste0(sample_name, sample_type)), sample_id),
+         result_id =  ifelse(is.na(result_id), UUIDfromName("bd70db86-9eb2-457e-970b-bdafd33dc3d9", paste0(sample_name, peptide)), result_id))
+
+# amp_gia
+gelled_gia = clean_gia %>%
+  left_join(amp_samples, by = "sample_name") %>%
+  left_join(db_gia %>%
+              select(result_id, sample_name_amp, date_gia, bd_isolate_id, replicate_id) %>%
+              collect(), by = c("sample_name" = "sample_name_amp", "date_gia", "bd_isolate_id", "replicate_id")) %>%
+  mutate(sample_type = "amp",
+         sample_name_amp = sample_name,
+         sample_id = ifelse(is.na(sample_id), UUIDfromName("1208e62f-d3a1-462c-984f-0bf1f43f5837", paste0(sample_name, sample_type)), sample_id),
+         result_id =  ifelse(is.na(result_id), UUIDfromName("ac5856d9-120a-4003-9bb0-eb6df83c1473", paste0(sample_name, date_gia, bd_isolate_id, replicate_id)), result_id))
+```
+
+# subset
+```{r}
+# sample total
+subset_sample_total = gelled_total %>%
+  select(any_of(colnames(db_sample))) %>%
+  distinct() %>%
+  filter(!is.na(sample_id))
+
+compare_sample_total = compare_df_cols(db_sample %>%
+                                         filter(FALSE) %>%
+                                         collect(), subset_sample_total)
+
+tray = compare_for_staging(amp_samples, subset_sample_total, "sample_id", return_all = TRUE, report = "sample_total")
+
+# sample peak
+subset_sample_peak = gelled_peak %>%
+  select(any_of(colnames(db_sample))) %>%
+  distinct() %>%
+  filter(!is.na(sample_id))
+
+compare_sample_peak = compare_df_cols(db_sample %>%
+                                        filter(FALSE) %>%
+                                        collect(), subset_sample_peak)
+
+tray = compare_for_staging(amp_samples, subset_sample_peak, "sample_id", return_all = TRUE, report = "sample_peak")
+
+# sample intensity
+subset_sample_intensity = gelled_intensity %>%
+  select(any_of(colnames(db_sample))) %>%
+  distinct() %>%
+  filter(!is.na(sample_id))
+
+compare_sample_intensity = compare_df_cols(db_sample %>%
+                                             filter(FALSE) %>%
+                                             collect(), subset_sample_intensity)
+
+tray = compare_for_staging(amp_samples, subset_sample_intensity, "sample_id", return_all = TRUE, report = "sample_intensity")
+
+# sample gia
+subset_sample_gia = gelled_gia %>%
+  select(any_of(colnames(db_sample))) %>%
+  distinct() %>%
+  filter(!is.na(sample_id))
+
+compare_sample_gia = compare_df_cols(db_sample %>%
+                                       filter(FALSE) %>%
+                                       collect(), subset_sample_gia)
+
+tray = compare_for_staging(amp_samples, subset_sample_gia, "sample_id", return_all = TRUE, report = "sample_gia")
+
+
+# ^ diagnostics only
+
+# one single sample upsert
+subset_sample_all = rbind(subset_sample_total,
+                          subset_sample_peak,
+                          subset_sample_intensity,
+                          subset_sample_gia) %>%
+  distinct() %>%
+  filter(!is.na(sample_id))
+tray = compare_for_staging(amp_samples, subset_sample_all, "sample_id", return_all = TRUE, report = "sample_all")
+upsert_sample_all = bind_rows(tray$insert,
+                              tray$update)
+
+# total
+subset_total = gelled_total %>%
+  select(any_of(colnames(db_total))) %>%
+  distinct() %>%
+  filter(!is.na(sample_id))
+
+compare_total = compare_df_cols(db_total %>%
+                                  filter(FALSE) %>%
+                                  collect(), subset_total)
+
+tray = compare_for_staging(db_total %>% collect(), subset_total, "result_id", return_all = TRUE, report = "amp_total")
+upsert_total = bind_rows(tray$insert,
+                         tray$update)
+
+# peak
+subset_peak = gelled_peak %>%
+  select(any_of(colnames(db_peak))) %>%
+  distinct() %>%
+  filter(!is.na(sample_id))
+
+compare_peak = compare_df_cols(db_peak %>%
+                                  filter(FALSE) %>%
+                                  collect(), subset_peak)
+
+tray = compare_for_staging(db_peak %>% collect(), subset_peak, "result_id", return_all = TRUE, report = "amp_peak")
+upsert_peak = bind_rows(tray$insert,
+                         tray$update)
+
+# intensity
+subset_intensity = gelled_intensity %>%
+  select(any_of(colnames(db_intensity))) %>%
+  distinct() %>%
+  filter(!is.na(sample_id))
+
+compare_intensity = compare_df_cols(db_intensity %>%
+                                  filter(FALSE) %>%
+                                  collect(), subset_intensity)
+
+tray = compare_for_staging(db_intensity %>% collect(), subset_intensity, "result_id", return_all = TRUE, report = "amp_intensity")
+upsert_intensity = bind_rows(tray$insert,
+                         tray$update)
+
+# gia
+subset_gia = gelled_gia %>%
+  select(any_of(colnames(db_gia))) %>%
+  distinct() %>%
+  filter(!is.na(sample_id))
+
+compare_gia = compare_df_cols(db_gia %>%
+                                  filter(FALSE) %>%
+                                  collect(), subset_gia)
+
+tray = compare_for_staging(db_gia %>% collect(), subset_gia, "result_id", return_all = TRUE, report = "amp_gia")
+upsert_gia = bind_rows(tray$insert,
+                         tray$update)
+
+```
+
+# commit transaction
+```{r}
+dbBegin(dbcon)
+  
+  tryCatch(
+    {
+      # all samples
+      temp_sample = stage_to_temp(dbcon, db_sample, upsert_sample_all)
+      pointer = tbl(dbcon, temp_sample)
+      rows_upsert(db_sample, pointer, by="sample_id", in_place=TRUE)
+      
+      # total
+      temp_total = stage_to_temp(dbcon, db_total, upsert_total)
+      pointer = tbl(dbcon, temp_total)
+      rows_upsert(db_total, pointer, by="result_id", in_place=TRUE)
+      
+      # peak
+      temp_peak = stage_to_temp(dbcon, db_peak, upsert_peak)
+      pointer = tbl(dbcon, temp_peak)
+      rows_upsert(db_peak, pointer, by="result_id", in_place=TRUE)
+      
+      # intensity
+      temp_intensity = stage_to_temp(dbcon, db_intensity, upsert_intensity)
+      pointer = tbl(dbcon, temp_intensity)
+      rows_upsert(db_intensity, pointer, by="result_id", in_place=TRUE)
+      
+      # gia
+      temp_gia = stage_to_temp(dbcon, db_gia, upsert_gia)
+      pointer = tbl(dbcon, temp_gia)
+      rows_upsert(db_gia, pointer, by="result_id", in_place=TRUE)
+      
+      # Commit the transaction if successful
+      dbCommit(dbcon)
+      print("Transaction successful!")
+      
+    }, error = function(e) {
+      # Rollback in case of error
+      dbRollback(dbcon)
+      message("Transaction failed: ", e$message)
+    })
+
+
+```
+
+# initial table write
+```{r}
+write_total = gelled_total %>%
+  select("result_id",
+         "sample_id",
+         "sample_name_amp",
+         "total_peptides_ug",
+         "notes",
+         "amp_lab")
+
+write_peak = gelled_peak %>%
+  select(result_id,
+         sample_id,
+         "sample_name_amp",
+         "centroid_mass",
+         "m_z",
+         "time",
+         "intens",
+         "sn", 
+         "quality_fac",
+         "res",
+         "area",
+         "rel_intens",
+         "fwhm",
+         "chi_2", 
+         "bk_peak",
+         "notes",
+         "amp_lab")
+
+write_intensity = gelled_intensity %>%
+  select("result_id",
+         "sample_id",
+         "sample_name_amp",
+         "peptide",
+         "known_peak",
+         "observed_peak",
+         "intensity", 
+         "notes",
+         "amp_lab")
+
+write_gia = gelled_gia %>%
+  select("result_id",
+         "sample_id",
+         "sample_name_amp",
+         "date_gia",
+         "bd_isolate_id",
+         "replicate_id",
+         "percent_inhibition_500_ug_ml", 
+         "percent_inhibition_250_ug_ml",
+         "percent_inhibition_125_ug_ml", 
+         "percent_inhibition_62_5_ug_ml",
+         "percent_inhibition_31_2_ug_ml", 
+         "percent_inhibition_15_6_ug_ml",
+         "percent_inhibition_7_81_ug_ml", 
+         "percent_inhibition_3_91_ug_ml",
+         "percent_inhibition_1_95_ug_ml", 
+         "day_7_positive_optical_density",
+         "mic",
+         "notes",
+         "amp_lab")
+peace = get_dupes(write_total, result_id)
+peace = get_dupes(write_peak, result_id)
+peace = get_dupes(write_intensity, result_id)
+peace = get_dupes(write_gia, result_id)
+
+# dbWriteTable(dbcon, Id("survey_data", "amp_total"), write_total, overwrite = TRUE)
+# dbWriteTable(dbcon, Id("survey_data", "amp_maldi_peak"), write_peak, overwrite = TRUE)
+# dbWriteTable(dbcon, Id("survey_data", "amp_maldi_intensity"), write_intensity, overwrite = TRUE)
+# dbWriteTable(dbcon, Id("survey_data", "amp_gia"), write_gia, overwrite = TRUE)
 
 ```
