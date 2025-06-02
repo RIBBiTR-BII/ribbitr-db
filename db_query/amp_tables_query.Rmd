@@ -1,0 +1,143 @@
+---
+title: "amp_tables_query"
+output: html_document
+---
+
+```{r}
+
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, here, RPostgres, DBI, RIBBiTR-BII/ribbitrrr)
+
+# connect to database
+dbcon = hopToDB("ribbitr")
+
+```
+
+# table pointers
+```{r}
+# amp tables
+db_total = tbl(dbcon, Id("survey_data", "amp_total"))
+db_peak = tbl(dbcon, Id("survey_data", "amp_maldi_peak"))
+db_intensity = tbl(dbcon, Id("survey_data", "amp_maldi_intensity"))
+db_gia = tbl(dbcon, Id("survey_data", "amp_gia"))
+
+# survey tables
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
+```
+
+# AMP table metadata
+```{r}
+amp_tabs = c("amp_total",
+             "amp_maldi_peak",
+             "amp_maldi_intensity",
+             "amp_gia")
+
+# table metadata
+amp_mdt = tbl(dbcon, Id("survey_data", "metadata_tables")) %>%
+  filter(table_name %in% amp_tabs) %>%
+  arrange(table_name) %>%
+  collect()
+
+# column metadata
+amp_mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
+  filter(table_name %in% amp_tabs) %>%
+  arrange(table_name, ordinal_position) %>%
+  collect()
+
+write_csv(amp_mdc, here("staging", "amp_column_metadata.csv"))
+
+```
+
+# AMP tables only (not joined)
+```{r}
+# pull amp tables
+data_amp_total = db_total %>%
+  collect()
+
+data_amp_peak = db_peak %>%
+  collect()
+
+data_amp_intensity = db_intensity %>%
+  collect()
+
+data_amp_gia = db_gia %>%
+  collect()
+
+```
+
+# AMP survey data
+```{r}
+# survey_data pointer for all amp samples
+amp_survey = db_sample %>%
+  filter(sample_type == "amp") %>%
+  left_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id")
+  
+```
+
+# AMP tables (joined)
+```{r}
+joined_amp_total = db_total %>%
+  left_join(amp_survey, by = "sample_id") %>%
+  select(all_of(colnames(db_total)),
+         capture_id,
+         taxon_capture,
+         svl_mm,
+         site,
+         date,
+         country) %>%
+  collect()
+
+joined_amp_peak = db_peak %>%
+  left_join(amp_survey, by = "sample_id") %>%
+  select(all_of(colnames(db_peak)),
+         capture_id,
+         taxon_capture,
+         svl_mm,
+         site,
+         date,
+         country) %>%
+  collect()
+
+
+joined_amp_intensity = db_intensity %>%
+  left_join(amp_survey, by = "sample_id") %>%
+  select(all_of(colnames(db_intensity)),
+         capture_id,
+         taxon_capture,
+         svl_mm,
+         site,
+         date,
+         country) %>%
+  collect()
+
+
+joined_amp_gia = db_gia %>%
+  left_join(amp_survey, by = "sample_id") %>%
+  select(all_of(colnames(db_gia)),
+         capture_id,
+         taxon_capture,
+         svl_mm,
+         site,
+         date,
+         country) %>%
+  collect()
+
+
+```
+
+# Disconnect from database
+```{r}
+dbDisconnect(dbcon)
+```
