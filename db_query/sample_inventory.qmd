@@ -133,3 +133,11 @@ bd_results_missing = db_bd %>%
 
 write_csv(bd_results_missing, here("staging", paste0("ribbitr_rz_bd_qpcr_plates_", today(), ".csv")))
 ```
+
+# brazil 2023 samples
+```{r}
+br23 = bd_samples %>%
+  filter(country == "brazil",
+         year(date) == 2023)
+
+```
