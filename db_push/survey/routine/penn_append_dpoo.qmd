@@ -290,7 +290,11 @@ clean_capture_obs <- raw_capture_obs %>%
          taxon_capture = str_to_lower(str_replace_all(taxon_capture, " ", "_")),
          comments_capture = str_replace_all(comments_capture, "\\n", ". "),
          bag_id = ifelse(bag_id == "BAG00", NA, bag_id),
-         photo = !is.na(photo_id)) %>%
+         photo = !is.na(photo_id),
+         microhabitat_wet = as.logical(case_match(microhabitat_wet,
+                                       "yes" ~ TRUE,
+                                       "no" ~ FALSE,
+                                       .default = NA))) %>%
   ribbitr_clean_taxa(taxon_capture, comments_capture) %>%
   select(-any_of(to_drop),
          -all_of(c("capture_status",
@@ -348,6 +352,7 @@ clean_sample_obs <- raw_sample_obs %>%
          microbiome_swab_id = microbiome_id,
          comments_sample = capture_comments) %>%
   mutate(sex = str_to_lower(sex),
+         sex = ifelse(sex == "unknown", NA_character_, sex),
          sex_other = str_to_lower(sex_other),
          capture_type = str_to_lower(capture_type),
          life_stage = str_to_lower(life_stage),
@@ -458,6 +463,7 @@ clean_sample_obs$bag_id[clean_sample_obs$fulcrum_id == "c844de38-b38f-43d8-a2db-
 clean_sample_obs$bag_id[clean_sample_obs$fulcrum_id == "46c33c92-feb9-47ca-91d9-b519db773d69"] = "BAG64"
 clean_sample_obs$bag_id[clean_sample_obs$fulcrum_id == "6d285d19-c288-456c-8dda-42ea35352dff"] = "BAG83"
 clean_sample_obs$bag_id[clean_sample_obs$fulcrum_id == "fe17b685-1c7a-4305-93cb-d3083de38654"] = "BAG16"
+clean_sample_obs$bag_id[clean_sample_obs$fulcrum_id == "9f72d0b0-9252-46e6-8391-8531174e1f97"] = "BAG68"
 
 clean_capture_obs$bag_id[clean_capture_obs$fulcrum_id == "78e8394d-60e4-4977-9f3b-9e57601b0980"] = "BAG10"
 clean_capture_obs$bag_id[clean_capture_obs$fulcrum_id == "c513fba1-d5bb-41cb-add0-5330250c6d0f"] = "BAG06"
@@ -529,7 +535,7 @@ gelled_visit = unified_visit %>%
   mutate(uuid_name = paste0(site, date, time_of_day),
          visit_id = ifelse(is.na(visit_id), UUIDfromName("1aec3647-4fb5-4086-b5ea-66c947562ec6", uuid_name), visit_id)) %>%
   ungroup() %>%
-  mutate(project = "ribbitr",
+  mutate(project_id = "ribbitr",
          visit_lab = "rz_lab")
 
 if (nrow(gelled_visit %>% filter(is.na(site_id))) > 0) {
@@ -1102,7 +1108,7 @@ x_ves = (nrow(upsert_ves_survey) > 0) | (nrow(insert_ves_taxa) > 0) | (nrow(upse
 
 ```
 
-### Stage and commit aural tables
+### Stage and commit ves tables
 
 ```{r}
 if (x_ves) {
@@ -1160,12 +1166,13 @@ unified_capture = clean_capture_obs %>%
   select(-fulcrum_parent_id) %>%
   full_join(unified_sample, by=c("site", "date", "time_of_day", "bag_id", "detection_type")) %>%
   mutate(taxon_capture = coalesce(taxon_sample, taxon_capture),
-         uuid_name = paste0(taxon_capture, svl_mm, body_mass_g, life_stage, sex, time_of_capture),
-         capture_id = ifelse(is.na(capture_id), UUIDfromName("2128d8af-bb98-4206-a356-25faa67ac3f9", uuid_name), capture_id)) %>%
+         uuid_cap_name = paste0(taxon_capture, svl_mm, body_mass_g, life_stage, sex, time_of_capture),
+         capture_id = ifelse(is.na(capture_id), UUIDfromName("2128d8af-bb98-4206-a356-25faa67ac3f9", uuid_cap_name), capture_id)) %>%
   select(-taxon_sample) %>%
   unite("comments_capture", c("comments_capture", "comments_sample"), sep=",", remove = TRUE, na.rm = TRUE) %>%
   left_join(clean_survey_info, by = c("site", "date")) %>%
-  mutate(time_of_day = coalesce(time_of_day.x, time_of_day.y)) %>%
+  mutate(time_of_day = coalesce(time_of_day.x, time_of_day.y),
+         photo = !is.na(photo_id)) %>%
   select(-time_of_day.x,
          -time_of_day.y) %>%
   left_join(db_site %>%
@@ -1183,6 +1190,7 @@ unified_capture = clean_capture_obs %>%
 
 capture_dupes = get_dupes(unified_capture, capture_id)
 
+# catch for example if duplicate bad ids
 if (nrow(capture_dupes) > 0) {
   stop("Duplicate captures found.")
 }
@@ -1301,7 +1309,6 @@ gelled_capture = unified_capture %>%
   select(-capture_mark_recapture) %>%
   arrange(date, site, time_of_capture) %>%
   drop_na(visit_id)
-
 ```
 
 ### Samples capture
@@ -1420,8 +1427,11 @@ compare_capture = compare_df_cols(db_capture %>%
 
 
 tray = compare_for_staging(db_capture %>% collect(), subset_capture, "capture_id", return_all = TRUE, report = "capture")
+peace = compare_updates(tray)
 upsert_capture = bind_rows(tray$insert,
                            tray$update)
+
+hope = tray$insert
 
 # sample
 subset_sample = gelled_sample %>%
