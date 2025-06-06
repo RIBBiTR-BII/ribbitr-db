@@ -174,7 +174,10 @@ clean_peak = bind_rows(raw_maldi_br_2022 %>%
   select(-sheet,
          -species,
          -amp_id_2) %>%
-  rename(sample_name = amp_id) %>%
+  rename(sample_name = amp_id,
+         intensity = intens,
+         relative_intensity = rel_intens,
+         resolution = res) %>%
   mutate(amp_lab = "rs_lab")
                             
 unified_intensity = bind_rows(raw_intensity_pa_2022_lwarz %>%
@@ -291,7 +294,8 @@ clean_intensity = pivot_intensity %>%
     values_from = value) %>%
   arrange(amp_id, known_peak, peptide) %>%
   select(amp_id, peptide, known_peak, observed_peak, intensity, notes)  %>%
-  rename(sample_name = amp_id) %>%
+  rename(sample_name = amp_id,
+         relative_intensity = intensity) %>%
   mutate(amp_lab = "rs_lab")
 
 clean_gia = bind_rows(raw_gia_pa %>%
