@@ -113,7 +113,7 @@ remapped_sites = revised_sites %>%
   group_by(date,
            site_id,
            time_of_day,
-           project) %>%
+           project_id) %>%
   mutate(visit_id = first(visit_id)) %>%
   ungroup()
   

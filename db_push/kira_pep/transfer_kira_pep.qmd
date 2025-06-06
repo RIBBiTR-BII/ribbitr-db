@@ -73,7 +73,7 @@ clean_ves = data_ves %>%
                                 "ramu" ~ "rana_muscosa",
                                 "thel" ~ "thamnophis_elegans"),
          time_of_day = "day",
-         project = "ribbitr_pep",
+         project_id = "ribbitr_pep",
          transect = NA)
 
 # subset and compare
@@ -174,7 +174,7 @@ clean_capture = data_capture %>%
          detection_type = "visual",
          number_observers = map_int(observers_survey, ~ length(unique(na.omit(unlist(str_split(gsub(" ", "", .x), ",")))))),
          time_of_day = "day",
-         project = "ribbitr_pep")
+         project_id = "ribbitr_pep")
   
   
 # subset and compare
@@ -254,7 +254,7 @@ clean_env = data_env %>%
   mutate(detection_type = "environmental",
          number_observers = map_int(observers_survey, ~ length(unique(na.omit(unlist(str_split(gsub(" ", "", .x), ",")))))),
          time_of_day = "day",
-         project = "ribbitr_pep",
+         project_id = "ribbitr_pep",
          sky = case_match(sky,
                           "Clear" ~ "clear",
                           c("precip", "Precipitating") ~ "precipitating",

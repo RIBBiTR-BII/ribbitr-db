@@ -128,7 +128,7 @@ data_landscape = br_qpcr %>%
               rename_with(~ paste0("csv_", .)), by = c("sample_name_bd" = "csv_sample_id")) %>%
   left_join(ls_sites %>%
               rename_with(~ paste0("ls_", .)), by = c("site" = "ls_site")) %>%
-  mutate(project = "landscapes",
+  mutate(project_id = "landscapes",
          life_stage = case_when(
            grepl('jovem', comments_capture) | grepl("juvenil", comments_capture) ~ "juvenile",
            TRUE ~ "adult"),
@@ -352,7 +352,7 @@ data_sv = br_qpcr %>%
   left_join(sv_sites_clean %>%
               rename_with(~ paste0("sv_", .)), by = c("csv_transect_id" = "sv_transect_id")) %>%
   left_join(clean_cct, by = "sample_name") %>%
-  mutate(project = "pce_santa_virginia",
+  mutate(project_id = "pce_santa_virginia",
          region = "santa_virginia",
          old_site = site,
          site = paste0(gsub(" ", "_", tolower(csv_transect_id)), "_", tolower(csv_transect_type)),

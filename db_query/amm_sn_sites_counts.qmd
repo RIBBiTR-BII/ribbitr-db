@@ -85,7 +85,7 @@ data_samps = db_sample %>%
          site_longitude,
          site_elevation_m,
          geographic_area,
-         project) %>%
+         project_id) %>%
   collect() %>%
   arrange(date,
           bd) %>%
@@ -98,15 +98,15 @@ data_samps = db_sample %>%
 # write_csv(data_samps, here("staging", paste0("amm_sn_captured_individuals_", today(), ".csv")))
 
 data_proj = data_samps %>%
-  group_by(project) %>%
+  group_by(project_id) %>%
   count()
 
 data_proj_spec = data_samps %>%
-  group_by(project, taxon_capture) %>%
+  group_by(project_id, taxon_capture) %>%
   count()
 
 data_life_stage_proj = data_samps %>%
-  group_by(life_stage, project) %>%
+  group_by(life_stage, project_id) %>%
   count()
 
 data_species = data_samps %>%

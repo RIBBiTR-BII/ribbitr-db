@@ -361,7 +361,7 @@ gelled_visit = unified_visit %>%
   mutate(uuid_name = paste0(site, date, time_of_day),
          visit_id = ifelse(is.na(visit_id), UUIDfromName("1aec3647-4fb5-4086-b5ea-66c947562ec6", uuid_name), visit_id)) %>%
   ungroup() %>%
-  mutate(project = "ribbitr",
+  mutate(project_id = "ribbitr",
          visit_lab = "rz_lab")
 
 if (nrow(gelled_visit %>% filter(is.na(site_id))) > 0) {

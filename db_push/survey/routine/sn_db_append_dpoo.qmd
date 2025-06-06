@@ -135,7 +135,7 @@ clean_visit = sn_visit %>%
          comments_visit = comment) %>%
   mutate(site = as.character(site),
          visit_lab = "snarl",
-         project = "mlrg",
+         project_id = "mlrg",
          time_of_day = "day",
          visit_status = as.character(visit_status),
          comments_visit = ifelse(comments_visit == "", NA_character_, comments_visit)) %>%

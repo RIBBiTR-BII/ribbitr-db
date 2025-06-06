@@ -59,7 +59,7 @@ data_br = db_visit %>%
   select(date,
          site,
          visit_id,
-         project) %>%
+         project_id) %>%
   collect() %>%
   arrange(date,
           site)

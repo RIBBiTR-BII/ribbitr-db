@@ -542,7 +542,7 @@ gelled_visit = unified_visit %>%
             by = tbl_nkey("visit", mdc)) %>%
   mutate(uuid_name = paste0(site, date, time_of_day),
          visit_id = ifelse(is.na(visit_id), UUIDfromName("d811625d-f792-4848-8e5c-c351b3dc6268", uuid_name), visit_id),
-         project = "ribbitr",
+         project_id = "ribbitr",
          visit_lab = "jv_lab")
 
 

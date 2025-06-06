@@ -123,7 +123,7 @@ clean_focal = bind_rows(raw_focal_2022 %>%
          is_duplicate = FALSE,
          uuid_name_capture = paste0(date, transect_id, time, species, snout_vent_length_mm, body_mass_g, bd_swab_tube_id),
          capture_id = UUIDfromName("e3c835a4-4c8d-491c-9970-011aba853686", uuid_name_capture),
-         project = "ribbitr")
+         project_id = "ribbitr")
 
 clean_nonfocal = bind_rows(raw_nonfocal_2023 %>%
                              clean_names() %>%
@@ -139,7 +139,7 @@ clean_nonfocal = bind_rows(raw_nonfocal_2023 %>%
          is_duplicate = FALSE,
          uuid_name_capture = paste0(date, transect_id, time, species, bd_swab_tube_id),
          capture_id = UUIDfromName("e3c835a4-4c8d-491c-9970-011aba853686", uuid_name_capture),
-         project = "ribbitr") %>%
+         project_id = "ribbitr") %>%
   select(-correct_swab_id)
 
 clean_tissue = raw_tissue %>%
@@ -156,7 +156,7 @@ clean_tissue = raw_tissue %>%
          time = as.hms(as.numeric(time)*24*60*60),
          uuid_name_capture = paste0(date, transect_id, time, species, snout_vent_length_mm, body_mass_g),
          capture_id = UUIDfromName("e3c835a4-4c8d-491c-9970-011aba853686", uuid_name_capture),
-         project = "ribbitr") %>%
+         project_id = "ribbitr") %>%
   group_by(region,
            transect_id,
            date,
@@ -173,7 +173,7 @@ clean_ls = raw_ls %>%
   mutate(date = ifelse(date == "27/09/2018", "9/27/2018", date),
          date = mdy(date),
          sample_id = as.character(sample_id),
-         project = "landscapes",
+         project_id = "landscapes",
          bd_swab_tube_id = paste0("brls_", str_pad(sample_id, 3, pad = "0")),
          survey_time = "night",
          life_stage = case_when(
@@ -194,7 +194,7 @@ clean_ls = raw_ls %>%
                                         "Fragmento" ~ "forest",
                                         "Bordo" ~ "forest_edge",
                                         .default = NA_character_),
-         uuid_name_capture = paste0(project, date, sample_id),
+         uuid_name_capture = paste0(project_id, date, sample_id),
          capture_id = UUIDfromName("e3c835a4-4c8d-491c-9970-011aba853686", uuid_name_capture),
          is_duplicate = FALSE)
 
@@ -212,7 +212,7 @@ clean_sv = raw_sv %>%
                            .default = site),
          transect = tolower(transect_type),
          capture_utm_zone = 23,
-         project = "pce_santa_virginia",
+         project_id = "pce_santa_virginia",
          id = as.character(id),
          bd_swab_tube_id = paste0("pce_", id),
          sex = case_match(sex,
@@ -226,7 +226,7 @@ clean_sv = raw_sv %>%
                                            "Y" ~ "dead",
                                            NA ~ NA,
                                            .default = "alive"),
-         uuid_name_capture = paste0(project, date, id),
+         uuid_name_capture = paste0(project_id, date, id),
          capture_id = UUIDfromName("e3c835a4-4c8d-491c-9970-011aba853686", uuid_name_capture),
          is_duplicate = FALSE)
 
@@ -363,7 +363,7 @@ clean_edna = bind_rows(raw_edna_2022 %>%
          time_of_day = case_when(collection_time >= as_hms("08:00:00") & collection_time < as_hms("20:00:00") ~ "day",
                                  collection_time < as_hms("08:00:00") | collection_time >= as_hms("20:00:00") ~ "night",
                                  .default = NA_character_),
-         project = "ribbitr")
+         project_id = "ribbitr")
 ```
 
 ## unify visit
@@ -376,7 +376,7 @@ unified_visit = bind_rows(clean_edna,
          time_of_day,
          campaign,
          site,
-         project) %>%
+         project_id) %>%
   distinct()
 ```
 
@@ -843,7 +843,7 @@ compare_capture_survey = compare_df_cols(db_survey %>%
                                   filter(FALSE) %>%
                                   collect(), subset_capture_survey)
 tray = compare_for_staging(db_survey %>% collect(), subset_capture_survey, "survey_id", report = "survey_capture")
-
+peace = compare_updates(tray)
 upsert_capture_survey = bind_rows(tray$insert,
                                   tray$update)
 
