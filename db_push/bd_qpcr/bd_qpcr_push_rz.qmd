@@ -101,7 +101,6 @@ tz_local = "America/New_York"
 
 ## scrape xls files
 ```{r}
-
 scrape_qpcr_xls <- function(raw_xls) {
   xls <- clean_names(raw_xls)
   
@@ -153,6 +152,18 @@ clean_br_2023_05 = scrape_qpcr_xls(raw_br_2023_05)
 clean_br_2023_06 = scrape_qpcr_xls(raw_br_2023_06)
 clean_br_2023_07 = scrape_qpcr_xls(raw_br_2023_07)
 
+# rename BR PCE samples with "pce_" prefix
+clean_br_2023_pce = bind_rows(clean_br_2023_01,
+                              clean_br_2023_02,
+                              clean_br_2023_03,
+                              clean_br_2023_04,
+                              clean_br_2023_05,
+                              clean_br_2023_06,
+                              clean_br_2023_07) %>%
+  mutate(sample_name = ifelse(grepl("^[0-9]{3}$", sample_name),
+                              paste0("BRBD ", sample_name),
+                              sample_name))
+
 clean_pa_2022_01 = scrape_qpcr_xls(raw_pa_2022_01)
 clean_pa_2022_02 = scrape_qpcr_xls(raw_pa_2022_02)
 clean_pa_2022_03 = scrape_qpcr_xls(raw_pa_2022_03)
@@ -190,7 +201,8 @@ clean_pe_2023_02 = scrape_qpcr_xls(raw_pe_2023_02) %>%
   rename(bd_ct_mean = ct_mean,
          bd_quantity_mean = quantity_mean) %>%
   mutate(bd_quantity_mean = as.numeric(bd_quantity_mean))
-clean_pe_2023_03 = scrape_qpcr_xls(raw_pe_2023_03)
+clean_pe_2023_03 = scrape_qpcr_xls(raw_pe_2023_03) %>%
+  mutate(qpcr_date = as.Date("2023-08-18"))
 
 clean_pe_2024_01 = scrape_qpcr_xls(raw_pe_2024_01)
 clean_pe_2024_02 = scrape_qpcr_xls(raw_pe_2024_02)
@@ -198,19 +210,17 @@ clean_pe_2024_03 = scrape_qpcr_xls(raw_pe_2024_03)
 clean_pe_2024_04 = scrape_qpcr_xls(raw_pe_2024_04)
 clean_pe_2024_05 = scrape_qpcr_xls(raw_pe_2024_05)
 
+# clean up sample names with forbidden characters
 clean_pe_2022_02$bd_quantity_mean[clean_pe_2022_02$sample_name == "2022-05-18-admin-rapi18"] = 11603.6640625
 clean_pe_2022_02$bd_quantity_mean[clean_pe_2022_02$sample_name == "2022-05-18‚Äêadmin-rapi16"] = 11241.6748046875
 clean_pe_2022_02$sample_name[clean_pe_2022_02$sample_name == "2022-05-18‚Äêadmin-rapi16"] = "2022-05-18-admin-rapi16"
 clean_pe_2022_02$bd_quantity_mean[clean_pe_2022_02$sample_name == "POS 3.27.23"] = 1101634
 
+#bind to one dataframe
 bind_results = bind_rows(clean_br_2022_01,
                          clean_br_2022_03,
                          clean_br_2022_04,
-                         clean_br_2023_01,
-                         clean_br_2023_02,
-                         clean_br_2023_03,
-                         clean_br_2023_04,
-                         clean_br_2023_05,
+                         clean_br_2023_pce,
                          clean_pa_2022_01,
                          clean_pa_2022_02,
                          clean_pa_2022_03,
@@ -255,6 +265,12 @@ clean_results = bind_results %>%
          detected = case_when(bd_pos_neg == "Positive" ~ 1,
                               bd_pos_neg == "Negative" ~ 0,
                               TRUE ~ NA_real_),
+         target_quant = ifelse(is.na(target_quant) & detected == 0,
+                               0,
+                               target_quant),
+         # detected = case_when(target_quant > 0 ~ 1,
+         #                      target_quant == 0 ~ 0,
+         #                      .default = NA_real_),
          qpcr_well = as.character(qpcr_well),
          qpcr_lab = "rz_lab",
          replicate_id = 1,
@@ -280,14 +296,26 @@ clean_results = bind_results %>%
          sample_control != "Control" | is.na(sample_control),
          !str_detect(sample_name, "^Pisces"),
          target_name == "Bd" | is.na(target_name),
-         ipc == "Pass")
-
+         ipc == "Pass") %>%
+  arrange(sample_name, desc(rerun)) %>%
+  group_by(sample_name) %>%
+  filter(
+    # Check if both "Y" and "N" exist in the group
+    if (all(c("Y", "N") %in% rerun)) {
+      rerun == "Y"  # Keep only rerun == "Y"
+    } else {
+      TRUE          # Otherwise, keep all rows
+    }
+  ) %>%
+  ungroup()
 
 ```
 
 # checks
 ```{r}
 violations_unique = get_dupes(clean_results, sample_name)
+
+write_csv(violations_unique, here("staging", "bd_qpcr_duplicates.csv"))
 
 ```
 
@@ -348,6 +376,8 @@ tray = compare_for_staging(db_sample %>% collect(), subset_bd_samples, "sample_i
 final_bd_samples = bind_rows(tray$insert,
                              tray$update)
 
+news_samps = tray$insert
+
 subset_bd = gelled_results %>%
   select(any_of(colnames(db_bd))) %>%
   distinct() %>%
@@ -362,12 +392,9 @@ final_bd = bind_rows(tray$insert,
                        tray$update)
 
 cheese = tray$update
+please = tray$insert
 
-peace = compare_updates(tray)
-
-p1 = peace[[1]]
-p2 = peace[[2]]
-p3 = peace[[3]]
+peace = compare_updates(tray, id_cols = c("result_id", "sample_name_bd", "qpcr_plate_name"))
 
 ```
 
