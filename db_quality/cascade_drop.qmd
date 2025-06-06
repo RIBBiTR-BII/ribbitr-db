@@ -37,7 +37,6 @@ db_site = tbl(dbcon, Id("survey_data", "site"))
 db_region = tbl(dbcon, Id("survey_data", "region"))
 db_country = tbl(dbcon, Id("survey_data", "country"))
 
-
 ```
 
 # Visit orphans
@@ -329,13 +328,89 @@ tryCatch(
 
 ```
 
-
+# capture ids
 ```{r}
+drop_ids = cids
 
-test = db_visit %>%
-  left_join(db_site, by = "site_id") %>%
-  left_join(db_region, by = "region_id") %>%
-  filter(region == "california") %>%
+drop_capture = db_capture %>%
+  filter(capture_id %in% drop_ids)
+
+count = as.character(drop_capture %>% count() %>% pull())
+cat("capture:", count, "\n")
+
+# all associated capture samples
+drop_sample_all = db_sample %>%
+  right_join(drop_capture, by = "capture_id") %>%
+  select(all_of(colnames(db_sample))) %>%
+  filter(!is.na(sample_id))
+
+# associated capture samples with bd results
+bd_samples = db_bd %>%
+  select(sample_id) %>%
+  distinct() %>%
+  inner_join(drop_sample_all, by = "sample_id") %>%
+  filter(!is.na(sample_id))
+
+# associated capture samples with mucosome results
+mucosome_samples = db_mucosome %>%
+  select(sample_id) %>%
+  distinct() %>%
+  inner_join(drop_sample_all, by = "sample_id") %>%
+  filter(!is.na(sample_id))
+
+# updated bd samples
+update_sample_bd = drop_sample_all %>%
+  inner_join(bd_samples %>% select(sample_id), by = "sample_id") %>%
   collect()
 
+update_sample_musosome = drop_sample_all %>%
+  inner_join(mucosome_samples %>% select(sample_id), by = "sample_id") %>%
+  collect()
+
+update_sample = bind_rows(update_sample_bd,
+                          update_sample_musosome) %>%
+  mutate(capture_id = NA)
+
+
+count = as.character(update_sample %>% count() %>% pull())
+cat("sample_update:", count, "\n")
+
+drop_sample = drop_sample_all %>%
+  anti_join(bd_samples, by = "sample_id") %>%
+  anti_join(mucosome_samples, by = "sample_id")
+
+count = as.character(drop_sample %>% count() %>% pull())
+cat("sample_drop:", count, "\n")
 ```
+
+# cascade drop
+```{r}
+
+
+dbBegin(dbcon)
+
+tryCatch(
+  {
+    db_sample = db_sample %>%
+      rows_delete(drop_sample %>% select(sample_id), by="sample_id", unmatched = "ignore", in_place=TRUE)
+    
+    temp_sample = stage_to_temp(dbcon, db_sample, update_sample)
+    pointer = tbl(dbcon, temp_sample)
+    db_sample = db_sample %>%
+      rows_update(pointer, by="sample_id", unmatched = "ignore", in_place=TRUE)
+    
+    db_capture = db_capture %>%
+      rows_delete(drop_capture %>% select(capture_id), by="capture_id", unmatched = "ignore", in_place=TRUE)
+    
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful!")
+    
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
+
+```
+
