@@ -1223,3 +1223,29 @@ db_bd = db_bd %>%
   rows_update(bd_update, by = "result_id", unmatched = "ignore", in_place = TRUE)
 
 ```
+
+# add projects to project table
+```{r}
+db_project = tbl(dbcon, Id("survey_data", "project"))
+
+all_projects = db_visit %>%
+  select(project) %>%
+  distinct() %>%
+  collect()
+
+all_pep = db_visit %>%
+  filter(project_id == "ribbitr_pep") %>%
+  mutate(project_id = "ribbitr_pep_km")
+
+db_visit = db_visit %>%
+  rows_update(all_pep, by = "visit_id", unmatched = "ignore", in_place = TRUE)
+
+```
+
+# cmr orphans
+```{r}
+cmr_orph = db_cmr %>%
+  anti_join(db_capture, by = "cmr_id")
+
+rows_delete(db_cmr, cmr_orph, by="cmr_id", unmatched="ignore")
+```
