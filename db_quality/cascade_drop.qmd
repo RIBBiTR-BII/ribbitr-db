@@ -414,3 +414,46 @@ tryCatch(
 
 ```
 
+# sample ids
+
+```{r}
+drop_ids = sample_id_drop
+
+# all associated capture samples
+drop_sample = db_sample %>%
+  filter(sample_id %in% drop_ids,
+         sample_type == "bd",
+         is.na(capture_id))
+
+# associated capture samples with bd results
+drop_bd = db_bd %>%
+  inner_join(drop_sample, by = "sample_id") %>%
+  select(all_of(colnames(db_bd))) %>%
+  filter(!is.na(sample_id))
+```
+
+# cascade drop
+```{r}
+
+
+dbBegin(dbcon)
+
+tryCatch(
+  {
+    db_bd = db_bd %>%
+      rows_delete(drop_bd %>% select(sample_id), by="sample_id", unmatched = "ignore", in_place=TRUE)
+    
+    db_sample = db_sample %>%
+      rows_delete(drop_sample %>% select(sample_id), by="sample_id", unmatched = "ignore", in_place=TRUE)
+    
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful!")
+    
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
+
+```
