@@ -73,7 +73,7 @@ data_env = db_env %>%
   filter(visit_id %in% visit_ids,
          !is.na(air_temp_c) | !is.na(water_temp_c)) %>%
   group_by(visit_id) %>%
-  slice_min(order_by = tibble("air_time", "water_time"), n = 1) %>%
+  slice_min(order_by = "air_time", n = 1) %>%
   ungroup() %>%
   select(visit_id,
          air_temp_c,
@@ -140,6 +140,135 @@ frog_summary = data_frog %>%
   group_by(country, region, year) %>%
   count()
 
+```
+
+# sn inquiry
+```{r}
+df = data_frog %>%
+  filter(region == "california")
+  
+lsd = logger_site_date %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(region == "california") %>%
+  collect()
+
+dc = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(region == "california",
+         !is.na(body_temp_c)) %>%
+  collect()
+
+dcs = dc %>%
+  group_by(site) %>%
+  count() %>%
+  left_join(lsd %>%
+              select(site,
+                     ts_start_date), by = "site") %>%
+  rename(captures_with_temp = n,
+         hobo_start_date = ts_start_date)
+
+# write_csv(dcs, here("staging", paste0("sn_sites_loggers_frog_temp_", today(), ".csv")))
+
+
+```
+
+# sn all body-temp captures
+```{r}
+# microclimate data
+logger_site_date = db_ts_temp %>%
+  left_join(db_sensor, by = "sensor_id") %>%
+  left_join(db_logger, by = "logger_id") %>%
+  group_by(site_id) %>%
+  summarise(ts_start_date = date(min(timestamp_utc, na.rm = TRUE)),
+            .groups = "drop")
+
+data_capture = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  # left_join(logger_site_date, by = "site_id") %>%
+  filter(
+    # date >= ts_start_date,
+    !is.na(body_temp_c),
+    region == "california")
+
+# list of unique visit ids
+visit_ids = data_capture %>%
+  select(visit_id) %>%
+  distinct() %>%
+  pull(visit_id)
+
+# environmental surveys, filtered to visit ids
+data_env = db_env %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  filter(visit_id %in% visit_ids,
+         !is.na(air_temp_c) | !is.na(water_temp_c)) %>%
+  group_by(visit_id) %>%
+  slice_min(order_by = air_time, n = 1) %>%
+  ungroup() %>%
+  select(visit_id,
+         air_temp_c,
+         air_time,
+         water_temp_c,
+         water_time)
+
+# bd qpcr results, summarised across replicates
+data_bd = db_bd %>%
+  inner_join(db_sample, by = "sample_id") %>%
+  group_by(sample_id, sample_name_bd, capture_id) %>%
+  summarise(bd_qpcr_replicates = n(),
+            bd_detected = any(detected, na.rm = TRUE),
+            bd_mean_its1_copies_per_swab = mean(bd_its1_copies_per_swab, na.rm = TRUE),
+            .groups = "drop")
+
+# bring data queries together, select vars of interest, collect data
+data_frog_sn = data_capture %>%
+  left_join(data_bd, by = "capture_id") %>%
+  left_join(data_env, by = "visit_id") %>%
+  rename(survey_start_time = start_time,
+         survey_end_time = end_time) %>%
+  select(capture_id,
+         taxon_capture,
+         svl_mm,
+         body_mass_g,
+         sex,
+         bd_qpcr_replicates,
+         bd_detected,
+         bd_mean_its1_copies_per_swab,
+         body_temp_c,
+         substrate_temp_c,
+         microhabitat_type,
+         microhabitat_wet,
+         microhabitat_detailed,
+         time_of_capture,
+         timestamp_of_capture_utc,
+         air_temp_c,
+         air_time,
+         water_temp_c,
+         water_time,
+         survey_start_time,
+         start_timestamp_utc,
+         survey_end_time,
+         end_timestamp_utc,
+         date,
+         site_id,
+         site,
+         region,
+         country,
+         time_zone) %>%
+  collect()
+
+# export
+write_csv(data_frog_sn, here("staging", paste0("frog_temp_sn_", today(), ".csv")))
 ```
 
 # Example aligning frog temps with microclimate data
