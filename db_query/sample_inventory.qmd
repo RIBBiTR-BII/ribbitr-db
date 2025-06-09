@@ -43,25 +43,28 @@ bd_samples = db_sample %>%
   filter(sample_type == "bd") %>%
   collect()
 
-# all brazil bd sample counts by year
+# all bd sample counts by year
 bd_samples_by_year = bd_samples %>%
   mutate(year = year(date)) %>%
   group_by(country, region, year) %>%
-  summarize(bd_sample_count = n())
+  summarize(bd_sample_count = n(),
+            .groups = "drop")
 
-# all_brazil samples with corresponding results in database
+# all samples with corresponding results in database
 bd_results = db_bd %>%
   select(sample_id) %>%
   distinct() %>%
   collect() %>%
   inner_join(bd_samples, by = "sample_id")
 
-# all brazil bd result counts by year
+# all bd result counts by year
 bd_results_by_year = bd_results %>%
   mutate(year = year(date)) %>%
   group_by(country, region, year) %>%
-  summarize(bd_result_count = n())
+  summarize(bd_result_count = n(),
+            .groups = "drop")
 
+# combine to see discrepancies
 bd_samples_results = bd_samples_by_year %>%
   full_join(bd_results_by_year, by = c("country", "region", "year")) %>%
   arrange(country, region, year) %>%
@@ -71,7 +74,9 @@ bd_samples_results = bd_samples_by_year %>%
 # write_csv(bd_samples_results, here("staging", paste0("br_bd_samples_results_count_", today(), ".csv")))
 ```
 
-# rz lab report
+# specific inquiries
+
+## rz lab report
 ```{r}
 ribbitr_samples = bd_samples %>%
   filter((country %in% c("panama", "brazil")) | region == "pennsylvania",
@@ -103,7 +108,7 @@ bd_samples_results = bd_samples_by_year %>%
   mutate(bd_result_count = ifelse(is.na(bd_result_count), 0, bd_result_count),
          discrepancy = bd_sample_count - bd_result_count)
 
-write_csv(bd_samples_results, here("staging", paste0("ribbitr_rz_bd_samples_results_inventory_", today(), ".csv")))
+# write_csv(bd_samples_results, here("staging", paste0("ribbitr_rz_bd_samples_results_inventory_", today(), ".csv")))
 
 # results absent
 bd_results_missing = ribbitr_samples %>%
@@ -118,7 +123,12 @@ bd_results_missing = ribbitr_samples %>%
          region,
          country)
 
-write_csv(bd_results_missing, here("staging", paste0("ribbitr_rz_bd_samples_results_absent_", today(), ".csv")))
+# brzil missing results
+bd_results_missing_br = bd_results_missing %>%
+  filter(country == "brazil") %>%
+  arrange(date)
+
+# write_csv(bd_results_missing, here("staging", paste0("ribbitr_rz_bd_samples_results_absent_", today(), ".csv")))
 
 # unique plates 2021 - 2024
 bd_results_missing = db_bd %>%
@@ -131,7 +141,19 @@ bd_results_missing = db_bd %>%
   filter(grepl("^RIBBiTR", qpcr_plate_name))
 
 
-write_csv(bd_results_missing, here("staging", paste0("ribbitr_rz_bd_qpcr_plates_", today(), ".csv")))
+# write_csv(bd_results_missing, here("staging", paste0("ribbitr_rz_bd_qpcr_plates_", today(), ".csv")))
+```
+
+# penn 2023 missing samples
+```{r}
+penn23  = bd_samples %>%
+  filter(region == "pennsylvania",
+         year(date) == 2023) %>%
+  anti_join(db_bd %>%
+              select(sample_id) %>%
+              distinct() %>%
+              collect(), by = "sample_id")
+
 ```
 
 # brazil 2023 samples
@@ -139,5 +161,57 @@ write_csv(bd_results_missing, here("staging", paste0("ribbitr_rz_bd_qpcr_plates_
 br23 = bd_samples %>%
   filter(country == "brazil",
          year(date) == 2023)
+
+```
+
+# maligned samples & results
+```{r}
+# bd
+unmatched_results_bd = db_bd %>%
+  left_join(db_sample, by = "sample_id") %>%
+  filter(is.na(capture_id),
+         sample_type == "bd") %>%
+  collect() %>%
+  arrange(sample_name_bd)
+
+unmatched_samples_bd = db_bd %>%
+  right_join(db_sample, by = "sample_id") %>%
+  filter(is.na(result_id),
+         sample_type == "bd") %>%
+  left_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  select(all_of(colnames(db_sample)),
+         date,
+         site,
+         region,
+         country) %>%
+  collect() %>%
+  arrange(sample_name)
+
+# brazil
+unmatched_samples_bd_br = unmatched_samples_bd %>%
+  filter(country == "brazil") %>%
+  arrange(date)
+
+brq = unmatched_results_bd %>%
+  # filter(grepl("brbd", sample_name_bd, ignore.case = TRUE)) %>%
+  filter(grepl("brazil", qpcr_plate_name, ignore.case = TRUE))
+
+br_23 = db_sample %>%
+  left_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(sample_type == "bd",
+         country == "brazil",
+         year(date) == 2023) %>%
+  collect()
+
 
 ```
