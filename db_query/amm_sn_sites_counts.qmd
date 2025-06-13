@@ -81,6 +81,7 @@ data_samps = db_sample %>%
          bd,
          date,
          site,
+         site_name_alt,
          site_latitude,
          site_longitude,
          site_elevation_m,
@@ -95,7 +96,13 @@ data_samps = db_sample %>%
   left_join(pop, by = "site") %>%
   mutate(population = ifelse(is.na(population), site, population))
 
+data_samps_micro_plus = data_samps %>%
+  filter(!is.na(microbiome),
+         !is.na(amp) | !is.na(mucosome))
+
 # write_csv(data_samps, here("staging", paste0("amm_sn_captured_individuals_", today(), ".csv")))
+
+write_csv(data_samps_micro_plus, here("staging", paste0("sn_captured_individuals_micro+amp_or_micro+muc_", today(), ".csv")))
 
 data_proj = data_samps %>%
   group_by(project_id) %>%
@@ -119,6 +126,7 @@ data_sites = data_samps %>%
   mutate(est_transport_time = first(na.omit(est_transport_time))) %>%
   ungroup() %>%
   group_by(site,
+           site_name_alt,
            population,
            site_latitude,
            site_longitude,
@@ -130,7 +138,8 @@ data_sites = data_samps %>%
             microbiome_samples = sum(!is.na(microbiome)),
             mucosome_samples = sum(!is.na(mucosome)),
             any_samples = sum(!is.na(amp) | !is.na(microbiome) | !is.na(mucosome)),
-            all_samples = sum(!is.na(amp) & !is.na(microbiome) & !is.na(mucosome))) %>%
+            all_samples = sum(!is.na(amp) & !is.na(microbiome) & !is.na(mucosome)),
+            .groups = "drop") %>%
   arrange(site)
 
 # write_csv(data_sites, here("staging", paste0("amm_sn_site_summary_", today(), ".csv")))
