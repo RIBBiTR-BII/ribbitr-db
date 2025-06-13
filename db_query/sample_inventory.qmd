@@ -213,5 +213,10 @@ br_23 = db_sample %>%
          year(date) == 2023) %>%
   collect()
 
+peace = bd_samples %>%
+  filter(sample_type == "bd",
+         grepl("^BRBd", sample_name)) %>%
+  arrange(sample_name)
+
 
 ```
