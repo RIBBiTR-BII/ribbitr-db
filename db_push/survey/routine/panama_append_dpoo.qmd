@@ -657,7 +657,7 @@ gelled_env = unified_env %>%
   group_by_at(tbl_nkey("survey", mdc)) %>%
   mutate(start_timestamp_utc = start_timestamp_utc(date, start_time, local_tz),
          end_timestamp_utc = end_timestamp_utc(date, start_time, end_time, local_tz),
-         duration_minutes = duration_minutes(start_timestamp_utc, end_timestamp_utc),
+         duration_minutes = duration_minutes(start_timestamp_utc, end_timestamp_utc),  # assume duration = end_time - start_time
          uuid_name = paste0(visit_id, transect, start_time, detection_type),
          survey_id = ifelse(is.na(survey_id), UUIDfromName("f7b367fb-bbb6-40a8-85db-07d2760e7b95", uuid_name), survey_id),
          comments_survey = str_c(comments_survey, collapse = ", "),
@@ -898,7 +898,7 @@ gelled_aural = unified_aural %>%
   group_by_at(tbl_nkey("survey", mdc)) %>%
   mutate(start_timestamp_utc = start_timestamp_utc(date, start_time, local_tz),
          end_timestamp_utc = end_timestamp_utc(date, start_time, end_time, local_tz),
-         duration_minutes = duration_minutes(start_timestamp_utc, end_timestamp_utc),
+         duration_minutes = duration_minutes(start_timestamp_utc, end_timestamp_utc),  # assume duration = end_time - start_time
          number_observers = count_observers(paste(observers_survey, collapse = ",")),
          comments_survey = str_c(comments_survey, collapse = ", "),
          uuid_name = paste0(visit_id, temp_survey_id, detection_type),
@@ -1036,7 +1036,7 @@ gelled_ves = unified_ves %>%
          end_time = find_time_range(c(start_time, end_time))$last_time,
          start_timestamp_utc = start_timestamp_utc(date, start_time, local_tz),
          end_timestamp_utc = end_timestamp_utc(date, start_time, end_time, local_tz),
-         duration_minutes = duration_minutes(start_timestamp_utc, end_timestamp_utc),
+         duration_minutes = duration_minutes(start_timestamp_utc, end_timestamp_utc),  # assume duration = end_time - start_time
          number_observers = count_observers(paste(observers_survey, collapse = ",")),
          comments_survey = str_c(comments_survey, collapse = ", "),
          uuid_name = paste0(visit_id, temp_survey_id, detection_type),
@@ -1207,7 +1207,7 @@ gelled_capture = unified_capture %>%
          end_time = find_time_range(c(start_time, end_time, time_of_capture))$last_time,
          start_timestamp_utc = start_timestamp_utc(date, start_time, local_tz),
          end_timestamp_utc = end_timestamp_utc(date, start_time, end_time, local_tz),
-         duration_minutes = duration_minutes(start_timestamp_utc, end_timestamp_utc),
+         duration_minutes = duration_minutes(start_timestamp_utc, end_timestamp_utc),  # assume duration = end_time - start_time
          observers_survey = all_names <- observers_survey %>%
            paste(collapse = ",") %>%
            str_split(",\\s*") %>%

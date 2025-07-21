@@ -490,7 +490,7 @@ gelled_capture = unified_capture %>%
   mutate(end_time = as_hms(max(end_time)),
          start_timestamp_utc = start_timestamp_utc(date, start_time, local_tz),
          end_timestamp_utc = end_timestamp_utc(date, start_time, end_time, local_tz),
-         duration_minutes = duration_minutes(start_timestamp_utc, end_timestamp_utc),
+         duration_minutes = duration_minutes(start_timestamp_utc, end_timestamp_utc), # assume duration = end_time - start_time
          number_observers = count_observers(paste(observers_survey, collapse = ",")),
          comments_survey = na.omit(comments_survey)[1],
          survey_quality = first(survey_quality),

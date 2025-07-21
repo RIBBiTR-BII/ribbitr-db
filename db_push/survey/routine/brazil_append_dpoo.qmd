@@ -505,7 +505,7 @@ gelled_env = unified_env %>%
            start_time) %>%
   mutate(start_timestamp_utc = start_timestamp_utc(date, start_time, local_tz),
          end_timestamp_utc = end_timestamp_utc(date, start_time, end_time, local_tz),
-         duration_minutes = duration_minutes(start_timestamp_utc, end_timestamp_utc),
+         duration_minutes = duration_minutes(start_timestamp_utc, end_timestamp_utc), # assume duration = end_time - start_time
          uuid_name = paste0(visit_id, transect, start_time, detection_type),
          survey_id = ifelse(is.na(survey_id), UUIDfromName("c02ab86e-9e5a-4ac2-a1a6-bfa6c32ab614", uuid_name), survey_id),
          observers_survey = str_flatten_comma(unique(na.omit(unlist(str_split(observers_survey, ",\\s*")))), na.rm = TRUE),
@@ -768,7 +768,7 @@ group_by(visit_id,
          end_time = find_time_range(time_of_capture)$last_time,
          start_timestamp_utc = start_timestamp_utc(date, start_time, local_tz),
          end_timestamp_utc = end_timestamp_utc(date, start_time, end_time, local_tz),
-         duration_minutes = duration_minutes(start_timestamp_utc, end_timestamp_utc),
+         duration_minutes = duration_minutes(start_timestamp_utc, end_timestamp_utc),  # assume duration = end_time - start_time
          uuid_name_survey = paste0(visit_id, transect, start_time, detection_type),
          survey_id = ifelse(is.na(survey_id), UUIDfromName("e3c835a4-4c8d-491c-9970-011aba853686", uuid_name_survey), survey_id),
          observers_survey = paste(unique(unlist(strsplit(observer_capture, ", "))), collapse = ", "),
