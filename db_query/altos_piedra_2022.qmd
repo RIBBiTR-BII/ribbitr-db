@@ -1,0 +1,115 @@
+---
+title: "altos_piedra_2022"
+format: html
+editor: source
+---
+
+Connect to database
+```{r}
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, RIBBiTR-BII/ribbitrrr, here)
+
+# connect to database
+dbcon = hopToDB(prefix = "ribbitr")
+```
+
+```{r}
+mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
+  collect()
+
+# pull relevant chain tables from DB
+db_aural = tbl(dbcon, Id("survey_data", "aural"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_ves = tbl(dbcon, Id("survey_data", "ves"))
+db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
+
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+```
+
+```{r}
+# capture
+data_capture = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  select(taxon_capture,
+         detection_type,
+         site,
+         date,
+         region,
+         country) %>%
+  rename(species = taxon_capture) %>%
+  filter(country == "panama",
+         site == "altos_de_piedra",
+         date >= "2022-01-01") %>%
+  collect()
+
+# ves
+data_ves = db_ves %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  select(taxon_ves,
+         detection_type,
+         site,
+         date,
+         region,
+         country) %>%
+  rename(species = taxon_ves) %>%
+  filter(country == "panama",
+         site == "altos_de_piedra",
+         date >= "2022-01-01") %>%
+  collect()
+
+# ves
+data_aural = db_aural %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  select(taxon_aural,
+         detection_type,
+         site,
+         date,
+         region,
+         country) %>%
+  rename(species = taxon_aural) %>%
+  filter(country == "panama",
+         site == "altos_de_piedra",
+         date >= "2022-01-01") %>%
+  collect()
+
+species_all = bind_rows(data_capture,
+                     data_ves,
+                     data_aural) %>%
+  group_by(species,
+         detection_type) %>%
+  count() %>%
+  pivot_wider(names_from = "detection_type",
+              values_from = "n") %>%
+  arrange(desc(capture)) %>%
+  filter(!is.na(species),
+         !(species %in% c("craugastor",
+                          "pristimantis"))) %>%
+  left_join(db_taxa %>% collect, by = c("species" = "taxon_id")) %>%
+  select(species,
+         capture,
+         visual,
+         aural,
+         amphibiaweb_url) %>%
+  mutate(capture = ifelse(is.na(capture), 0, capture),
+         visual = ifelse(is.na(visual), 0, visual),
+         aural = ifelse(is.na(aural), 0, aural))
+
+write_csv(species_all, here("staging/altos_piedra_2022-2024_resuen.csv"))
+
+```
