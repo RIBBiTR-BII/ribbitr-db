@@ -21,7 +21,7 @@ db_country = tbl(dbcon, Id("survey_data", "country"))
 
 ```
 
-
+# all sites
 ```{r}
 
 all_ribbitr_sites = db_site %>%
@@ -30,6 +30,28 @@ all_ribbitr_sites = db_site %>%
   collect()
 
 write_csv(all_ribbitr_sites, here("staging", "all_ribbitr_sites_2.csv"))
+
+```
+
+# all sites & years
+```{r}
+
+all_panama_site_season = db_visit %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(country == "panama") %>%
+  mutate(month = month(date),
+         year = year(date)) %>%
+  select(year,
+         month,
+         site,
+         region) %>%
+  distinct() %>%
+  arrange(year,
+          month,
+          region, site) %>%
+  collect()
 
 ```
 
