@@ -1,0 +1,314 @@
+---
+title: "edna_complementary_pull"
+format: html
+---
+
+# setup
+```{r}
+
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, here, RPostgres, DBI, RIBBiTR-BII/ribbitrrr)
+
+# connect to database
+dbcon = hopToDB("ribbitr")
+
+```
+# Panama data of interest:
+  * Surveys: capture, visual, aural (w/ associated metadata)
+  * eDNA collection/filtration metadata
+  * Environmental data (collected typically 1x for each site visit)
+  * microclimate (HOBO) data
+
+# table pointer objects
+```{r}
+# survey observation tables
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_ves = tbl(dbcon, Id("survey_data", "ves"))
+db_aural = tbl(dbcon, Id("survey_data", "aural"))
+db_env = tbl(dbcon, Id("survey_data", "environmental"))
+db_edna = tbl(dbcon, Id("survey_data", "edna"))
+
+# microclimate (HOBO) tables
+db_ts_temp = tbl(dbcon, Id("microclimate_data", "ts_temperature"))
+db_ts_rh = tbl(dbcon, Id("microclimate_data", "ts_relative_humidity"))
+db_ts_light = tbl(dbcon, Id("microclimate_data", "ts_illuminance"))
+db_sensor = tbl(dbcon, Id("microclimate_data", "sensor"))
+db_logger = tbl(dbcon, Id("microclimate_data", "logger"))
+
+# supporting tables
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
+```
+
+# general queries
+```{r}
+# these are like shopping lists for the data you will take out later. These aren't the data, but rather the instructions to collect the data from the database
+# currently filtered to country == "panama" only. You can also filter by date, etc as convenient.
+
+# capture query
+q_capture = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(country == "panama")
+
+# visual query
+q_visual = db_ves %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(country == "panama")
+
+# aural query
+q_aural = db_ves %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(country == "panama")
+
+q_edna = db_edna %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(country == "panama")
+
+q_env = db_env %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(country == "panama")
+```
+
+# collect survey data from queries
+```{r}
+data_capture = q_capture %>%
+  collect()
+
+data_visual = q_visual %>%
+  collect()
+
+data_aural = q_aural %>%
+  collect()
+
+data_edna = q_edna %>%
+  collect()
+
+data_env = q_env %>%
+  collect()
+
+```
+
+# other options for refining queries prior to collecting
+```{r}
+# by default all columns from all tables in the query are included (sometimes this can be a lot). If you want to limit which columns you pull, you can use a select statement following dplyr syntax
+
+# preview columns
+colnames(q_capture)
+
+# collect capture data, selecting columns of interest before if you like
+data_capture_select = q_capture %>%
+  select(taxon_capture,
+         time_of_capture,
+         life_stage,
+         tad_stage,
+         sex,
+         body_mass_g,
+         svl_mm,
+         tail_length_mm,
+         body_temp_c,
+         substrate_temp_c,
+         microhabitat_type,
+         microhabitat_temperature,
+         comments_capture,
+         survey_id,
+         detection_type,
+         start_time,
+         start_timestamp_utc,
+         end_time,
+         time_of_day,
+         transect,
+         comments_survey,
+         visit_id,
+         comments_visit,
+         date,
+         site,
+         site_id,
+         site_latitude,
+         site_longitude,
+         site_elevation_m,
+         region,
+         country,
+         time_zone) %>%
+  collect()
+
+# another example:
+
+#preview columns
+colnames(q_env)
+
+# select & collect
+data_env_selec = q_env %>%
+  select(environmental_id,
+         air_time,
+         air_temp_c,
+         wind_speed_m_s,
+         wind,
+         sky,
+         cloud_cover_percent,
+         precip,
+         relative_humidity_percent,
+         pressure_psi,
+         water_time,
+         water_temp_c,
+         p_h,
+         tds_ppm,
+         salinity_ppt,
+         conductivity_us_cm,
+         comments_environmental,
+         environmental_latitude,
+         environmental_longitude,
+         survey_id,
+         start_time,
+         start_timestamp_utc,
+         end_time,
+         time_of_day,
+         transect,
+         comments_survey,
+         visit_id,
+         comments_visit,
+         date,
+         site,
+         site_id,
+         site_latitude,
+         site_longitude,
+         site_elevation_m,
+         region,
+         country,
+         time_zone) %>%
+  collect()
+
+```
+
+# basic microclimate queries
+```{r}
+q_microclimate_temp = db_ts_temp %>%
+  left_join(db_sensor, by = "sensor_id") %>%
+  left_join(db_logger, by = "logger_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(country == "panama")
+
+q_microclimate_rh = db_ts_rh %>%
+  left_join(db_sensor, by = "sensor_id") %>%
+  left_join(db_logger, by = "logger_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(country == "panama")
+
+q_microclimate_light = db_ts_light %>%
+  left_join(db_sensor, by = "sensor_id") %>%
+  left_join(db_logger, by = "logger_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(country == "panama")
+
+```
+
+# microclimate queries and summaries
+```{r}
+# pulling all the microclimate data might not be as useful to you as first seeing what data exists. Here are a few summaries:
+
+# temperature loggers
+summary_microclimate_temp_summary = q_microclimate_temp %>%
+  group_by(sensor_id, site, sensor_type, height_cm, microhabitat) %>%
+  summarise(ts_start_date = date(min(timestamp_utc, na.rm = TRUE)),
+            ts_end_date = date(max(timestamp_utc, na.rm = TRUE)),
+            .groups = "drop") %>%
+  arrange(site, height_cm, microhabitat) %>%
+  collect()
+
+# humidity loggers
+summary_microclimate_rh_summary = q_microclimate_rh %>%
+  group_by(sensor_id, site, sensor_type, height_cm, microhabitat) %>%
+  summarise(ts_start_date = date(min(timestamp_utc, na.rm = TRUE)),
+            ts_end_date = date(max(timestamp_utc, na.rm = TRUE)),
+            .groups = "drop") %>%
+  arrange(site, height_cm, microhabitat) %>%
+  collect()
+
+# light loggers
+summary_microclimate_light_summary = q_microclimate_light %>%
+  group_by(sensor_id, site, sensor_type, height_cm, microhabitat) %>%
+  summarise(ts_start_date = date(min(timestamp_utc, na.rm = TRUE)),
+            ts_end_date = date(max(timestamp_utc, na.rm = TRUE)),
+            .groups = "drop") %>%
+  arrange(site, height_cm, microhabitat) %>%
+  collect()
+
+```
+
+# collect microclimate data
+```{r}
+# some options for collecting microclimate timeseries of interest:
+
+# A) pull a specific time series by sensor_id and date range
+
+data_temperature_a = q_microclimate_temp %>%
+  filter(sensor_id == "6ce65b64-fbff-40a1-a212-abf9e4690df5",
+         timestamp_utc >= "2022-01-01",
+         timestamp_utc < "2023-01-01") %>%
+  collect()
+
+# B) pull multiple sensors by sensor_id from list:
+
+sensors_of_interest = c("6ce65b64-fbff-40a1-a212-abf9e4690df5",
+                        "877ff780-d9f3-4e19-89a5-317ccfbcab44",
+                        "450ee3c0-8362-4b50-8939-0763cc7dc4fe")
+
+data_temperature_b = q_microclimate_temp %>%
+  filter(sensor_id %in% sensors_of_interest,
+         timestamp_utc >= "2023-01-01",
+         timestamp_utc < "2023-02-01") %>%
+  collect()
+
+# C) filter by another chriteria (ex. site)
+data_temperature_c = q_microclimate_temp %>%
+  filter(site == "altos_de_piedra",
+         timestamp_utc >= "2022-01-01",
+         timestamp_utc < "2023-01-01") %>%
+  collect()
+
+```
+
+# metadata
+```{r}
+# column-specific metadata is stored in the public.all_columns table. This will include column definitions, and perhaps other useful clues to what a column represents.
+metadata_columns = tbl(dbcon, Id("public", "all_columns")) %>%
+  collect()
+
+# Or you can pull a subset of the column metadata associated with a specific query using the qet_query_metadata() function
+md_capture = get_query_metadata(dbcon, q_capture)
+md_visual = get_query_metadata(dbcon, q_visual)
+md_aural = get_query_metadata(dbcon, q_aural)
+md_edna = get_query_metadata(dbcon, q_edna)
+md_env = get_query_metadata(dbcon, q_env)
+md_microclimate_temp = get_query_metadata(dbcon, q_microclimate_temp)
+
+```
