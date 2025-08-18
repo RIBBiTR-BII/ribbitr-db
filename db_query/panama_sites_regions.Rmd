@@ -21,6 +21,8 @@ db_country = tbl(dbcon, Id("survey_data", "country"))
 
 ```
 
+this is a comment
+
 # all sites
 ```{r}
 
@@ -29,7 +31,9 @@ all_ribbitr_sites = db_site %>%
   left_join(db_country, by = "country_id") %>%
   collect()
 
-write_csv(all_ribbitr_sites, here("staging", "all_ribbitr_sites_2.csv"))
+all_ribbitr_sites
+
+#write_csv(all_ribbitr_sites, here("staging", "all_ribbitr_sites_2.csv"))
 
 ```
 

@@ -1,60 +1,98 @@
 ---
 title: "ribbitr_dbcon_test_script"
-output: html_document
+author: "Cob Staines"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+    df_print: tibble
+    code_folding: show
 ---
 
-```{r}
+# Setup
+```{r setup, result = 'hide'}
+
 # install and load "librarian" R package
 if (!require(librarian)){
   install.packages("librarian")
 }
 
-# update your ribbitrrr package to the latest version
+# update all minimal packages for RIBBiTR DB data discovery
+librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, update_all = TRUE)
+
+# define test functions
+log_error <- function(e) {
+  # Markdown heading and fenced code block
+  cat("### Error Summary\n\n")
+  cat("```\n")
+  cat("Error caught:", e$message, "\n\n")
+  cat("Traceback (most recent calls last):\n")
+  
+  trace <- utils::limitedLabels(sys.calls())
+  trace <- trace[!grepl("knit|render|evaluate|process_file", trace)]  # filter noise
+  cat(paste(trace, collapse = "\n"), "\n")
+  cat("```\n")
+}
+
+# test query
+test_query = function(conn){
+  tryCatch(
+    {
+      data_qpcr = tbl(conn, Id("survey_data", "bd_qpcr_results")) %>%
+        filter(qpcr_plate_name == "RIBBiTR_PanamaSwabs2022_10022023_Plate1") %>%
+        collect()
+      
+      return(data_qpcr)
+    }, error = log_error)
+}
+
+```
+
+```{r load_ribbitrrr}
+# force update of ribbitrrr
 librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 ```
 
-
-```{r}
-# minimal packages for RIBBiTR DB data discovery
-librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, RIBBiTR-BII/ribbitrrr)
-
+```{r sessioninfo}
 # report current environment
 sessionInfo()
 ```
 
+# connect with ssl
+```{r con_ssl, results = 'asis'}
+dbcon_ssl <- dbConnect(
+  RPostgres::Postgres(),
+  host = Sys.getenv("ribbitr.host"),
+  port = Sys.getenv("ribbitr.port"),
+  dbname = Sys.getenv("ribbitr.dbname"),
+  user = Sys.getenv("ribbitr.user"),
+  password = Sys.getenv("ribbitr.password"),
+  sslmode = "require",
+  gssencmode = "disable"
+)
 
-```{r}
+```
+
+```{r query_ssl, results = 'asis'}
+# try test query with forced ssl connection
+data_ssl = test_query(dbcon_ssl)
+head(data_ssl)
+```
+
+# connect with hop2db
+```{r con_hop, results = 'asis'}
 # test database connection
 tryCatch(
   {
-    dbcon <- hopToDB("ribbitr")
-
-  }, error = function(e) {
-    cat("Error caught:", e$message, "\n\n")
-    cat("Traceback (most recent calls last):\n\n")
-    calls <- sys.calls()
-    calls_formatted <- utils::limitedLabels(calls)
-    cat(paste(calls_formatted, collapse = "\n"), "\n")
-  })
+    dbcon <- hopToDB("fibbitr")
+  }, error = log_error)
 
 ```
 
-```{r, error = TRUE}
-# test pulling data
-tryCatch(
-  {
-    data_qpcr = tbl(dbcon, Id("survey_data", "bd_qpcr_results")) %>%
-      filter(qpcr_plate_name == "RIBBiTR_PanamaSwabs2022_10022023_Plate1") %>%
-      collect()
-
-    head(data_qpcr)
-
-  }, error = function(e) {
-    cat("Error caught:", e$message, "\n\n")
-    cat("Traceback (most recent calls last):\n\n")
-    calls <- sys.calls()
-    calls_formatted <- utils::limitedLabels(calls)
-    cat(paste(calls_formatted, collapse = "\n"), "\n")
-  })
-
+```{r query_hop, results = 'asis'}
+# try test query with hop2db connection
+data_hop = test_query(dbcon)
+head(data_hop)
 ```
+

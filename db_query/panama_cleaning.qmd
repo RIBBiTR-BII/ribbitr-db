@@ -102,6 +102,9 @@ results_unmatched = db_bd %>%
 results_unmatched_pa = results_unmatched %>%
   filter(grepl("pan", qpcr_plate_name))
 
+results_unmatched_fecha = results_unmatched %>%
+  filter(grepl("\\d{6}", sample_name_bd))
+
 write_csv(results_unmatched, here("staging", paste0("bd_results_unmatched_", today(), ".csv")))
 
 samples_unmatched = db_bd %>%
@@ -116,6 +119,7 @@ samples_unmatched = db_bd %>%
   left_join(db_country, by = "country_id") %>%
   filter(country == "panama") %>%
   select(all_of(colnames(db_sample)),
+         life_stage,
          date,
          site,
          region,

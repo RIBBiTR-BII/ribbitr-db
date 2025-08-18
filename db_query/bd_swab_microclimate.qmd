@@ -1,7 +1,7 @@
 ---
 title: "ribbitr_db: Bd swab & microclimate query"
 format: html
-editor: visual
+editor: source
 ---
 
 # RIBBiTR_DB: Pulling Bd swab & microclimate data
