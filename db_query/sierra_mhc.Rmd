@@ -1,0 +1,262 @@
+---
+title: "sierra_mhc"
+author: "Cob Staines"
+date: "2025-08-18"
+output: html_document
+---
+
+# Sierra data query for Imani for Sierra MHC project
+
+## spatial scope: aggregate to site (or population) level
+## temporal scope: aggregate to year (using 1 visit per year where available)
+
+## variables of interest
+* adult frog abundance (CMR & VES)
+* Bd infection load (median sample size, confidence intervals)
+* Bd prevalence (calculated prevalence, sample size, confidence interval)
+
+
+# Connection setup
+```{r}
+librarian::shelf(tidyverse, dbplyr, here, RPostgres, DBI, janitor, lubridate, RIBBiTR-BII/ribbitrrr)
+
+## Connect to SN amphibians DB with ribbitrrr::hopToDB()
+# sncon <- hopToDB("amphibians")
+dbcon <- hopToDB("ribbitr")
+```
+
+# functions
+```{r}
+fuzzy_grouping = function(x, delta){
+  # Make groups of x if differences are less than or equal to delta
+  # 
+  # Parameters
+  # ----------
+  # x : array of values to be grouped
+  # delta : difference in value that defines a group
+  
+  
+  if(length(x) > 1){
+    
+    run_ind = diff(x) <= delta
+    grouping = array(NA, dim=length(run_ind + 1))
+    grouping[1] = 1
+    for(i in 1:length(run_ind)){
+      
+      if(run_ind[i] == FALSE | is.na(run_ind[i])){
+        grouping[i + 1] = grouping[i] + 1
+      }
+      else{
+        grouping[i + 1] = grouping[i]
+      }
+      
+    }
+  } else{
+    grouping = 1
+  }
+  
+  return(grouping)
+
+}
+
+```
+
+# table pointers
+```{r}
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_ves = tbl(dbcon, Id("survey_data", "ves"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+
+# sn_capture = tbl(sncon, "capture_survey")
+# sn_ves = tbl(sncon, "visual_survey")
+# sn_survey = tbl(sncon, "survey")
+# sn_visit = tbl(sncon, "visit")
+# sn_site = tbl(sncon, "site")
+# sn_surveyor = tbl(sncon, "surveyor")
+# sn_ss = tbl(sncon, "survey_surveyor")
+```
+
+# sites of interest
+```{r}
+# sites of interest
+## provided by imani
+## excludes momo, no site id
+site_oi = data.frame(
+  site = as.character(c(
+    20199,
+    20198,
+    21081,
+    21076,
+    50783,
+    72996,
+    72336,
+    72808,
+    74281,
+    10220,
+    10206,
+    10490,
+    10487,
+    11008,
+    11009,
+    50837,
+    10055,
+    10090,
+    20170,
+    20169)),
+  name_ima = c(
+    "Milestone",
+    "Milestone",
+    "Milestone",
+    "Milestone",
+    "Mulkey",
+    "Conness",
+    "Unicorn",
+    "Unicorn",
+    "Gallison",
+    "Dusy",
+    "Barrett",
+    "Center",
+    "Center",
+    "Forester",
+    "Forester",
+    "Independence",
+    "McGee",
+    "Wanda",
+    "KernPt",
+    "KernPt"),
+  population = as.character(c(
+    20199,
+    20198,
+    21081,
+    21076,
+    50783,
+    72996,
+    72336,
+    72336,
+    74281,
+    10220,
+    10206,
+    10490,
+    10487,
+    11008,
+    11008,
+    50837,
+    10055,
+    10090,
+    20170,
+    20169)))
+
+site_oi = site_oi %>%
+  left_join(db_site %>%
+              select(site,
+                     site_id,
+                     site_elevation_m,
+                     geographic_area,
+                     site_utme,
+                     site_utmn) %>%
+              filter(site %in% site_oi$site) %>%
+              collect(), by = "site")
+
+colnames(site_oi)
+```
+
+# Visits of interest
+Identify visits to sites of interest
+```{r}
+# visits of interest
+visit_oi = db_visit %>%
+  filter(site_id %in% site_oi$site_id,
+         visit_status == "suitable") %>%
+  select(visit_id,
+         site_id,
+         date,
+         comments_visit) %>%
+  collect() %>%
+  left_join(site_oi, by = "site_id") %>%
+  mutate(year = year(date)) %>%
+  select(site,
+         year,
+         date,
+         comments_visit,
+         everything()) %>%
+  arrange(site,
+          date) %>%
+  group_by(site, year) %>%
+  mutate(survey_period = fuzzy_grouping(as.integer(date), 7)) %>% # consider surveys within a rolling 7 days to be within the same survey period
+  ungroup()
+
+survey_oi = db_survey %>%
+  filter(visit_id %in% visit_oi$visit_id,
+         detection_type %in% c("capture", "visual")) %>%
+  select(detection_type,
+         detection_subtype,
+         survey_quality,
+         description,
+         comments_survey,
+         number_observers,
+         survey_id,
+         visit_id) %>%
+  collect() %>%
+  mutate(detection_type = ifelse(detection_type == "capture",
+                                 detection_subtype,
+                                 detection_type)) %>%
+  select(-detection_subtype) %>%
+  right_join(visit_oi, by = "visit_id") %>%
+  arrange(site,
+          date,
+          survey_period)
+
+# priorities, when more than 1 survey period available
+## 0) not flagged manually
+## 1) most survey types (capture (1), ves (1), swab (1)) within survey period
+## 2) survey_vuality: good (3) > fair (2) > poor (1) > NA (0)
+
+flag_list = c("c88f19b7-56d7-57d2-9bde-0a5d2c6f300d",
+              "182248bf-2a8e-5795-b9c0-a5a9149b7350",)
+
+set.seed(877)
+
+survey_oi_priority = survey_oi %>%
+  mutate(survey_quality_score = case_match(survey_quality,
+                                           "good" ~ 3,
+                                           "fair" ~ 2,
+                                           "poor" ~ 1,
+                                           NA ~ 0,
+                                           .default = NA)) %>%
+  group_by(site,
+           year) %>%
+  mutate(period_count = n_distinct(survey_period)) %>%
+  ungroup() %>%
+  group_by(site,
+           year,
+           survey_period) %>%
+   mutate(detection_type_count = n_distinct(detection_type),
+         mean_survey_quality_score = mean(survey_quality_score),
+         random_val = runif(1),
+         cmr = any(detection_type == "cmr"),
+         swab = any(detection_type == "swab"),
+         visual = any(detection_type == "visual")) %>%
+  ungroup()
+  
+# im a little lost here. A desireable outcome could be a table with site, year, cmr, swab, visual where the last three columns give the survey period selected... Then we can use this to select actual surveys
+visual_select = survey_oi_priority %>%
+  filter(detection_type == "visual") %>%
+  arrange(site,
+          year,
+          survey_period,
+          detection_type_count,
+          mean_survey_quality_score,
+          random_val) %>%
+  group_by(site,
+           year,
+           survey_period) %>%
+  slice(1) %>%
+  ungroup()
+
+
+```
+
+# 
