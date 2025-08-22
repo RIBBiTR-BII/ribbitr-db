@@ -7,7 +7,7 @@ output: html_document
 
 # Sierra data query for Imani for Sierra MHC project
 
-## spatial scope: aggregate to site (or population) level
+## spatial scope: aggregate to the population level
 ## temporal scope: aggregate to year (using 1 visit per year where available)
 
 ## variables of interest
@@ -194,6 +194,13 @@ site_oi = data.frame(
     20170,
     20169)))
 
+pop_oi = site_oi %>%
+  select(population, name_ima, site) %>%
+  group_by(population) %>%
+  summarise(name_ima = first(name_ima),
+            sites = paste(unique(site), collapse = ", "),
+            .groups = "drop")
+
 site_oi = site_oi %>%
   left_join(db_site %>%
               select(site,
@@ -210,7 +217,7 @@ colnames(site_oi)
 
 # Visits of interest
 
-Identify visits to sites of interest, grouping by survey period, defined as:
+Identify visits to sites of interest, grouping by population and survey period, defined as:
   * any group of visits to the same site with no more than 7 days between visit dates
 ```{r}
 # visits of interest
@@ -225,13 +232,14 @@ visit_oi = db_visit %>%
   left_join(site_oi, by = "site_id") %>%
   mutate(year = year(date)) %>%
   select(site,
+         population,
          year,
          date,
          comments_visit,
          everything()) %>%
-  arrange(site,
+  arrange(population,
           date) %>%
-  group_by(site, year) %>%
+  group_by(population, year) %>%
   mutate(survey_period = fuzzy_grouping(as.integer(date), 7)) %>% # consider surveys within a rolling 7 days to be within the same survey period
   ungroup()
 
@@ -270,6 +278,7 @@ survey_oi = db_survey %>%
 
 Selection criteria when more than 1 survey period available for a given & year:
 
+0) greatest number of sites within survey period (for populations with multiple sites)
 1) greatest number of survey types (capture, ves, swab) within survey period
 2) greatest mean survey_quality within survey period: good (3) > fair (2) > poor (1) > NA (0)
 3) greatest number of surveys within survey period
@@ -306,7 +315,8 @@ survey_oi_priority = survey_oi %>%
 # select survey periods for cmr
 period_select_cmr = survey_oi_priority %>%
   filter(detection_type == "cmr") %>%
-  distinct(site,
+  distinct(population,
+           site,
            year,
            survey_period,
            detection_type_count,
@@ -329,7 +339,8 @@ period_select_cmr = survey_oi_priority %>%
 # select survey periods for swab
 period_select_swab = survey_oi_priority %>%
   filter(detection_type == "swab") %>%
-  distinct(site,
+  distinct(population,
+           site,
            year,
            survey_period,
            detection_type_count,
@@ -352,7 +363,8 @@ period_select_swab = survey_oi_priority %>%
 # select survey periods for visual
 period_select_visual = survey_oi_priority %>%
   filter(detection_type == "visual") %>%
-  distinct(site,
+  distinct(population,
+           site,
            year,
            survey_period,
            detection_type_count,
@@ -376,7 +388,8 @@ period_select_visual = survey_oi_priority %>%
 period_select = bind_rows(period_select_cmr,
                           period_select_swab,
                           period_select_visual) %>%
-  select(site,
+  select(population,
+         site,
          year,
          survey_period,
          detection_type) %>%
@@ -388,7 +401,7 @@ dupes_period_select = get_dupes(period_select, site, year, detection_type)
 # wider table for visual inspection of available surveys
 period_select_wide = period_select %>%
   mutate(detection_type = paste0(detection_type, "_survey_period")) %>%
-  pivot_wider(id_cols = c(site, year),
+  pivot_wider(id_cols = c(population, site, year),
               names_from = detection_type,
               values_from = survey_period_select) %>%
   arrange(site,
@@ -396,9 +409,10 @@ period_select_wide = period_select %>%
 
 # visually check selections where multiple periods present for a site/year, to see if any should be flagged
 check_period_select = survey_oi_priority %>%
-  left_join(period_select, by = c("site", "year", "detection_type")) %>%
+  left_join(period_select, by = c("population", "site", "year", "detection_type")) %>%
   filter(period_count > 1) %>%
-  select(site,
+  select(population,
+         site,
          year,
          survey_period,
          survey_period_select,
@@ -418,7 +432,7 @@ check_period_select = survey_oi_priority %>%
 
 # surveys selected using criteria, across all detection types
 survey_select = survey_oi_priority %>%
-  right_join(period_select, by = c("site", "year", "survey_period" = "survey_period_select", "detection_type")) %>%
+  right_join(period_select, by = c("population", "site", "year", "survey_period" = "survey_period_select", "detection_type")) %>%
   arrange(site,
           date,
           detection_type) %>%
@@ -428,6 +442,19 @@ survey_select = survey_oi_priority %>%
   mutate(id = row_number()) %>%
   ungroup() %>%
   filter((detection_type == "visual" & id == 1) | detection_type %in% c("cmr", "swab"))
+
+population_check = survey_select %>%
+  filter(site %in% c("72336",
+                     "72808",
+                     "11008",
+                     "11009")) %>%
+  select(population,
+         site,
+         year,
+         date,
+         detection_type,
+         survey_period) %>%
+  arrange(population, date, site, detection_type)
 
 ```
 
@@ -443,7 +470,8 @@ cmr detection within survey period (across all surveys in survey period)
 # visual data pull
 data_visual = survey_select %>%
   filter(detection_type == "visual") %>%
-  select(site,
+  select(population,
+         site,
          date,
          survey_period,
          year,
@@ -464,7 +492,7 @@ data_visual = survey_select %>%
 
 # visual abundance calc
 abundance_visual = data_visual %>%
-  group_by(site,
+  group_by(population,
            year,
            date,
            ) %>%
@@ -475,7 +503,8 @@ abundance_visual = data_visual %>%
 # cmr data pull
 data_cmr = survey_select %>%
   filter(detection_type == "cmr") %>%
-  select(site,
+  select(population,
+         site,
          date,
          survey_period,
          year,
@@ -484,7 +513,7 @@ data_cmr = survey_select %>%
          detection_type,
          comments_survey,
          comments_visit) %>%
-  right_join(db_capture %>%
+  inner_join(db_capture %>%
                filter(survey_id %in% survey_select$survey_id,
                      life_stage == "adult",
                      capture_animal_state != "dead") %>%
@@ -497,7 +526,7 @@ data_cmr = survey_select %>%
 
 # cmr abundance calc
 abundance_cmr = data_cmr %>%
-  group_by(site,
+  group_by(population,
            year) %>%
   summarise(date_cmr_first = first(date),
             cmr_days = n_distinct(date),
@@ -506,7 +535,7 @@ abundance_cmr = data_cmr %>%
 
 # join visual and cmr abundance data
 abundance_stats = abundance_visual %>%
-  full_join(abundance_cmr, by = c("site", "year"))
+  full_join(abundance_cmr, by = c("population", "year"))
 
 ```
 
@@ -524,7 +553,7 @@ abundance_stats = abundance_visual %>%
 # swab data pull
 data_swab = survey_select %>%
   filter(detection_type == "swab") %>%
-  select(site,
+  select(population,
          date,
          survey_period,
          year,
@@ -533,7 +562,7 @@ data_swab = survey_select %>%
          detection_type,
          comments_survey,
          comments_visit) %>%
-  right_join(db_bd %>%
+  inner_join(db_bd %>%
                inner_join(db_sample, by = "sample_id") %>%
                inner_join(db_capture, by = "capture_id") %>%
                filter(survey_id %in% survey_select$survey_id,
@@ -550,7 +579,7 @@ data_swab = survey_select %>%
 
 # Bd prevalence & load calc
 bd_stats = data_swab %>%
-  group_by(site,
+  group_by(population,
            year) %>%
   summarise(date_swab_first = first(date),
             swab_days = n_distinct(date),
@@ -568,9 +597,14 @@ bd_stats = data_swab %>%
 ```{r}
 # join abundance and Bd stats
 data_out = abundance_stats %>%
-  full_join(bd_stats, by = c("site", "year")) %>%
-  arrange(site,
-          year)
+  full_join(bd_stats, by = c("population", "year")) %>%
+  arrange(population,
+          year) %>%
+  left_join(pop_oi, by = "population") %>%
+  select(population,
+         name_ima,
+         sites,
+         everything())
 
 # save to csv
 write.csv(data_out, here("staging", paste0("sierra_mhc_abundance_bd_stats_", today(), ".csv")))
