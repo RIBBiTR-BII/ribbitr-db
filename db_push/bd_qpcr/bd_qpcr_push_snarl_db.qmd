@@ -45,7 +45,7 @@ raw_2024_plates = read_csv(here(wddir,"2025-03-18", "final_plates.csv"))
 raw_2024_qc = read_csv(here(wddir,"2025-03-18", "final_qc.csv"))
 raw_2024_results = read_csv(here(wddir,"2025-03-18", "final_results.csv"), col_types = cols(well_notes = "c"))
 
-raw_km = read_csv(here(wddir,"km_pep", "km_pep_bd_qpcr_results.csv"))
+raw_km = read_csv(here(wddir,"km_pep", "bd_results_kira.csv"))
 
 tz_local = "America/Los_Angeles"
 
@@ -54,13 +54,12 @@ tz_local = "America/Los_Angeles"
 ## load results from db
 
 ```{r}
-
+# join file results
 file_results = raw_2024_results %>%
-  left_join(raw_2024_plates, by = c("plate_id" = "id"))
+  left_join(raw_2024_plates, by = c("plate_id" = "id")) %>%
+  mutate(src = "2024_file")
 
-peace = load_results %>%
-  filter(is.na(std_type))
-
+# join and collect db results
 load_results = bind_rows(sn_results %>%
                             collect() %>%
                            mutate(src = "db") %>%
@@ -70,12 +69,12 @@ load_results = bind_rows(sn_results %>%
                             collect()) %>%
   left_join(sn_plates %>%
               collect(), by = c("plate_id" = "id")) %>%
-  bind_rows(file_results %>%
-              mutate(src = "2024")) %>%
+  bind_rows(file_results) %>%
   mutate(std_type = coalesce(std_type.x, std_type.y)) %>%
   select(-std_type.x,
          -std_type.y)
-
+  
+# identify loaded sample prefixes 
 names_sn = load_results %>%
   filter(grepl("^[A-Z]{2,6}[0-9,\\.]+$", sample_id)) %>%
   mutate(sample_prefix = gsub("[0-9,\\.]+", "", sample_id)) %>%
@@ -83,10 +82,18 @@ names_sn = load_results %>%
   distinct() %>%
   arrange(sample_prefix)
 
+# filter SN samples in db_bd
 names_db_current = db_bd %>%
-  filter(grepl("^[A-Z]{2,6}[0-9,\\.]+$", sample_name_bd)) %>%
-  collect()
+  filter(qpcr_lab == "snarl") %>%
+  select(sample_name_bd) %>%
+  collect() %>%
+  rename(sample_name = sample_name_bd) %>%
+  mutate(sample_prefix = gsub("[0-9,\\.]+", "", sample_name)) %>%
+  group_by(sample_prefix) %>%
+  count()
 
+
+# identify sample prefixes in db_sample
 names_db = db_sample %>%
   filter(grepl("^[A-Z]{2,6}[0-9,\\.]+$", sample_name)) %>%
   select(sample_name) %>%
@@ -95,9 +102,11 @@ names_db = db_sample %>%
   group_by(sample_prefix) %>%
   count()
 
+# determin set intersection
 any_missing = setdiff(names_db$sample_prefix, names_sn$sample_prefix)
 all_shared = intersect(names_db$sample_prefix, names_sn$sample_prefix)
 
+# filter results only to shared prefixes... though this means new prefixes won't be accespted.
 filtered_results = load_results %>%
   mutate(sample_prefix = gsub("[0-9,\\.]+", "", sample_id)) %>%
   filter(sample_prefix %in% all_shared)
@@ -106,8 +115,22 @@ filtered_results = load_results %>%
 
 # clean results
 ```{r}
+clean_km = raw_km %>%
+  rename(sample_id = bd_swab_id,
+         plate_id = plate,
+         date_start = qpcr_date,
+         well_notes = notes) %>%
+  mutate(plate_name = paste0(as.character(plate_id), "_km"),
+         std_type = "plasmid",
+         target = "ITS",
+         replicate = 1) %>%
+  # some KM results are in the UCSB database, some are not. Default to database, drop those from this dataset.
+  anti_join(filtered_results %>%
+              select(sample_id) %>%
+              distinct(), by = "sample_id")
 
 clean_results = filtered_results %>%
+  bind_rows(clean_km) %>%
   rename(sample_name_bd = sample_id,
          qpcr_plate_name = plate_name,
          qpcr_well = well_id,
@@ -144,7 +167,13 @@ clean_results = filtered_results %>%
          qpcr_plate_run = 1,
          qpcr_date = as.Date(date_start),
          sample_type = "bd",
-         comments_qpcr = ifelse(comments_qpcr == "", NA_character_, comments_qpcr)) %>%
+         comments_qpcr = ifelse(comments_qpcr == "", NA_character_, comments_qpcr),
+         target_quant_per_swab = target_quant * qpcr_dilution_factor * extract_volume_uL / template_dna_volume_uL,
+         its1_copies_per_standard_unit = case_match(standard_target_type,
+                                                    "ITS1" ~ 1,
+                                                    "zoospore" ~ 60,
+                                                    .default = NA),
+         bd_its1_copies_per_swab = target_quant_per_swab * its1_copies_per_standard_unit) %>%
   group_by(sample_name_bd,
            qpcr_plate_name) %>%
   mutate(replicate_count = max(replicate_id),
@@ -158,38 +187,31 @@ clean_results = filtered_results %>%
                                 .default = NA)) %>%
   ungroup()
 
-unified_results = bind_rows(clean_results,
-                            raw_km %>%
-                              mutate(sample_type = "bd",
-                                     src = "km_pep") %>%
-                              select(-"...1",
-                                     -sample_id,
-                                     -result_id))
-
 ```
 
 ```{r}
 violations_unique = get_dupes(clean_results, sample_name_bd, qpcr_plate_name, replicate_id)
 ```
 
-# drop these samples before reloading...
+# We do a complete refresh of samples from the included datasets. This is because the ID systems between the two datasets are distinct... Could we do this better? Could we generate a unique result id based on a the primary key in the ucsb database? Maybes
 ```{r}
 drop_bd = db_bd %>%
   filter(qpcr_lab == "snarl") %>%
   collect()
 
-# do all rows to be dropped show up in clean_results to be added? If missing, NA on ID?
-check = drop_bd %>%
-  select(sample_name_bd) %>%
-  distinct() %>%
-  left_join(unified_results, by = "sample_name_bd")
+# these will be dropped and are not found in new data...
+check_db = drop_bd %>%
+  anti_join(clean_results %>%
+              select(sample_name_bd) %>%
+              distinct(), by = "sample_name_bd")
 
-# these will be deleted and are not found in new dataset...
-rf = check %>%
-  filter(is.na(extraction_kit))
+check_dataset = clean_results %>%
+  anti_join(drop_bd %>%
+              select(sample_name_bd) %>%
+              distinct(), by = "sample_name_bd")
 
-# samples to drop?
-drop_sample = db_bd %>%
+# SNARL Bd samples with no capture
+no_cap_sample = db_bd %>%
   filter(qpcr_lab == "snarl") %>%
   select(sample_id) %>%
   mutate(sample_type = "bd") %>%
@@ -202,7 +224,7 @@ drop_sample = db_bd %>%
 
 # gelled
 ```{r}
-gelled_results = unified_results %>%
+gelled_results = clean_results %>%
   left_join(db_sample %>% 
               collect(), by = c("sample_name_bd" = "sample_name", "sample_type")) %>%
   group_by(sample_name_bd) %>%

@@ -10,7 +10,12 @@ editor: source
 librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, janitor, RIBBiTR-BII/ribbitrrr, here)
 
 # connect to database
-dbcon = hopToDB()
+dbcon = hopToDB("wibbitr")
+
+## Point to local data directory
+ddir = Sys.getenv("data_dir")  # data directory
+# Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
+wddir = here(ddir, "kira", "km_pep_surveys") # working data directory
 
 ```
 
@@ -22,15 +27,27 @@ mdt = tbl(dbcon, Id("kira_pep", "metadata_tables")) %>%
 mdc = tbl(dbcon, Id("kira_pep", "metadata_columns")) %>%
   collect()
 
+db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_env = tbl(dbcon, Id("survey_data", "environmental"))
+db_ves = tbl(dbcon, Id("survey_data", "ves"))
+
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
 # pull relevant chain tables from DB
-db_capture = tbl(dbcon, Id("kira_pep", "capture"))
-db_survey = tbl(dbcon, Id("kira_pep", "survey"))
-db_visit = tbl(dbcon, Id("kira_pep", "visit"))
-db_bd = tbl(dbcon, Id("kira_pep", "bd_results"))
+km_capture = tbl(dbcon, Id("kira_pep", "capture"))
+km_survey = tbl(dbcon, Id("kira_pep", "survey"))
+km_visit = tbl(dbcon, Id("kira_pep", "visit"))
+km_bd = tbl(dbcon, Id("kira_pep", "bd_results"))
 
 data_cap = db_capture %>%
-  left_join(db_survey, by = "survey_id") %>%
-  left_join(db_visit, by = "visit_id") %>%
+  left_join(km_survey, by = "survey_id") %>%
+  left_join(km_visit, by = "visit_id") %>%
   collect()
 
 ```
@@ -58,3 +75,87 @@ clean_microbiome = raw_microbiome %>%
 dbWriteTable(dbcon, Id("kira_pep", "microbiome_results"), clean_microbiome, overwrite = TRUE)
 
 ```
+
+# load survey data and compare
+```{r}
+raw_capture = read_csv(here(wddir, "capture.csv"))
+raw_ves = read_csv(here(wddir, "ves.csv"))
+raw_survey = read_csv(here(wddir, "survey.csv"))
+raw_visit = read_csv(here(wddir, "visit.csv"))
+raw_bd = read_csv(here(wddir, "bd_results.csv"))
+
+km_ves_wide = raw_ves %>%
+  full_join(raw_survey, by = "survey_id") %>%
+  left_join(raw_visit, by = "visit_id")
+
+km_cap_wide = raw_capture %>%
+  left_join(raw_survey, by = "survey_id") %>%
+  left_join(raw_visit, by = "visit_id")
+
+km_bd_wide = raw_bd %>%
+  full_join(raw_capture, by = "bd_swab_id") %>%
+  left_join(raw_survey, by = "survey_id") %>%
+  left_join(raw_visit, by = "visit_id")
+
+km_surveys = raw_survey %>%
+  left_join(raw_visit, by = "visit_id")
+
+```
+
+# correct detection type misname
+```{r}
+data_capture_misname = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by =  "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+
+    select(all_of(colnames(db_survey))) %>%
+  filter(
+    # visit_lab == "km_pep",
+    detection_type != "capture",
+    ) %>%
+  distinct() %>%
+  collect()
+
+data_capture_corrected = data_capture_misname %>%
+  mutate(detection_type = "capture",
+         detection_subtype = "swab")
+
+# update survey
+dbBegin(dbcon)
+tryCatch(
+  {
+    
+    temp_survey = stage_to_temp(dbcon, db_survey, data_capture_corrected)
+    pointer = tbl(dbcon, temp_survey)
+    rows_update(db_survey, pointer, by="survey_id", in_place=TRUE, unmatched = "ignore")
+    
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful!")
+    
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
+
+```
+
+```{r}
+
+missing = km_bd_wide %>%
+  filter(survey_id == "86f92956-1104-4dd3-92eb-ca19d24008ea")
+
+missing = km_cap_wide %>%
+  filter(survey_id == "86f92956-1104-4dd3-92eb-ca19d24008ea")
+
+missing = km_ves_wide %>%
+  filter(survey_id == "86f92956-1104-4dd3-92eb-ca19d24008ea")
+
+```
+
+# update qpcr results
+
