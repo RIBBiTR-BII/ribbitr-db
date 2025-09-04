@@ -16,7 +16,7 @@ dbcon <- hopToDB("wibbitr")
 ## Point to local data directory
 ddir = Sys.getenv("data_dir")  # data directory
 # Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
-wddir = here(ddir, "bd_qpcr_results", "ribbitr_data_2025-05-30", "ribbitr_data") # working data directory
+wddir = here(ddir, "bd_qpcr_results", "ribbitr_data_2025-09-02", "ribbitr_data") # working data directory
 
 ```
 
@@ -34,7 +34,7 @@ db_sample = tbl(dbcon, Id("survey_data", "sample"))
 ## load results from file
 
 ```{r}
-# list.files(here(wddir, "penn", "2023", ""))
+# list.files(here(wddir, "Panama2024"))
 
 # brasil
 ## 2022
@@ -77,6 +77,13 @@ raw_pa_2023_15 = import_list(here(wddir, "Panama2023", "RIBBiTR_PanamaSwabs2023_
 raw_pa_2023nd_01 = import_list(here(wddir, "PanamaNovDec2023", "RIBBiTR_PanamaSwabsNovDec2023_11192024_Plate1_results.xlsx"))
 raw_pa_2023nd_02 = import_list(here(wddir, "PanamaNovDec2023", "RIBBiTR_PanamaSwabsNovDec2023_12112024_Plate2_results.xlsx"))
 raw_pa_2023nd_03 = import_list(here(wddir, "PanamaNovDec2023", "RIBBiTR_PanamaSwabsNovDec2023_12192024_Plate3_results.xlsx"))
+## 2024
+raw_pa_2024_01 = import_list(here(wddir, "Panama2024", "RIBBiTR_PanamaSwabs2024_05212025_Plate1_results.xlsx"))
+raw_pa_2024_02 = import_list(here(wddir, "Panama2024", "RIBBiTR_PanamaSwabs2024_06122025_Plate2_results.xlsx"))
+raw_pa_2024_03 = import_list(here(wddir, "Panama2024", "RIBBiTR_PanamaSwabs2024_06132025_Plate3_results.xlsx"))
+raw_pa_2024_04 = import_list(here(wddir, "Panama2024", "RIBBiTR_PanamaSwabs2024_06162025_Plate4_results.xlsx"))
+raw_pa_2024_05 = import_list(here(wddir, "Panama2024", "RIBBiTR_PanamaSwabs2024_06172025_Plate5_results.xlsx"))
+raw_pa_2024_06 = import_list(here(wddir, "Panama2024", "RIBBiTR_PanamaSwabs2024_06172025_Plate6_results.xlsx"))
 
 
 # penn
@@ -191,6 +198,13 @@ clean_pa_2023nd_01 = scrape_qpcr_xls(raw_pa_2023nd_01)
 clean_pa_2023nd_02 = scrape_qpcr_xls(raw_pa_2023nd_02)
 clean_pa_2023nd_03 = scrape_qpcr_xls(raw_pa_2023nd_03)
 
+clean_pa_2024_01 = scrape_qpcr_xls(raw_pa_2024_01)
+clean_pa_2024_02 = scrape_qpcr_xls(raw_pa_2024_02)
+clean_pa_2024_03 = scrape_qpcr_xls(raw_pa_2024_03)
+clean_pa_2024_04 = scrape_qpcr_xls(raw_pa_2024_04)
+clean_pa_2024_05 = scrape_qpcr_xls(raw_pa_2024_05)
+clean_pa_2024_06 = scrape_qpcr_xls(raw_pa_2024_06)
+
 clean_pe_2022_01 = scrape_qpcr_xls(raw_pe_2022_01)
 clean_pe_2022_02 = scrape_qpcr_xls(raw_pe_2022_02) %>%
   mutate(bd_quantity_mean = as.numeric(bd_quantity_mean))
@@ -255,6 +269,12 @@ bind_results = bind_rows(clean_br_2022_01,
                          clean_pa_2023nd_01,
                          clean_pa_2023nd_02,
                          clean_pa_2023nd_03,
+                         clean_pa_2024_01,
+                         clean_pa_2024_02,
+                         clean_pa_2024_03,
+                         clean_pa_2024_04,
+                         clean_pa_2024_05,
+                         clean_pa_2024_06,
                          clean_pe_2022_01,
                          clean_pe_2022_02,
                          clean_pe_2023_all,
