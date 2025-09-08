@@ -545,3 +545,50 @@ cuartotest = db_bd %>%
 write.csv(cuartotest, here("staging", "rz_ple_qpcr_plates_dilution.csv"))
 
 ```
+
+# panama duplicate fixes
+```{r}
+q1 = db_sample %>%
+  left_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  filter(grepl("221120_J001", sample_name)  & sample_type == "bd") %>%
+  select(sample_name,
+         sample_type,
+         taxon_capture,
+         site,
+         date) %>%
+  collect()
+
+q2 = db_sample %>%
+  left_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  filter(grepl("230719_F021", sample_name)  & sample_type == "bd") %>%
+  select(sample_name,
+         sample_type,
+         taxon_capture,
+         site,
+         date) %>%
+  collect()
+
+q3 = db_bd %>%
+  left_join(db_sample, by = "sample_id") %>%
+  full_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  filter(date == "2023-07-19" & sample_type == "bd") %>%
+  select(result_id,
+         sample_name_bd,
+         sample_name,
+         sample_type,
+         taxon_capture,
+         site,
+         date) %>%
+  collect()
+
+
+```
