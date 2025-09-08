@@ -49,3 +49,149 @@ pp = data_bd %>%
 
 ```
 
+# all km surveys
+```{r}
+data_km = db_survey %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by =  "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  select(detection_type,
+         detection_subtype,
+         description,
+         date,
+         time_of_day,
+         visit_lab,
+         project_id,
+         site,
+         region,
+         country) %>%
+  filter(
+    # visit_lab == "km_pep",
+    project_id == "ribbitr_pep_km",
+    detection_type != "environmental"
+    ) %>%
+  arrange(date,
+          detection_type) %>%
+  collect()
+
+poof = km_surveys %>%
+  anti_join(data_km, by = c("visit_date" = "date", "survey_description" = "description"))
+  
+
+data_km = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by =  "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  select(capture_id,
+         taxon_capture,
+         detection_type,
+         detection_subtype,
+         date,
+         time_of_day,
+         visit_lab,
+         project_id,
+         site,
+         region,
+         country) %>%
+  filter(
+    # visit_lab == "km_pep",
+    project_id == "ribbitr_pep_km",
+    ) %>%
+  collect()
+  
+# Interesting... there are some capture surveys which are not labeled as captures... I wonder if there are any others for other projects.
+data_capture_misname = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by =  "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  select(detection_type,
+         detection_subtype,
+         date,
+         time_of_day,
+         visit_lab,
+         project_id,
+         site,
+         region,
+         country) %>%
+  filter(
+    # visit_lab == "km_pep",
+    detection_type != "capture",
+    ) %>%
+  distinct() %>%
+  collect()
+
+data_ves_misname = db_ves %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by =  "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  select(ves_id,
+         taxon_ves,
+         detection_type,
+         detection_subtype,
+         date,
+         time_of_day,
+         visit_lab,
+         project_id,
+         site,
+         region,
+         country) %>%
+  filter(
+    # visit_lab == "km_pep",
+    detection_type != "visual",
+    ) %>%
+  collect()
+
+data_aural_misname = db_aural %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by =  "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  select(aural_id,
+         taxon_aural,
+         detection_type,
+         detection_subtype,
+         date,
+         time_of_day,
+         visit_lab,
+         project_id,
+         site,
+         region,
+         country) %>%
+  filter(
+    # visit_lab == "km_pep",
+    detection_type != "aural",
+    ) %>%
+  collect()
+
+data_env_misname = db_env %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by =  "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  select(environmental_id,
+         detection_type,
+         detection_subtype,
+         date,
+         time_of_day,
+         visit_lab,
+         project_id,
+         site,
+         region,
+         country) %>%
+  filter(
+    # visit_lab == "km_pep",
+    detection_type != "environmental",
+    ) %>%
+  collect()
+
+# nope, looks like just from Kira's project. Interesting. I expect this was my doing, I'll fix it. Thanks Kira for helping identify this.
+```
