@@ -30,9 +30,9 @@ db_country = tbl(dbcon, Id("survey_data", "country"))
 
 ```
 
-# queries
+# query database for all samples, samples with results, and discrepany
 ```{r}
-# all brazil bd samples with associated capture in database
+# all bd samples with associated capture in database
 bd_samples = db_sample %>%
   left_join(db_capture, by = "capture_id") %>%
   left_join(db_survey, by = "survey_id") %>%
