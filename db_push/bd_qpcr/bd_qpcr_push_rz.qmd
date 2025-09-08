@@ -34,6 +34,7 @@ db_sample = tbl(dbcon, Id("survey_data", "sample"))
 ## load results from file
 
 ```{r}
+#| include: false
 # list.files(here(wddir, "Panama2024"))
 
 # brasil
@@ -340,31 +341,73 @@ clean_results = bind_results %>%
 
 # checks
 ```{r}
-violations_unique = get_dupes(clean_results, sample_name)
+qc_results = clean_results %>%
+  mutate(
+    sample_name = case_when(
+      sample_name == "221120_J001" & 
+        qpcr_plate_name == "RIBBiTR_PanamaSwabs2022_11062023_Plate3" & 
+        qpcr_well == "18" ~ "221120_J001_a",
+      sample_name == "221120_J001" & 
+        qpcr_plate_name == "RIBBiTR_PanamaSwabs2023_07032024_plate8" & 
+        qpcr_well == "61" ~ "221120_J001_b",
+      sample_name == "221121_J011" & 
+        qpcr_plate_name == "RIBBiTR_PanamaSwabs2023_07032024_plate8" & 
+        qpcr_well == "50" ~ "221121_J010",
+      sample_name == "230719_F021" & 
+        qpcr_plate_name == "RIBBiTR_PanamaSwabs2023_07082024_plate9" & 
+        qpcr_well == "27" ~ "230719_F021_b",
+      sample_name == "231201_S001" & 
+        qpcr_plate_name == "RIBBiTR_PanamaSwabsNovDec2023_12192024_Plate3" & 
+        qpcr_well == "73" ~ "231202_S001",
+      sample_name == "231201_S002" & 
+        qpcr_plate_name == "RIBBiTR_PanamaSwabsNovDec2023_12192024_Plate3" & 
+        qpcr_well == "85" ~ "231202_S002",
+      sample_name == "231201_S003" & 
+        qpcr_plate_name == "RIBBiTR_PanamaSwabsNovDec2023_12192024_Plate3" & 
+        qpcr_well == "2" ~ "231202_S003",
+      sample_name == "231201_S004" & 
+        qpcr_plate_name == "RIBBiTR_PanamaSwabsNovDec2023_12192024_Plate3" & 
+        qpcr_well == "14" ~ "231202_S004",
+      sample_name == "231201_S005" & 
+        qpcr_plate_name == "RIBBiTR_PanamaSwabsNovDec2023_12192024_Plate3" & 
+        qpcr_well == "26" ~ "231202_S005",
+      sample_name == "231201_S006" & 
+        qpcr_plate_name == "RIBBiTR_PanamaSwabsNovDec2023_12192024_Plate3" & 
+        qpcr_well == "38" ~ "231202_S006",
+      sample_name == "231201_S007" & 
+        qpcr_plate_name == "RIBBiTR_PanamaSwabsNovDec2023_12192024_Plate3" & 
+        qpcr_well == "50" ~ "231202_S007",
+      sample_name == "231201_S008" & 
+        qpcr_plate_name == "RIBBiTR_PanamaSwabsNovDec2023_12192024_Plate3" & 
+        qpcr_well == "62" ~ "231202_S008",
+      sample_name == "231201_S009" & 
+        qpcr_plate_name == "RIBBiTR_PanamaSwabsNovDec2023_12192024_Plate3" & 
+        qpcr_well == "74" ~ "231202_S009",
+      TRUE ~ sample_name
+    )
+  ) %>%
+  filter(
+    !(sample_name == "221118_019" & 
+       qpcr_plate_name == "RIBBiTR_PanamaSwabs2022_10022023_Plate1" & 
+       qpcr_well == "91"),
+    !(sample_name == "221120_J001" & 
+       qpcr_plate_name == "RIBBiTR_PanamaSwabs2023_07032024_plate8" & 
+       qpcr_well == "73"),
+    !(sample_name == "221212_051" & 
+       qpcr_plate_name == "RIBBiTR_PanamaSwabs2022_11062023_Plate3" & 
+       qpcr_well == "5")
+  )
+
+
+violations_unique = get_dupes(qc_results, sample_name)
 
 # write_csv(violations_unique, here("staging", "bd_qpcr_duplicates.csv"))
 
 ```
 
-## reconcile dupes
-```{r}
-# allowing duplicate samples, for now
-
-# violations_unique_resolved = violations_unique %>%
-#   group_by(sample_name) %>%
-#   mutate(sample_name = paste0(sample_name, "_DDR", row_number())) %>%
-#   ungroup() %>%
-#   select(-dupe_count)
-# 
-# distinct_results = clean_results %>%
-#   anti_join(violations_unique, by = "sample_name") %>%
-#   bind_rows(violations_unique_resolved)
-
-```
-
 # gelled
 ```{r}
-gelled_results = clean_results %>%
+gelled_results = qc_results %>%
   left_join(db_sample %>% collect(), by = c("sample_name", "sample_type")) %>%
   group_by(sample_name, sample_type) %>%
   mutate(uuid_name = paste0(sample_name, sample_type),
