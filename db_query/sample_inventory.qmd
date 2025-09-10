@@ -15,11 +15,15 @@ mdc = tbl(dbcon, Id("public", "all_columns")) %>%
   filter(table_schema == "survey_data") %>%
   collect()
 
-```
-
 # data table pointers
-```{r}
+
 db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+db_amp_total = tbl(dbcon, Id("survey_data", "amp_total"))
+db_amp_gia = tbl(dbcon, Id("survey_data", "amp_gia"))
+db_amp_mp = tbl(dbcon, Id("survey_data", "amp_maldi_peak"))
+db_amp_mi = tbl(dbcon, Id("survey_data", "amp_maldi_intensity"))
+
+
 db_sample = tbl(dbcon, Id("survey_data", "sample"))
 db_capture = tbl(dbcon, Id("survey_data", "capture"))
 db_survey = tbl(dbcon, Id("survey_data", "survey"))
@@ -30,7 +34,7 @@ db_country = tbl(dbcon, Id("survey_data", "country"))
 
 ```
 
-# query database for all samples, samples with results, and discrepany
+# Bd sample / result discrepancy by region
 ```{r}
 # all bd samples with associated capture in database
 bd_samples = db_sample %>%
@@ -40,29 +44,29 @@ bd_samples = db_sample %>%
   left_join(db_site, by = "site_id") %>%
   left_join(db_region, by = "region_id") %>%
   left_join(db_country, by = "country_id") %>%
-  filter(sample_type == "bd") %>%
-  collect()
+  filter(sample_type == "bd")
 
 # all bd sample counts by year
 bd_samples_by_year = bd_samples %>%
   mutate(year = year(date)) %>%
   group_by(country, region, year) %>%
-  summarize(bd_sample_count = n(),
-            .groups = "drop")
+  summarize(bd_sample_count = as.integer(n()),
+            .groups = "drop") %>%
+  collect()
 
 # all samples with corresponding results in database
 bd_results = db_bd %>%
   select(sample_id) %>%
   distinct() %>%
-  collect() %>%
   inner_join(bd_samples, by = "sample_id")
 
 # all bd result counts by year
 bd_results_by_year = bd_results %>%
   mutate(year = year(date)) %>%
   group_by(country, region, year) %>%
-  summarize(bd_result_count = n(),
-            .groups = "drop")
+  summarize(bd_result_count = as.integer(n()),
+            .groups = "drop") %>%
+  collect()
 
 # combine to see discrepancies
 bd_samples_results = bd_samples_by_year %>%
@@ -74,6 +78,74 @@ bd_samples_results = bd_samples_by_year %>%
 # write_csv(bd_samples_results, here("staging", paste0("br_bd_samples_results_count_", today(), ".csv")))
 ```
 
+# Bd maligned samples & results
+```{r}
+# bd
+unmatched_results_bd = db_bd %>%
+  left_join(db_sample, by = "sample_id") %>%
+  filter(is.na(capture_id),
+         sample_type == "bd") %>%
+  arrange(sample_name_bd) %>%
+  collect()
+
+unmatched_samples_bd = db_bd %>%
+  right_join(db_sample, by = "sample_id") %>%
+  filter(is.na(result_id),
+         sample_type == "bd") %>%
+  left_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  select(all_of(colnames(db_sample)),
+         date,
+         site,
+         region,
+         country) %>%
+  arrange(sample_name) %>%
+  collect()
+
+```
+
+# AMP maligned samples & results
+```{r}
+
+# amp table
+amp_tables = db_sample %>%
+  filter(sample_type == "amp") %>%
+  left_join(db_amp_total %>%
+              select(sample_id) %>%
+              distinct() %>%
+              mutate(amp_total = TRUE), by = "sample_id") %>%
+  left_join(db_amp_gia %>%
+              select(sample_id) %>%
+              distinct() %>%
+              mutate(amp_gia = TRUE), by = "sample_id") %>%
+  left_join(db_amp_mp %>%
+              select(sample_id) %>%
+              distinct() %>%
+              mutate(amp_maldi_peak = TRUE), by = "sample_id") %>%
+  left_join(db_amp_mi %>%
+              select(sample_id) %>%
+              distinct() %>%
+              mutate(amp_maldi_intensity = TRUE), by = "sample_id") %>%
+  arrange(sample_name) %>%
+  collect() %>%
+  mutate(
+    across(c(amp_total, amp_gia, amp_maldi_peak, amp_maldi_intensity), ~ ifelse(is.na(.), FALSE, .))
+  )
+
+# amp
+unmatched_results_amp = amp_tables %>%
+  filter(is.na(capture_id))
+
+unmatched_samples_amp = amp_tables %>%
+  rowwise() %>%
+  mutate(t_count = sum(amp_total, amp_gia, amp_maldi_peak, amp_maldi_intensity)) %>%
+  filter(!is.na(capture_id),
+         t_count == 0)
+```
 # specific inquiries
 
 ## rz lab report
@@ -161,62 +233,5 @@ penn23  = bd_samples %>%
 br23 = bd_samples %>%
   filter(country == "brazil",
          year(date) == 2023)
-
-```
-
-# maligned samples & results
-```{r}
-# bd
-unmatched_results_bd = db_bd %>%
-  left_join(db_sample, by = "sample_id") %>%
-  filter(is.na(capture_id),
-         sample_type == "bd") %>%
-  collect() %>%
-  arrange(sample_name_bd)
-
-unmatched_samples_bd = db_bd %>%
-  right_join(db_sample, by = "sample_id") %>%
-  filter(is.na(result_id),
-         sample_type == "bd") %>%
-  left_join(db_capture, by = "capture_id") %>%
-  left_join(db_survey, by = "survey_id") %>%
-  left_join(db_visit, by = "visit_id") %>%
-  left_join(db_site, by = "site_id") %>%
-  left_join(db_region, by = "region_id") %>%
-  left_join(db_country, by = "country_id") %>%
-  select(all_of(colnames(db_sample)),
-         date,
-         site,
-         region,
-         country) %>%
-  collect() %>%
-  arrange(sample_name)
-
-# brazil
-unmatched_samples_bd_br = unmatched_samples_bd %>%
-  filter(country == "brazil") %>%
-  arrange(date)
-
-brq = unmatched_results_bd %>%
-  # filter(grepl("brbd", sample_name_bd, ignore.case = TRUE)) %>%
-  filter(grepl("brazil", qpcr_plate_name, ignore.case = TRUE))
-
-br_23 = db_sample %>%
-  left_join(db_capture, by = "capture_id") %>%
-  left_join(db_survey, by = "survey_id") %>%
-  left_join(db_visit, by = "visit_id") %>%
-  left_join(db_site, by = "site_id") %>%
-  left_join(db_region, by = "region_id") %>%
-  left_join(db_country, by = "country_id") %>%
-  filter(sample_type == "bd",
-         country == "brazil",
-         year(date) == 2023) %>%
-  collect()
-
-peace = bd_samples %>%
-  filter(sample_type == "bd",
-         grepl("^BRBd", sample_name)) %>%
-  arrange(sample_name)
-
 
 ```
