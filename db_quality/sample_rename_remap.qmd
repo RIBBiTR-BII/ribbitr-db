@@ -1,0 +1,151 @@
+---
+title: "brazil_sample_inventory"
+format: html
+---
+
+# setup
+```{r}
+librarian::shelf(tidyverse, dbplyr, here, lubridate, RPostgres, DBI, uuid, RIBBiTR-BII/ribbitrrr)
+
+## Connect to DB
+dbcon <- hopToDB("ribbitr")
+
+## Pull column metadata from database
+mdc = tbl(dbcon, Id("public", "all_columns")) %>%
+  filter(table_schema == "survey_data") %>%
+  collect()
+
+# data table pointers
+
+db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+db_amp_total = tbl(dbcon, Id("survey_data", "amp_total"))
+db_amp_gia = tbl(dbcon, Id("survey_data", "amp_gia"))
+db_amp_mp = tbl(dbcon, Id("survey_data", "amp_maldi_peak"))
+db_amp_mi = tbl(dbcon, Id("survey_data", "amp_maldi_intensity"))
+db_muc_gia = tbl(dbcon, Id("survey_data", "mucosome_gia"))
+
+
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
+```
+
+# rename
+```{r}
+# rename samples
+# 1. define map "name_old" -> "name_new"
+# 2. Does "name_new" exist in sample table?
+#   a. yes. 
+#   b. no. 
+
+# c("old_name", "new_name")
+sample_name_map = list(
+  c("221127_j013", "221127_J013"),
+  c("221127_j014", "221127_J014"),
+  c("221127_j015", "221127_J015")
+)
+
+list_to_df = function(lst) {
+  # Use do.call with rbind to combine the list elements row-wise into a matrix
+  mat <- do.call(rbind, lst)
+  # Convert to data frame and assign column names
+  df <- as.data.frame(mat, stringsAsFactors = FALSE)
+  colnames(df) <- c("sample_name_old", "sample_name_new")
+  return(df)
+}
+
+sample_name_lookup = list_to_df(sample_name_map)
+
+old_samples_existing = db_sample %>%
+  filter(sample_name %in% sample_name_lookup$sample_name_old) %>%
+  collect()
+
+new_samples_existing = db_sample %>%
+  filter(sample_name %in% sample_name_lookup$sample_name_new) %>%
+  collect() %>%
+  inner_join(sample_name_lookup, by = c("sample_name" = "sample_name_new")) %>%
+  mutate(name_exists = TRUE)
+
+reconciled_samples = old_samples_existing %>%
+  left_join(new_samples_existing %>%
+              rename_with(~paste0(., "_new")), by = c("sample_name" = "sample_name_old_new", "sample_type" = "sample_type_new")) %>%
+  mutate(name_exists_new = ifelse(is.na(name_exists_new), FALSE, TRUE),
+         capture_id_conflict = (is.na(capture_id) & is.na(capture_id_new) & capture_id != capture_id_new)) %>%
+  select(-sample_name_new) %>%
+  left_join(sample_name_lookup, by = c("sample_name" = "sample_name_old"))
+
+# check for capture_id conflicts
+if(any(reconciled_samples$capture_id_conflict)) {
+  stop("capture_id conflict(s) found between old and new names. See `reconciled_samples` for details.")
+}
+
+# if new sample name already exists in sample table:
+## Create new entry, Inherit sample_id & capture_id.
+## Inherit capture_id from "old_name" if present
+## Update new name.
+## Drop old name.
+
+sample_upsert_existant = reconciled_samples %>%
+  filter(name_exists_new) %>%
+  mutate(sample_id = sample_id_new,
+         sample_name = sample_name_new,
+         capture_id = coalesce(capture_id, capture_id_new),
+         sample_name_conflict = sample_name_conflict_new,
+         parent_sample_id = parent_sample_id_new) %>%
+  select(all_of(colnames(db_sample)))
+
+# if new sample name does not exist in sample table:
+## Create new entry, Generate sample_id with uuidgenerate().
+## Inherit capture_id from "old_name".
+## Insert new name.
+## Drop old name.
+
+sample_upsert_nonexistant = reconciled_samples %>%
+  filter(!name_exists_new) %>%
+  mutate(sample_id = UUIDfromName("1208e62f-d3a1-462c-984f-0bf1f43f5837", paste0(sample_name, sample_type)),
+         sample_name = sample_name_new) %>%
+  select(all_of(colnames(db_sample)))
+
+sample_upsert = bind_rows(sample_upsert_existant,
+                          sample_upsert_nonexistant)
+
+sample_drop = reconciled_samples %>%
+  select(sample_id)
+
+sample_id_lookup = reconciled_samples %>%
+  filter(name_exists_new) %>%
+  select(sample_id,
+         sample_id_new)
+
+# # remap sample name and sample id in all result tables
+# amp_total_update = db_amp_total %>%
+#   filter(sample_id %in% sample_id_lookup$sample_id) %>%
+#   collect()
+  
+rename_resamp = function(table_pointer, sample_col) {
+  table_update = table_pointer %>%
+    filter(sample_id %in% sample_id_lookup$sample_id) %>%
+    collect() %>%
+    left_join(sample_id_lookup, by = "sample_id") %>%
+    left_join(sample_name_lookup, by = setNames("sample_name_old", sample_col)) %>%
+    mutate(sample_id = sample_id_new,
+           !!sample_col := sample_name_new) %>%
+    select(all_of(colnames(table_pointer)))
+  
+  return(table_update)
+}
+
+amp_total_update = rename_resamp(db_amp_total, "sample_name_amp")
+amp_gia_update = rename_resamp(db_amp_gia, "sample_name_amp")
+amp_mp_update = rename_resamp(db_amp_mp, "sample_name_amp")
+amp_mi_update = rename_resamp(db_amp_mi, "sample_name_amp")
+bd_update = rename_resamp(db_bd, "sample_name_bd")
+muc_gia_update = rename_resamp(db_muc_gia, "sample_name_mucosome")
+
+
+```
