@@ -33,7 +33,7 @@ db_gia = tbl(dbcon, Id("survey_data", "amp_gia"))
 ```
 
 # load files
-```{r}
+```{r include=FALSE}
 # dput(list.files(path = here(wddir, "gia_data")))
 
 # serdp
