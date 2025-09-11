@@ -22,7 +22,9 @@ mdc = tbl(dbcon, Id("public", "all_columns")) %>%
 
 ## Point to local data directory
 ddir = Sys.getenv("data_dir")  # data directory
+
 # Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
+wddir_2022 = here(ddir, "fulcrum", "penn", "Fulcrum_Data_2022")
 wddir = here(ddir, "fulcrum", 'penn', '2024-11-18') # working data directory
 
 ```
@@ -47,7 +49,7 @@ wddir = here(ddir, "fulcrum", 'penn', '2024-11-18') # working data directory
 
 ## Pull dependent tables for each data chain
 
-### use naming convention "db\_" to distinguish the source
+### use naming convention "db_" to distinguish the source
 
 ```{r}
 # pull relevant chain tables from DB
@@ -199,6 +201,7 @@ clean_aural_survey <- raw_aural_survey %>%
          time_of_day = str_to_lower(time_of_day),
          comments_survey = str_replace_all(comments_survey, "\\n", ". "),
          detection_type = "aural",
+         detection_subtype = NA_character_,
          created_at = with_tz(ymd_hms(created_at, tz = "UTC"), "America/New_York"),
          survey_date = as.Date(ifelse(hour(created_at) > 12, date(created_at), date(created_at) - days(1)), origin = "1970-01-01"),
          date = as.Date(ifelse(survey_date - date > 1, date, survey_date), origin = "1970-01-01"),
@@ -235,6 +238,7 @@ clean_ves_survey <- raw_ves_survey %>%
          time_of_day = str_to_lower(time_of_day),
          comments_survey = str_replace_all(comments_survey, "\\n", ". "),
          detection_type = "visual",
+         detection_subtype = NA_character_,
          created_at = with_tz(ymd_hms(created_at, tz = "UTC"), "America/New_York"),
          survey_date = as.Date(ifelse(hour(created_at) > 12, date(created_at), date(created_at) - days(1)), origin = "1970-01-01"),
          date = as.Date(ifelse(survey_date - date > 1, date, survey_date), origin = "1970-01-01"),
@@ -268,6 +272,7 @@ clean_capture_survey <- raw_capture_survey %>%
          time_of_day = str_to_lower(time_of_day),
          comments_survey = str_replace_all(comments_survey, "\\n", ". "),
          detection_type = "capture",
+         detection_subtype = NA_character_,
          created_at = with_tz(ymd_hms(created_at, tz = "UTC"), "America/New_York"),
          survey_date = as.Date(ifelse(hour(created_at) > 12, date(created_at), date(created_at) - days(1)), origin = "1970-01-01"),
          date = as.Date(ifelse(survey_date - date > 1, date, survey_date), origin = "1970-01-01"),
@@ -334,7 +339,8 @@ clean_sample_processing <- raw_sample_processing %>%
          created_at = with_tz(ymd_hms(created_at, tz = "UTC"), "America/New_York"),
          survey_date = as.Date(ifelse(hour(created_at) > 12, date(created_at), date(created_at) - days(1)), origin = "1970-01-01"),
          date = as.Date(ifelse(survey_date - date > 1, date, survey_date), origin = "1970-01-01"),
-         detection_type = "capture") %>%
+         detection_type = "capture",
+         detection_subtype = NA_character_) %>%
   unite(processor, c("processor", "processor_other"), sep=",", remove = TRUE, na.rm = TRUE) %>%
   select(-any_of(to_drop),
          -survey_date,
@@ -360,7 +366,9 @@ clean_sample_obs <- raw_sample_obs %>%
          taxon_sample = coalesce(species_capture, species_capture_other),
          taxon_sample = str_to_lower(str_replace_all(taxon_sample, " ", "_")),
          comments_sample = str_replace_all(comments_sample, "\\n", ". "),
-         sample_id = fulcrum_id) %>%
+         sample_id = fulcrum_id,
+         negative_control = (taxon_sample == "negative_control"),
+         bag_id = ifelse(negative_control, "NC", bag_id)) %>%
   ribbitr_clean_taxa(taxon_sample) %>%
   select(-any_of(to_drop),
          -fulcrum_record_id,
@@ -389,7 +397,8 @@ clean_sample_obs <- raw_sample_obs %>%
                    "life_stage_other",
                    "sex_other"))) %>%
   filter(!if_all(everything(), is.na),
-         !(taxon_sample == "negative_control"))
+         # !(taxon_sample == "negative_control")
+         )
 
 clean_edna_survey = raw_edna_survey %>%
   clean_names() %>%
@@ -401,7 +410,8 @@ clean_edna_survey = raw_edna_survey %>%
          site = str_replace_all(site, " ", "_"),
          time_of_day = str_to_lower(survey_time),
          transect = NA,
-         detection_type = "edna") %>%
+         detection_type = "edna",
+         detection_subtype = NA_character_) %>%
   unite(observer_edna, c("observer", "observer_other"), sep=",", remove = TRUE, na.rm = TRUE) %>%
   select(-any_of(to_drop)) %>%
   filter(!if_all(everything(), is.na),
@@ -418,7 +428,7 @@ clean_edna_collection = raw_edna_collection %>%
          frozen =  as.logical(case_match(frozen,
                                          "yes" ~ TRUE,
                                          "no" ~ FALSE)),
-         control = grepl("control", comments_edna),
+         negative_control = grepl("control", comments_edna),
          collection_type = tolower(gsub("-", "_", collection_type))) %>%
   select(-any_of(to_drop))
 
@@ -494,6 +504,17 @@ clean_sample_obs$amp_id_2[clean_sample_obs$fulcrum_id == "639c4eba-ece0-40ea-9aa
 clean_sample_obs$amp_id_2[clean_sample_obs$fulcrum_id == "4421e02c-c5d8-4070-88f7-a9e2c2498f65"] = "Pe_AMP00118_b"
 clean_sample_obs$bacterial_swab_id[clean_sample_obs$fulcrum_id == "2a182461-9cfa-47ab-bedb-4dea02e5d59d"] = "Pe_Bac00658_a"
 clean_sample_obs$bacterial_swab_id[clean_sample_obs$fulcrum_id == "5cbfc389-fc24-4157-88e1-db8359ad4a60"] = "Pe_Bac00658_b"
+clean_sample_obs$antibody_id_4[clean_sample_obs$fulcrum_id == "5cbfc389-fc24-4157-88e1-db8359ad4a60"] = "Pe_IG00000"
+clean_sample_obs$bd_swab_id[clean_sample_obs$fulcrum_id == "80a1f7fe-47fd-488d-a8a3-2f97c23add7c"] = "Pe_Bd00566_a"
+clean_sample_obs$bd_swab_id[clean_sample_obs$fulcrum_id == "5f9332eb-a5b9-4b6a-85cd-4c0d47331840"] = "Pe_Bd00566_b"
+clean_sample_obs$bacterial_swab_id[clean_sample_obs$fulcrum_id == "7e8bd4d0-b393-4e85-8d57-c2decb0df8d4"] = "Pe_Bac00464"
+clean_sample_obs$amp_id[clean_sample_obs$fulcrum_id == "08d85662-12df-479d-ae2c-e6d6dc010038"] = "Pe_AMP00153"
+clean_sample_obs$mucosome_id[clean_sample_obs$fulcrum_id == "c3f4fcd0-f3dc-4cd5-a886-145cbc52d2bb"] = "Pe_Muc00000"
+
+
+
+
+
 
 ```
 
@@ -613,6 +634,7 @@ db_visit = tbl(dbcon, Id("survey_data", "visit"))
 ```{r}
 unified_env = clean_survey_info %>%
   mutate(detection_type = "environmental",
+         detection_subtype = NA_character_,
          transect = NA,
          start_time = as_hms(pmin(air_time, water_time, na.rm = TRUE)),
          end_time = as_hms(pmax(air_time, water_time, na.rm = TRUE))) %>%
@@ -782,6 +804,10 @@ gelled_edna = unified_edna %>%
                             UUIDfromName("5113bb6e-8cff-4a2d-9910-904403736cfb", uuid_name),
                             survey_id)) %>%
   ungroup() %>%
+  group_by(date) %>%
+  mutate(negative_control_edna_id = first(edna_id[negative_control]),
+         negative_control_edna_id = ifelse(negative_control, NA, negative_control_edna_id)) %>%
+  ungroup() %>%
   select(-fulcrum_id)
 ```
 
@@ -833,13 +859,10 @@ if (x_edna) {
   
   tryCatch(
     {
-      temp_edna_survey = stage_to_temp(dbcon, db_survey, upsert_edna_survey)
-      pointer = tbl(dbcon, temp_edna_survey)
-      rows_upsert(db_survey, pointer, by="survey_id", in_place=TRUE)
       
-      temp_edna = stage_to_temp(dbcon, db_edna, upsert_edna)
-      pointer = tbl(dbcon, temp_edna)
-      rows_upsert(db_edna, pointer, by="edna_id", in_place=TRUE)
+      db_survey = db_rows_upsert(dbcon, db_survey, upsert_edna_survey, "survey_id")
+      
+      db_edna = db_rows_upsert(dbcon, db_edna, upsert_edna, "edna_id")
       
       # Commit the transaction if successful
       dbCommit(dbcon)
@@ -1149,7 +1172,7 @@ db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
 
 ## Capture chain
 
--   capture / survey / visit / site / region / location
+-   capture / survey / visit / site / region / country
 
 ```{r}
 
@@ -1164,7 +1187,7 @@ unified_capture = clean_capture_obs %>%
   left_join(clean_capture_survey, by = c("fulcrum_parent_id" = "fulcrum_id")) %>%
   filter(!is.na(site)) %>%  # drop captures which don't have corresponding site data in capture_survey
   select(-fulcrum_parent_id) %>%
-  full_join(unified_sample, by=c("site", "date", "time_of_day", "bag_id", "detection_type")) %>%
+  full_join(unified_sample, by=c("site", "date", "time_of_day", "bag_id", "detection_type", "detection_subtype")) %>%
   mutate(taxon_capture = coalesce(taxon_sample, taxon_capture),
          uuid_cap_name = paste0(taxon_capture, svl_mm, body_mass_g, life_stage, sex, time_of_capture),
          capture_id = ifelse(is.na(capture_id), UUIDfromName("2128d8af-bb98-4206-a356-25faa67ac3f9", uuid_cap_name), capture_id)) %>%
@@ -1188,7 +1211,8 @@ unified_capture = clean_capture_obs %>%
               collect(),
             by = tbl_nkey("survey", mdc))
 
-capture_dupes = get_dupes(unified_capture, capture_id)
+capture_dupes = get_dupes(unified_capture %>%
+                            filter(!negative_control), capture_id)
 
 # catch for example if duplicate bad ids
 if (nrow(capture_dupes) > 0) {
@@ -1316,10 +1340,17 @@ gelled_capture = unified_capture %>%
 ```{r}
 sample_lookup_gen <- function(table, id_col, sample_cols, sample_type) {
   # unique sample ids
+  all_id_cols = c(id_col,
+                  "site_id",
+                  "date",
+                  "time_of_day",
+                  "visit_id",
+                  "negative_control")
+  
   sample_lookup = table %>%
     select(all_of(c(sample_cols,
-                  id_col))) %>%
-    pivot_longer(!all_of(id_col), names_to = "name", values_to = "value") %>%
+                  all_id_cols))) %>%
+    pivot_longer(!all_of(all_id_cols), names_to = "name", values_to = "value") %>%
     filter(!is.na(value),
            value != "Pe_Bd00000",
            value != "Pe_Toe00000",
@@ -1327,12 +1358,13 @@ sample_lookup_gen <- function(table, id_col, sample_cols, sample_type) {
            value != "Pe_AMP00000",
            value != "Pe_Muc00000",
            value != "Pe_Bac00000",
-           value != "Pe_IG00000") %>%
+           value != "Pe_IG00000"
+           ) %>%
     rename(sample_name = value) %>%
     mutate(sample_type = sample_type) %>%
     select(sample_name,
            sample_type,
-           !!id_col)
+           all_of(all_id_cols))
   
   return(sample_lookup)
 }
@@ -1347,7 +1379,10 @@ s7 = sample_lookup_gen(gelled_capture, "capture_id", c("antibody_id", "antibody_
 
 select_cols = c("sample_name",
                 "sample_type",
-                "capture_id")
+                "capture_id",
+                "date",
+                "visit_id",
+                "negative_control")
 
 clean_sample = rbind(s1 %>%
                      select(all_of(select_cols)),
@@ -1366,10 +1401,17 @@ clean_sample = rbind(s1 %>%
 
 gelled_sample = clean_sample %>%
   left_join(db_sample %>%
-              select(-capture_id) %>%
+              select(-capture_id,
+                     -negative_control) %>%
               collect(), by = c("sample_name", "sample_type")) %>%
   mutate(uuid_name = paste0(sample_name, sample_type),
-         sample_id = ifelse(is.na(sample_id), UUIDfromName("1208e62f-d3a1-462c-984f-0bf1f43f5837", uuid_name), sample_id))
+         sample_id = ifelse(is.na(sample_id), UUIDfromName("1208e62f-d3a1-462c-984f-0bf1f43f5837", uuid_name), sample_id)) %>%
+  group_by(date) %>%
+  mutate(negative_control_sample_id = first(sample_id[negative_control]),
+         negative_control_sample_id = ifelse(negative_control, NA, negative_control_sample_id),
+         capture_id = ifelse(negative_control, NA, capture_id)) %>%
+  ungroup()
+  
 
 
 dupes_sample = get_dupes(gelled_sample, sample_name, sample_type)
@@ -1385,11 +1427,18 @@ if (nrow(dupes_sample) > 0) {
 
 ```
 
+### drop negative controls from capture
+```{r}
+gelled_capture_clean = gelled_capture %>%
+  filter(!negative_control)
+
+```
+
 ### 5 - Subset final capture tables
 
 ```{r}
 # survey
-subset_capture_survey = gelled_capture %>%
+subset_capture_survey = gelled_capture_clean %>%
   select(any_of(colnames(db_survey))) %>%
   distinct() %>%
   filter(!is.na(survey_id))
@@ -1405,7 +1454,7 @@ upsert_capture_survey = bind_rows(tray$insert,
                                   tray$update)
 
 # taxa
-subset_capture_taxa = gelled_capture %>%
+subset_capture_taxa = gelled_capture_clean %>%
   select(taxon_capture) %>%
   drop_na(taxon_capture) %>%
   distinct() %>%
@@ -1416,7 +1465,7 @@ tray = compare_for_staging(db_taxa %>% collect(), subset_capture_taxa, "taxon_id
 insert_capture_taxa = tray$insert
 
 # capture
-subset_capture = gelled_capture %>%
+subset_capture = gelled_capture_clean %>%
   select(any_of(colnames(db_capture))) %>%
   distinct() %>%
   filter(!is.na(capture_id))
@@ -1445,9 +1494,11 @@ compare_sample = compare_df_cols(db_sample %>%
 
 
 tray = compare_for_staging(db_sample %>% collect(), subset_sample, "sample_id", return_all = TRUE, report = "sample")
-peace = compare_updates(tray)
+peace = compare_updates(tray, c("sample_name", "sample_type", "negative_control"))
 upsert_sample = bind_rows(tray$insert,
                           tray$update)
+
+hope = peace[[1]]
 
 if (nrow(tray$update) > 0) {
   warning("Sample updates may indicate duplicate capture_ids. Investigation recommended.")
@@ -1466,25 +1517,16 @@ if (x_capture) {
   
   tryCatch(
     {
-      temp_cmr = stage_to_temp(dbcon, db_cmr, upsert_cmr)
-      pointer = tbl(dbcon, temp_cmr)
-      rows_upsert(db_cmr, pointer, by="cmr_id", in_place=TRUE)
       
-      temp_capture_survey = stage_to_temp(dbcon, db_survey, upsert_capture_survey)
-      pointer = tbl(dbcon, temp_capture_survey)
-      rows_upsert(db_survey, pointer, by="survey_id", in_place=TRUE)
+      db_cmr = db_rows_upsert(dbcon, db_cmr, upsert_cmr, "cmr_id")
       
-      temp_capture_taxa = stage_to_temp(dbcon, db_taxa, insert_capture_taxa)
-      pointer = tbl(dbcon, temp_capture_taxa)
-      rows_insert(db_taxa, pointer, by="taxon_id", in_place=TRUE, conflict = "ignore")
+      db_survey = db_rows_upsert(dbcon, db_survey, upsert_capture_survey, "survey_id")
       
-      temp_capture = stage_to_temp(dbcon, db_capture, upsert_capture)
-      pointer = tbl(dbcon, temp_capture)
-      rows_upsert(db_capture, pointer, by="capture_id", in_place=TRUE)
+      db_taxa = db_rows_insert(dbcon, db_taxa, insert_capture_taxa, "taxon_id")
       
-      temp_sample = stage_to_temp(dbcon, db_sample, upsert_sample)
-      pointer = tbl(dbcon, temp_sample)
-      rows_upsert(db_sample, pointer, by="sample_id", in_place=TRUE)
+      db_capture = db_rows_upsert(dbcon, db_capture, upsert_capture, "capture_id")
+      
+      db_sample = db_rows_upsert(dbcon, db_sample, upsert_sample, "sample_id")
       
       # Commit the transaction if successful
       dbCommit(dbcon)
