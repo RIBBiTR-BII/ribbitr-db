@@ -8,7 +8,7 @@ format: html
 librarian::shelf(tidyverse, dbplyr, here, lubridate, RPostgres, DBI, uuid, RIBBiTR-BII/ribbitrrr)
 
 ## Connect to DB
-dbcon <- hopToDB("ribbitr")
+dbcon <- hopToDB("wibbitr")
 
 ## Pull column metadata from database
 mdc = tbl(dbcon, Id("public", "all_columns")) %>%
@@ -111,10 +111,10 @@ sample_upsert_nonexistant = reconciled_samples %>%
          sample_name = sample_name_new) %>%
   select(all_of(colnames(db_sample)))
 
-sample_upsert = bind_rows(sample_upsert_existant,
+upsert_sample = bind_rows(sample_upsert_existant,
                           sample_upsert_nonexistant)
 
-sample_drop = reconciled_samples %>%
+drop_sample = reconciled_samples %>%
   select(sample_id)
 
 sample_id_lookup = reconciled_samples %>%
@@ -122,12 +122,9 @@ sample_id_lookup = reconciled_samples %>%
   select(sample_id,
          sample_id_new)
 
-# # remap sample name and sample id in all result tables
-# amp_total_update = db_amp_total %>%
-#   filter(sample_id %in% sample_id_lookup$sample_id) %>%
-#   collect()
+# 
   
-rename_resamp = function(table_pointer, sample_col) {
+rename_remap = function(table_pointer, sample_col) {
   table_update = table_pointer %>%
     filter(sample_id %in% sample_id_lookup$sample_id) %>%
     collect() %>%
@@ -140,12 +137,81 @@ rename_resamp = function(table_pointer, sample_col) {
   return(table_update)
 }
 
-amp_total_update = rename_resamp(db_amp_total, "sample_name_amp")
-amp_gia_update = rename_resamp(db_amp_gia, "sample_name_amp")
-amp_mp_update = rename_resamp(db_amp_mp, "sample_name_amp")
-amp_mi_update = rename_resamp(db_amp_mi, "sample_name_amp")
-bd_update = rename_resamp(db_bd, "sample_name_bd")
-muc_gia_update = rename_resamp(db_muc_gia, "sample_name_mucosome")
+update_amp_total = rename_remap(db_amp_total, "sample_name_amp")
+update_amp_gia = rename_remap(db_amp_gia, "sample_name_amp")
+update_amp_mp = rename_remap(db_amp_mp, "sample_name_amp")
+update_amp_mi = rename_remap(db_amp_mi, "sample_name_amp")
+update_bd = rename_remap(db_bd, "sample_name_bd")
+update_muc_gia = rename_remap(db_muc_gia, "sample_name_mucosome")
 
+```
+
+# commit
+```{r}
+dbBegin(dbcon)
+tryCatch(
+  {
+    temp_sample = stage_to_temp(dbcon, db_sample, upsert_sample)
+    pointer = tbl(dbcon, temp_sample)
+    db_sample = db_sample %>%
+      rows_upsert(pointer, by="sample_id", in_place=TRUE)
+    
+    if (nrow(update_amp_total) > 0) {
+      temp_amp_total = stage_to_temp(dbcon, db_amp_total, update_amp_total)
+      pointer = tbl(dbcon, temp_amp_total)
+      db_amp_total = db_amp_total %>%
+        rows_update(pointer, by="result_id", in_place=TRUE, unmatched = "ignore")
+    }
+    
+    if (nrow(update_amp_gia) > 0) {
+      temp_amp_gia = stage_to_temp(dbcon, db_amp_gia, update_amp_gia)
+      pointer = tbl(dbcon, temp_amp_gia)
+      db_amp_gia = db_amp_gia %>%
+        rows_update(pointer, by="result_id", in_place=TRUE, unmatched = "ignore")
+    }
+    
+    if (nrow(update_amp_mp) > 0) {
+      temp_amp_mp = stage_to_temp(dbcon, db_amp_mp, update_amp_mp)
+      pointer = tbl(dbcon, temp_amp_mp)
+      db_amp_mp = db_amp_mp %>%
+        rows_update(pointer, by="result_id", in_place=TRUE, unmatched = "ignore")
+    }
+    
+    if (nrow(update_amp_mi) > 0) {
+      temp_amp_mi = stage_to_temp(dbcon, db_amp_mi, update_amp_mi)
+      pointer = tbl(dbcon, temp_amp_mi)
+      db_amp_mi = db_amp_mi %>%
+        rows_update(pointer, by="result_id", in_place=TRUE, unmatched = "ignore")
+    }
+    
+    if (nrow(update_bd) > 0) {
+      temp_bd = stage_to_temp(dbcon, db_bd, update_bd)
+      pointer = tbl(dbcon, temp_bd)
+      db_bd = db_bd %>%
+        rows_update(pointer, by="result_id", in_place=TRUE, unmatched = "ignore")
+    }
+    
+    if (nrow(update_muc_gia) > 0) {
+      temp_muc_gia = stage_to_temp(dbcon, db_muc_gia, update_muc_gia)
+      pointer = tbl(dbcon, temp_muc_gia)
+      db_muc_gia = db_muc_gia %>%
+        rows_update(pointer, by="result_id", in_place=TRUE, unmatched = "ignore")
+    }
+    
+    temp_sample = stage_to_temp(dbcon, db_sample, drop_sample)
+    pointer = tbl(dbcon, temp_sample)
+    db_sample = db_sample %>%
+      rows_delete(pointer, by="sample_id", in_place=TRUE, unmatched = "ignore")
+    
+    
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful!")
+    
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
 
 ```
