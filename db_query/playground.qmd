@@ -195,3 +195,55 @@ data_env_misname = db_env %>%
 
 # nope, looks like just from Kira's project. Interesting. I expect this was my doing, I'll fix it. Thanks Kira for helping identify this.
 ```
+
+# how far back does environmental data go?
+```{r}
+q_env = db_env %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  group_by(country, region) %>%
+  summarise(total_env_surveys = n(),
+            first_year = min(year(date)),
+            env_survey_years = n_distinct(year(date)),
+            .groups = "drop") %>%
+  collect()
+
+write_csv(q_env, here("staging", "env_survey_summary_2025-09-11.csv"))
+
+q_env_pa = db_env %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(country == "panama",
+         date >= "2012-01-01") %>%
+  arrange(date) %>%
+  collect()
+
+keep_cols = q_env_pa %>%
+  keep(~!all(is.na(.x))) %>%
+  names()
+
+q_env_pa_clean = q_env_pa %>%
+  select(all_of(keep_cols))
+
+```
+
+# penn 2022-05-18 captures and samples
+```{r}
+q_20220518 = db_sample %>%
+  full_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  filter(region == "pennsylvania",
+         date == "2022-05-18") %>%
+  arrange(taxon_capture,
+          time_of_capture) %>%
+  collect()
+```
