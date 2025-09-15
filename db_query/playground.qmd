@@ -247,3 +247,42 @@ q_20220518 = db_sample %>%
           time_of_capture) %>%
   collect()
 ```
+
+# penn 2022 captures and samples
+```{r}
+q_2022 = db_sample %>%
+  full_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  filter(region == "pennsylvania",
+         year(date) == 2022) %>%
+  select(sample_id,
+         sample_name,
+         capture_id,
+         sample_type,
+         taxon_capture,
+         time_of_capture,
+         date,
+         site) %>%
+  arrange(date,
+          site,
+          time_of_capture,
+          capture_id,
+          sample_type) %>%
+  collect()
+```
+
+# investigate daytime Penn visits
+```{r}
+penn_day = db_survey %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  filter(region == "pennsylvania",
+         time_of_day == "day") %>%
+  collect() %>%
+  arrange(date, site, start_time)
+
+```
