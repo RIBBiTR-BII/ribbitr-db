@@ -39,7 +39,11 @@ db_isolate = tbl(dbcon, Id("survey_data", "bd_isolate"))
 
 db_sample = tbl(dbcon, Id("survey_data", "sample"))
 db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
-db_mucosome = tbl(dbcon, Id("survey_data", "mucosome_results"))
+db_mucosome = tbl(dbcon, Id("survey_data", "mucosome_gia"))
+db_amp_total = tbl(dbcon, Id("survey_data", "amp_total"))
+db_amp_gia = tbl(dbcon, Id("survey_data", "amp_gia"))
+db_amp_mp = tbl(dbcon, Id("survey_data", "amp_maldi_peak"))
+db_amp_mi = tbl(dbcon, Id("survey_data", "amp_maldi_intensity"))
 
 ```
 
@@ -1248,4 +1252,141 @@ cmr_orph = db_cmr %>%
   anti_join(db_capture, by = "cmr_id")
 
 rows_delete(db_cmr, cmr_orph, by="cmr_id", unmatched="ignore")
+```
+
+# consistsant capitalization of sample names from pennsylvania 2022
+```{r}
+all_samps = db_sample %>%
+  collect()
+
+clean_penn_sample_case <- function(dataframe, sample_name) {
+  sample_sym <- rlang::sym(sample_name)
+
+  # Access column properly outside of mutate
+  updated_col <- dataframe[[sample_name]]
+  
+  updated_col <- gsub("(?i)^bdswab(\\d{5,6})", "BdSwab\\1", updated_col, perl = TRUE)
+  updated_col <- gsub("(?i)^bacswab(\\d{5,6})", "BacSwab\\1", updated_col, perl = TRUE)
+  updated_col <- gsub("(?i)^mucbath(\\d{5,6})", "MucBath\\1", updated_col, perl = TRUE)
+  updated_col <- gsub("(?i)^ampbath(\\d{5,6})", "AMPBath\\1", updated_col, perl = TRUE)
+  updated_col <- gsub("(?i)^antibod(\\d{5,6})", "AntiBod\\1", updated_col, perl = TRUE)
+  updated_col <- gsub("(?i)^toeclip(\\d{5,6})", "ToeClip\\1", updated_col, perl = TRUE)
+  updated_col <- gsub("(?i)^dryswab(\\d{5,6})", "DrySwab\\1", updated_col, perl = TRUE)
+  updated_col <- gsub("(?i)^crswab(\\d{5,6})", "CRswab\\1", updated_col, perl = TRUE)
+
+  dataframe %>%
+    mutate(!!sample_sym := updated_col)
+}
+
+
+cap_samps = all_samps %>%
+  clean_penn_sample_case("sample_name")
+
+tray = compare_for_staging(db_sample %>% collect(), cap_samps, "sample_id", report = "samples")
+update_sample = tray$update
+
+cap_bd = db_bd %>%
+  collect() %>%
+  clean_penn_sample_case("sample_name_bd")
+
+tray = compare_for_staging(db_bd %>% collect(), cap_bd, "result_id", report = "bd")
+update_bd = tray$update
+
+peace = get_dupes(cap_samps, sample_name, sample_type)
+
+cap_samps_drop_bd = peace %>%
+  filter(is.na(capture_id))
+
+drop_sample = db_sample %>%
+  filter(sample_id %in% cap_samps_drop_bd$sample_id) %>%
+  collect()
+
+drop_bd = db_bd %>%
+  filter(sample_id %in% cap_samps_drop_bd$sample_id) %>%
+  collect()
+
+drop_amp_total = db_amp_total %>%
+  filter(sample_id %in% cap_samps_drop_bd$sample_id) %>%
+  collect()
+
+drop_amp_gia = db_amp_gia %>%
+  filter(sample_id %in% cap_samps_drop_bd$sample_id) %>%
+  collect()
+
+drop_amp_mp = db_amp_mp %>%
+  filter(sample_id %in% cap_samps_drop_bd$sample_id) %>%
+  collect()
+
+drop_amp_mi = db_amp_mi %>%
+  filter(sample_id %in% cap_samps_drop_bd$sample_id) %>%
+  collect()
+
+drop_mucosome = db_mucosome %>%
+  filter(sample_id %in% cap_samps_drop_bd$sample_id) %>%
+  collect()
+
+
+dbBegin(dbcon)
+
+tryCatch(
+  {
+    
+    # delete rows
+    db_amp_total = db_rows_delete(dbcon, db_amp_total, drop_amp_total, "result_id")
+    db_amp_gia = db_rows_delete(dbcon, db_amp_gia, drop_amp_gia, "result_id")
+    db_amp_mp = db_rows_delete(dbcon, db_amp_mp, drop_amp_mp, "result_id")
+    db_amp_mi = db_rows_delete(dbcon, db_amp_mi, drop_amp_mi, "result_id")
+    db_bd = db_rows_delete(dbcon, db_bd, drop_bd, "result_id")
+    db_sample = db_rows_delete(dbcon, db_sample, drop_sample, "sample_id")
+    
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful!")
+    
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
+
+
+
+cap_samps = all_samps %>%
+  clean_penn_sample_case("sample_name")
+
+tray = compare_for_staging(db_sample %>% collect(), cap_samps, "sample_id", report = "samples")
+update_sample = tray$update
+
+cap_bd = db_bd %>%
+  collect() %>%
+  clean_penn_sample_case("sample_name_bd")
+
+tray = compare_for_staging(db_bd %>% collect(), cap_bd, "result_id", report = "bd")
+update_bd = tray$update
+
+peace = get_dupes(cap_samps, sample_name, sample_type)
+
+cap_samps_drop_bd = peace %>%
+  filter(is.na(capture_id))
+
+
+dbBegin(dbcon)
+
+tryCatch(
+  {
+    # revise rows
+    db_sample = db_rows_update(dbcon, db_sample, update_sample, "sample_id")
+    db_bd = db_rows_update(dbcon, db_bd, update_bd, "result_id")
+    
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful!")
+    
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
+
+
 ```
