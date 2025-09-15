@@ -41,9 +41,9 @@ wddir = here(ddir, "fulcrum", 'penn', '2024-11-18') # working data directory
 
 ## Data chains (someday we can automate this...)
 
--   capture / survey / visit / site / region / location
--   aural / survey / visit / site / region / location
--   ves / survey / visit / site / region / location
+-   capture / survey / visit / site / region / country
+-   aural / survey / visit / site / region / country
+-   ves / survey / visit / site / region / country
 
 # 1 - Import data
 
@@ -78,6 +78,35 @@ db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
 -   name related tables similarly for natural grouping
 
 ```{r}
+#| include: false
+
+list.files(here(wddir_2022, "ple_amphibian_survey"))
+# 2022
+# general survey table
+raw_survey_info_2022 <- read_csv(here(wddir_2022, "ple_amphibian_survey", "ple_amphibian_survey.csv"))
+
+# aural
+raw_aural_survey_2022 <- read_csv(here(wddir_2022, "ple_acoustic_survey", "ple_acoustic_survey.csv"))
+raw_aural_obs_2022 <- read_csv(here(wddir_2022, "ple_acoustic_survey", "ple_acoustic_survey_acoustic_survey.csv"))
+
+# ves tables
+raw_ves_survey_2022 <- read_csv(here(wddir_2022, "ple_visual_encounter_survey", "ple_visual_encounter_survey.csv"))
+raw_ves_obs_2022 <- read_csv(here(wddir_2022, "ple_visual_encounter_survey", "ple_visual_encounter_survey_visual_encounter_information.csv"))
+
+# capture tables
+raw_capture_survey_2022 <- read_csv(here(wddir_2022, "ple_captured_amphibian_information", "ple_captured_amphibian_information.csv"))
+raw_capture_obs_2022 <- read_csv(here(wddir_2022, "ple_captured_amphibian_information", "ple_captured_amphibian_information_captured_amphibian_information.csv"))
+raw_capture_photo_2022 <- read_csv(here(wddir_2022, "ple_captured_amphibian_information", "ple_captured_amphibian_information_captured_amphibian_information_bag_photo.csv"))
+
+raw_cmr_2022 <- read_csv(here(wddir_2022, "ple_cmr_data", "ple_cmr_data.csv"))
+
+# sample processing & obs tables
+raw_sample_processing_2022 <- read_csv(here(wddir_2022, "ple_amphibian_processing_app", "ple_amphibian_processing_app.csv"))
+raw_sample_obs_2022 <- read_csv(here(wddir_2022, "ple_amphibian_processing_app", "ple_amphibian_processing_app_amphibian_capture_survey_collections.csv"))
+raw_sample_photo_2022 <- read_csv(here(wddir_2022, "ple_amphibian_processing_app", "ple_amphibian_processing_app_amphibian_capture_survey_collections_photo.csv"))
+
+# 2023 onward
+
 # general survey table
 raw_survey_info <- read_csv(here(wddir, "1_penn_surveyinformation", "1_penn_surveyinformation.csv"))
 
@@ -123,6 +152,39 @@ local_tz = "America/New_York"
 
 ```
 
+# whats going on with the 2022 changesets?
+```{r}
+clean_changesets = function(fulc_table, obs = FALSE) {
+  if(obs) {
+    fulc_table %>%
+      group_by(fulcrum_id) %>%
+      mutate(max_version = max(fulcrum_record_version)) %>%
+      ungroup() %>%
+      filter(version == max_version)
+  } else {
+    fulc_table %>%
+      group_by(fulcrum_id) %>%
+      mutate(max_version = max(version)) %>%
+      ungroup() %>%
+      filter(version == max_version,
+             change_type != "delete")
+  }
+}
+
+raw_survey_info_2022_cs = clean_changesets(raw_survey_info_2022)
+raw_aural_survey_2022_cs = clean_changesets(raw_aural_survey_2022)
+raw_aural_obs_2022_cs = clean_changesets(raw_aural_obs_2022, obs = TRUE)
+raw_ves_survey_2022_cs = clean_changesets(raw_ves_survey_2022)
+raw_ves_obs_2022_cs = clean_changesets(raw_ves_obs_2022, obs = TRUE)
+raw_capture_survey_2022_cs = clean_changesets(raw_capture_survey_2022)
+raw_capture_obs_2022_cs = clean_changesets(raw_capture_obs_2022, obs = TRUE)
+raw_capture_photo_2022_cs = clean_changesets(raw_capture_photo_2022, obs = TRUE)
+raw_cmr_2022_cs = clean_changesets(raw_cmr_2022)
+raw_sample_processing_2022_cs = clean_changesets(raw_sample_processing_2022)
+raw_sample_obs_2022_cs = clean_changesets(raw_sample_obs_2022, obs = TRUE)
+```
+
+
 # 2 - Clean data
 
 ## Drop irrelevant & fix structural issues
@@ -153,9 +215,16 @@ to_drop = c(
   "site_other" # ignoring sites outside RIBBiTR... could include though.
 )
 
-# Begin cleaning
+peace = compare_df_cols(raw_survey_info, raw_survey_info_2022_cs)
 
-clean_survey_info <- raw_survey_info %>%
+# Begin cleaning
+clean_survey_info <- bind_rows(
+  raw_survey_info_2022_cs %>%
+    rename(site = location) %>%
+    mutate(src = 2022,
+           end_time = if_else(is.na(end_time), start_time, end_time),
+           survey_time = if_else(hour(end_time) > 6 & hour(end_time) < 18, "day", "night")),
+  raw_survey_info) %>%
   clean_names() %>% 
   rename(air_temp_c = air_temperature_c,
          air_time = air_temperature_measurement_time,
@@ -189,7 +258,12 @@ clean_survey_info <- raw_survey_info %>%
          -end_time) %>%
   filter(!if_all(everything(), is.na))
 
-clean_aural_survey <- raw_aural_survey %>%
+clean_aural_survey <- bind_rows(
+  raw_aural_survey_2022_cs %>%
+    rename(site = location) %>%
+    mutate(end_time = if_else(is.na(end_time), start_time, end_time),
+           survey_time = if_else(hour(end_time) > 6 & hour(end_time) < 18, "day", "night")),
+  raw_aural_survey) %>%
   clean_names() %>% 
   rename(comments_survey = acoustic_survey_comments,
          time_of_day = survey_time,
@@ -212,7 +286,10 @@ clean_aural_survey <- raw_aural_survey %>%
   filter(!if_all(everything(), is.na),
          !is.na(site))  # drop any rows all null
 
-clean_aural_obs <- raw_aural_obs %>%
+clean_aural_obs <- bind_rows(
+  raw_aural_obs_2022_cs %>%
+    rename(acoustic_species_comments = acoustic_comments),
+  raw_aural_obs) %>%
   clean_names() %>%
   rename(species_aural = species_acoustic,
          species_aural_other = species_acoustic_other,
@@ -226,7 +303,12 @@ clean_aural_obs <- raw_aural_obs %>%
          -species_aural_other) %>%
   filter(!if_all(everything(), is.na)) # drop any rows all null
 
-clean_ves_survey <- raw_ves_survey %>%
+clean_ves_survey <- bind_rows( 
+  raw_ves_survey_2022_cs %>%
+    rename(site = location) %>%
+    mutate(end_time = if_else(is.na(end_time), start_time, end_time),
+           survey_time = if_else(hour(end_time) > 6 & hour(end_time) < 18, "day", "night")),
+  raw_ves_survey) %>%
   clean_names() %>% 
   rename(comments_survey = survey_description,
          time_of_day = survey_time,
@@ -249,7 +331,9 @@ clean_ves_survey <- raw_ves_survey %>%
   filter(!if_all(everything(), is.na),
          !is.na(site))  # drop any rows all null
 
-clean_ves_obs <- raw_ves_obs %>%
+clean_ves_obs <- bind_rows(
+  raw_ves_obs_2022_cs,
+  raw_ves_obs) %>%
   clean_names() %>%
   mutate(ves_id = fulcrum_id,
          taxon_ves = coalesce(species_ves, species_ves_other),
@@ -260,7 +344,12 @@ clean_ves_obs <- raw_ves_obs %>%
          -species_ves_other) %>%
   filter(!if_all(everything(), is.na))  # drop any rows all null
 
-clean_capture_survey <- raw_capture_survey %>%
+clean_capture_survey <- bind_rows( 
+  raw_capture_survey_2022_cs %>%
+    rename(site = location) %>%
+    mutate(end_time = if_else(is.na(end_time), start_time, end_time),
+           survey_time = if_else(hour(end_time) > 6 & hour(end_time) < 18, "day", "night")),
+  raw_capture_survey) %>%
   clean_names() %>% 
   rename(comments_survey = survey_comments,
          time_of_day = survey_time,
@@ -283,7 +372,10 @@ clean_capture_survey <- raw_capture_survey %>%
   filter(!if_all(everything(), is.na),
          !is.na(site))  # drop any rows all null
 
-clean_capture_obs <- raw_capture_obs %>%
+clean_capture_obs <- bind_rows(
+  raw_capture_obs_2022_cs %>%
+    rename(species_capture = species),
+  raw_capture_obs) %>%
   clean_names() %>%
   rename(body_temp_c = body_temperature,
          comments_capture = amphibian_comments,
@@ -308,7 +400,9 @@ clean_capture_obs <- raw_capture_obs %>%
                    "bag_photo_url"))) %>% # capture status: was this individual successfully captured?
   filter(!if_all(everything(), is.na))  # drop any rows all null 
 
-clean_cmr <- raw_cmr %>%
+clean_cmr <- bind_rows(
+  raw_cmr_2022_cs,
+  raw_cmr) %>%
   clean_names() %>%
   rename(site = location,
          local_cmr_id = cmr_id) %>%
@@ -327,7 +421,9 @@ clean_cmr <- raw_cmr %>%
          -cmr_id_other) %>%
   filter(!if_all(everything(), is.na))  # drop any rows all null
 
-clean_sample_processing <- raw_sample_processing %>%
+clean_sample_processing <- bind_rows(
+  raw_sample_processing_2022_cs,
+  raw_sample_processing) %>%
   clean_names() %>%
   rename(site = location,
          comments_sample = survey_comments,
@@ -349,7 +445,17 @@ clean_sample_processing <- raw_sample_processing %>%
          -longitude) %>%
   filter(!if_all(everything(), is.na)) # drop any rows all null
 
-clean_sample_obs <- raw_sample_obs %>%
+clean_sample_obs <- bind_rows(
+  raw_sample_obs_2022_cs %>%
+    rename(amp_id = amp_id_1,
+           antibody_id = antibody_id_1,
+           bacterial_swab_id = bacterial_swab_tube_id,
+           bd_swab_id = bd_swab_tube_id,
+           crispr_id = crispr_swab_tube_id,
+           microbiome_id = dry_swab_tube_id,
+           mucosome_id = mucusome_id,
+           genetic_id = toe_clip_tube_id),
+  raw_sample_obs) %>%
   clean_names() %>%
   rename(svl_mm = snout_vent_length,
          body_and_bag_mass_g = body_and_bag_mass,
@@ -416,6 +522,18 @@ clean_edna_survey = raw_edna_survey %>%
   select(-any_of(to_drop)) %>%
   filter(!if_all(everything(), is.na),
          !is.na(site)) 
+
+clean_edna_2022_cs = clean_survey_info %>%
+  filter(src == 2022) %>%
+  rename(edna_latitude = environmental_latitude,
+         edna_longitude = environmental_longitude) %>%
+  mutate(collection_type = "passive_bag",
+         collection_time = air_time,
+         collection_volume_ml = edna_volume_collected_l * 1000,
+         edna_id = temp_survey_id,
+         detection_type = "edna",
+         detection_subtype = NA_character_) %>%
+  select(-any_of(to_drop))
 
 clean_edna_collection = raw_edna_collection %>%
   clean_names() %>%
@@ -511,12 +629,8 @@ clean_sample_obs$bacterial_swab_id[clean_sample_obs$fulcrum_id == "7e8bd4d0-b393
 clean_sample_obs$amp_id[clean_sample_obs$fulcrum_id == "08d85662-12df-479d-ae2c-e6d6dc010038"] = "Pe_AMP00153"
 clean_sample_obs$mucosome_id[clean_sample_obs$fulcrum_id == "c3f4fcd0-f3dc-4cd5-a886-145cbc52d2bb"] = "Pe_Muc00000"
 
-
-
-
-
-
 ```
+
 
 # 3 Checks
 
@@ -552,10 +666,13 @@ gelled_visit = unified_visit %>%
               select(tbl_keys("visit", mdc)) %>%
               collect(),
             by = tbl_nkey("visit", mdc)) %>%
-  group_by_at(tbl_nkey("visit", mdc)) %>%
-  mutate(uuid_name = paste0(site, date, time_of_day),
-         visit_id = ifelse(is.na(visit_id), UUIDfromName("1aec3647-4fb5-4086-b5ea-66c947562ec6", uuid_name), visit_id)) %>%
+  group_by(site_id, date) %>%
+  filter(!(is.na(time_of_day) & any(!is.na(time_of_day)))) %>%
   ungroup() %>%
+  group_by_at(tbl_nkey("visit", mdc)) %>%
+  mutate(comments_visit = na_if(paste0(na.omit(comments_visit), collapse = ';'), ''),
+         uuid_name = paste0(site, date, time_of_day),
+         visit_id = ifelse(is.na(visit_id), UUIDfromName("1aec3647-4fb5-4086-b5ea-66c947562ec6", uuid_name), visit_id)) %>%
   mutate(project_id = "ribbitr",
          visit_lab = "rz_lab")
 
@@ -592,7 +709,6 @@ compare_visit = compare_df_cols(db_visit %>%
                                   filter(FALSE) %>%
                                   collect(), subset_visit)
 
-
 tray = compare_for_staging(db_visit %>%
                              filter(date >= dblog$date_min,
                                     site_id %in% dblog$site_id) %>%
@@ -600,6 +716,11 @@ tray = compare_for_staging(db_visit %>%
                            subset_visit, tbl_pkey('visit', mdc), return_all = TRUE, report = "visit")
 upsert_visit = bind_rows(tray$insert,
                         tray$update)
+
+# db_visit = db_rows_delete(dbcon, db_visit, tray$orphan, "visit_id")
+
+peace = tray$orphan
+hope = tray$insert
 
 # # get visit_id
 # vids = subset_visit %>%
@@ -611,6 +732,8 @@ upsert_visit = bind_rows(tray$insert,
 
 # upsert visit?
 x_visit = (nrow(upsert_visit) > 0)
+
+peace = compare_updates(tray)
 
 ```
 
@@ -775,6 +898,7 @@ unified_edna = clean_edna_collection %>%
   left_join(clean_edna_survey, by = c("fulcrum_parent_id" = "fulcrum_id")) %>%
   select(-fulcrum_parent_id) %>%
   left_join(clean_survey_info, by = c("site", "date", "time_of_day")) %>%
+  bind_rows(clean_edna_2022_cs) %>%
   left_join(db_site %>%
               select(tbl_keys("site", mdc)) %>%
               collect(),
@@ -828,6 +952,8 @@ tray = compare_for_staging(db_survey %>% collect(), subset_edna_survey, "survey_
 upsert_edna_survey = bind_rows(tray$insert,
                                tray$update)
 
+peace = get_dupes(subset_edna_survey, survey_id)
+
 # edna
 subset_edna = gelled_edna %>%
   select(any_of(colnames(db_edna))) %>%
@@ -838,8 +964,6 @@ subset_edna = gelled_edna %>%
 compare_edna = compare_df_cols(db_edna %>%
                                   filter(FALSE) %>%
                                   collect(), subset_edna)
-
-peace = get_dupes(subset_edna, edna_id)
 
 tray = compare_for_staging(db_edna %>% collect(), subset_edna, "edna_id", return_all = TRUE, report = "edna")
 upsert_edna = bind_rows(tray$insert,
@@ -1189,15 +1313,12 @@ unified_capture = clean_capture_obs %>%
   select(-fulcrum_parent_id) %>%
   full_join(unified_sample, by=c("site", "date", "time_of_day", "bag_id", "detection_type", "detection_subtype")) %>%
   mutate(taxon_capture = coalesce(taxon_sample, taxon_capture),
-         uuid_cap_name = paste0(taxon_capture, svl_mm, body_mass_g, life_stage, sex, time_of_capture),
+         uuid_cap_name = paste0(taxon_capture, bag_id, svl_mm, body_mass_g, life_stage, sex, time_of_capture, site, date),
          capture_id = ifelse(is.na(capture_id), UUIDfromName("2128d8af-bb98-4206-a356-25faa67ac3f9", uuid_cap_name), capture_id)) %>%
   select(-taxon_sample) %>%
   unite("comments_capture", c("comments_capture", "comments_sample"), sep=",", remove = TRUE, na.rm = TRUE) %>%
-  left_join(clean_survey_info, by = c("site", "date")) %>%
-  mutate(time_of_day = coalesce(time_of_day.x, time_of_day.y),
-         photo = !is.na(photo_id)) %>%
-  select(-time_of_day.x,
-         -time_of_day.y) %>%
+  left_join(clean_survey_info, by = c("site", "date", "time_of_day")) %>%
+  mutate(photo = !is.na(photo_id)) %>%
   left_join(db_site %>%
               select(tbl_keys("site", mdc)) %>%
               collect(),
@@ -1316,6 +1437,7 @@ gelled_capture = unified_capture %>%
   left_join(unified_cmr %>%
               select(fulcrum_id, cmr_id),
             by = c("capture_mark_recapture" = "fulcrum_id")) %>%
+  mutate(marked = !is.na(cmr_id)) %>%
   group_by(transect, detection_type, visit_id) %>%
   mutate(start_time = find_time_range(c(start_time, end_time, time_of_capture))$first_time,
          end_time = find_time_range(c(start_time, end_time, time_of_capture))$last_time,
@@ -1358,7 +1480,7 @@ sample_lookup_gen <- function(table, id_col, sample_cols, sample_type) {
            value != "Pe_AMP00000",
            value != "Pe_Muc00000",
            value != "Pe_Bac00000",
-           value != "Pe_IG00000"
+           value != "Pe_IG00000",
            ) %>%
     rename(sample_name = value) %>%
     mutate(sample_type = sample_type) %>%
@@ -1384,6 +1506,25 @@ select_cols = c("sample_name",
                 "visit_id",
                 "negative_control")
 
+clean_penn_sample_case <- function(dataframe, sample_name = "sample_name") {
+  sample_sym <- rlang::sym(sample_name)
+
+  # Access column properly outside of mutate
+  updated_col <- dataframe[[sample_name]]
+  
+  updated_col <- gsub("(?i)^bdswab(\\d{5})", "BdSwab\\1", updated_col, perl = TRUE)
+  updated_col <- gsub("(?i)^bacswab(\\d{5})", "BacSwab\\1", updated_col, perl = TRUE)
+  updated_col <- gsub("(?i)^mucbath(\\d{5})", "MucBath\\1", updated_col, perl = TRUE)
+  updated_col <- gsub("(?i)^ampbath(\\d{5})", "AMPBath\\1", updated_col, perl = TRUE)
+  updated_col <- gsub("(?i)^antibod(\\d{5})", "AntiBod\\1", updated_col, perl = TRUE)
+  updated_col <- gsub("(?i)^toeclip(\\d{5})", "ToeClip\\1", updated_col, perl = TRUE)
+  updated_col <- gsub("(?i)^dryswab(\\d{5})", "DrySwab\\1", updated_col, perl = TRUE)
+  updated_col <- gsub("(?i)^crswab(\\d{5})", "CRswab\\1", updated_col, perl = TRUE)
+
+  dataframe %>%
+    mutate(!!sample_sym := updated_col)
+}
+
 clean_sample = rbind(s1 %>%
                      select(all_of(select_cols)),
                    s2 %>%
@@ -1397,7 +1538,8 @@ clean_sample = rbind(s1 %>%
                    s6 %>%
                      select(all_of(select_cols)),
                    s7 %>%
-                     select(all_of(select_cols)))
+                     select(all_of(select_cols))) %>%
+  clean_penn_sample_case()
 
 gelled_sample = clean_sample %>%
   left_join(db_sample %>%
@@ -1410,9 +1552,10 @@ gelled_sample = clean_sample %>%
   mutate(negative_control_sample_id = first(sample_id[negative_control]),
          negative_control_sample_id = ifelse(negative_control, NA, negative_control_sample_id),
          capture_id = ifelse(negative_control, NA, capture_id)) %>%
-  ungroup()
+  ungroup() %>%
+  mutate(digits = str_extract(sample_name, "\\d{5}")) %>%
+  filter(digits != "00000")
   
-
 
 dupes_sample = get_dupes(gelled_sample, sample_name, sample_type)
 
@@ -1508,6 +1651,39 @@ x_capture = (nrow(upsert_capture_survey) > 0) | (nrow(insert_capture_taxa) > 0) 
 
 ```
 
+```{r}
+upsert_sample %>%
+  filter(!(capture_id %in% upsert_capture$capture_id))
+
+d_new = upsert_capture %>%
+  left_join(hope %>%
+              select(capture_id_old,
+                     capture_id_new) %>%
+              distinct(), by = c("capture_id" = "capture_id_new")) %>%
+  mutate(capture_id = capture_id_old) %>%
+  arrange(capture_id)
+
+d_old = db_capture %>%
+  filter(capture_id %in% tray$update_old$capture_id) %>%
+  collect() %>%
+  arrange(capture_id)
+
+common_cols = intersect(colnames(d_new), colnames(d_old))
+
+comps = setdiff(d_old %>%
+                  select(all_of(common_cols)),
+                d_new %>%
+                  select(all_of(common_cols)))
+
+cfs = compare_for_staging(d_old, d_new, "capture_id", report = "test")
+
+meow = compare_updates(cfs)
+woof = meow[[1]]
+
+
+wtf = gelled_capture_clean %>%
+  filter(capture_id %in% upsert_capture$capture_id)
+```
 ### Stage and commit capture tables
 
 ```{r}

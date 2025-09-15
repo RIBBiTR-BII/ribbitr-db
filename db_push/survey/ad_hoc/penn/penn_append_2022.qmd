@@ -23,7 +23,7 @@ mdc = tbl(dbcon, Id("public", "all_columns")) %>%
 ## Point to local data directory
 ddir = Sys.getenv("data_dir")  # data directory
 # Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
-wddir = here(ddir, "fulcrum", 'penn', '2022_data') # working data directory
+wddir = here(ddir, "fulcrum", "penn", "Fulcrum_Data_2022") # working data directory
 
 ```
 
@@ -76,6 +76,7 @@ db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
 -   name related tables similarly for natural grouping
 
 ```{r}
+#| include: false
 list.files(path = here(wddir, "ple_amphibian_processing_app"))
 
 # general survey table
@@ -405,6 +406,9 @@ tray = compare_for_staging(db_visit %>%
                            subset_visit, tbl_pkey('visit', mdc), return_all = TRUE, report = "visit")
 upsert_visit = bind_rows(tray$insert,
                         tray$update)
+
+peace = compare_updates(tray)
+hope = tray$insert
 
 # # get visit_id
 # vids = subset_visit %>%
