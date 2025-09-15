@@ -22,7 +22,12 @@ mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
 
 # pull relevant chain tables from 
 db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
-db_mucosome = tbl(dbcon, Id("survey_data", "mucosome_results"))
+db_mucosome = tbl(dbcon, Id("survey_data", "mucosome_gia"))
+db_amp_total = tbl(dbcon, Id("survey_data", "amp_total"))
+db_amp_peak = tbl(dbcon, Id("survey_data", "amp_maldi_peak"))
+db_amp_intensity = tbl(dbcon, Id("survey_data", "amp_maldi_intensity"))
+db_amp_gia = tbl(dbcon, Id("survey_data", "amp_gia"))
+
 db_sample = tbl(dbcon, Id("survey_data", "sample"))
 
 db_aural = tbl(dbcon, Id("survey_data", "aural"))
@@ -41,7 +46,7 @@ db_country = tbl(dbcon, Id("survey_data", "country"))
 
 # Visit orphans
 ```{r}
-drop_ids = sn_vids
+drop_ids = tray$orphan$visit_id
   
 drop_visit = db_visit %>%
   filter(visit_id %in% drop_ids)
@@ -122,7 +127,22 @@ mucosome_samples = db_mucosome %>%
   inner_join(drop_sample_all, by = "sample_id") %>%
   filter(!is.na(sample_id))
 
-# updated bd samples
+# associated capture samples with amp results
+amp_samples = union_all(
+  db_amp_total %>%
+    select(sample_id),
+  db_amp_peak %>%
+    select(sample_id),
+  db_amp_intensity %>%
+    select(sample_id),
+  db_amp_gia %>%
+    select(sample_id)
+) %>%
+  distinct() %>%
+  inner_join(drop_sample_all, by = "sample_id") %>%
+  filter(!is.na(sample_id))
+
+# updated samples
 update_sample_bd = drop_sample_all %>%
   inner_join(bd_samples %>% select(sample_id), by = "sample_id") %>%
   collect()
@@ -131,8 +151,13 @@ update_sample_musosome = drop_sample_all %>%
   inner_join(mucosome_samples %>% select(sample_id), by = "sample_id") %>%
   collect()
 
+update_sample_amp = drop_sample_all %>%
+  inner_join(amp_samples %>% select(sample_id), by = "sample_id") %>%
+  collect()
+
 update_sample = bind_rows(update_sample_bd,
-                          update_sample_musosome) %>%
+                          update_sample_musosome,
+                          update_sample_amp) %>%
   mutate(capture_id = NA)
 
 
@@ -141,10 +166,14 @@ cat("sample_update:", count, "\n")
 
 drop_sample = drop_sample_all %>%
   anti_join(bd_samples, by = "sample_id") %>%
-  anti_join(mucosome_samples, by = "sample_id")
+  anti_join(mucosome_samples, by = "sample_id") %>%
+  anti_join(amp_samples, by = "sample_id")
 
 count = as.character(drop_sample %>% count() %>% pull())
 cat("sample_drop:", count, "\n")
+
+peace = drop_sample %>%
+  collect()
 
 ```
 
@@ -261,7 +290,22 @@ mucosome_samples = db_mucosome %>%
   inner_join(drop_sample_all, by = "sample_id") %>%
   filter(!is.na(sample_id))
 
-# updated bd samples
+# associated capture samples with amp results
+amp_samples = union_all(
+  db_amp_total %>%
+    select(sample_id),
+  db_amp_peak %>%
+    select(sample_id),
+  db_amp_intensity %>%
+    select(sample_id),
+  db_amp_gia %>%
+    select(sample_id)
+) %>%
+  distinct() %>%
+  inner_join(drop_sample_all, by = "sample_id") %>%
+  filter(!is.na(sample_id))
+
+# updated samples
 update_sample_bd = drop_sample_all %>%
   inner_join(bd_samples %>% select(sample_id), by = "sample_id") %>%
   collect()
@@ -270,17 +314,22 @@ update_sample_musosome = drop_sample_all %>%
   inner_join(mucosome_samples %>% select(sample_id), by = "sample_id") %>%
   collect()
 
-update_sample = bind_rows(update_sample_bd,
-                          update_sample_musosome) %>%
-  mutate(capture_id = NA)
+update_sample_amp = drop_sample_all %>%
+  inner_join(amp_samples %>% select(sample_id), by = "sample_id") %>%
+  collect()
 
+update_sample = bind_rows(update_sample_bd,
+                          update_sample_musosome,
+                          update_sample_amp) %>%
+  mutate(capture_id = NA)
 
 count = as.character(update_sample %>% count() %>% pull())
 cat("sample_update:", count, "\n")
 
 drop_sample = drop_sample_all %>%
   anti_join(bd_samples, by = "sample_id") %>%
-  anti_join(mucosome_samples, by = "sample_id")
+  anti_join(mucosome_samples, by = "sample_id") %>%
+  anti_join(amp_samples, by = "sample_id")
 
 count = as.character(drop_sample %>% count() %>% pull())
 cat("sample_drop:", count, "\n")
@@ -358,7 +407,22 @@ mucosome_samples = db_mucosome %>%
   inner_join(drop_sample_all, by = "sample_id") %>%
   filter(!is.na(sample_id))
 
-# updated bd samples
+# associated capture samples with amp results
+amp_samples = dplyr::union(
+  db_amp_total %>%
+    select(sample_id),
+  db_amp_peak %>%
+    select(sample_id),
+  db_amp_intensity %>%
+    select(sample_id),
+  db_amp_gia %>%
+    select(sample_id)
+) %>%
+  distinct() %>%
+  inner_join(drop_sample_all, by = "sample_id") %>%
+  filter(!is.na(sample_id))
+
+# updated samples
 update_sample_bd = drop_sample_all %>%
   inner_join(bd_samples %>% select(sample_id), by = "sample_id") %>%
   collect()
@@ -367,8 +431,13 @@ update_sample_musosome = drop_sample_all %>%
   inner_join(mucosome_samples %>% select(sample_id), by = "sample_id") %>%
   collect()
 
+update_sample_amp = drop_sample_all %>%
+  inner_join(amp_samples %>% select(sample_id), by = "sample_id") %>%
+  collect()
+
 update_sample = bind_rows(update_sample_bd,
-                          update_sample_musosome) %>%
+                          update_sample_musosome,
+                          update_sample_amp) %>%
   mutate(capture_id = NA)
 
 
@@ -377,7 +446,8 @@ cat("sample_update:", count, "\n")
 
 drop_sample = drop_sample_all %>%
   anti_join(bd_samples, by = "sample_id") %>%
-  anti_join(mucosome_samples, by = "sample_id")
+  anti_join(mucosome_samples, by = "sample_id") %>%
+  anti_join(amp_samples, by = "sample_id")
 
 count = as.character(drop_sample %>% count() %>% pull())
 cat("sample_drop:", count, "\n")
