@@ -186,7 +186,8 @@ clean_pa_2023_04 = scrape_qpcr_xls(raw_pa_2023_04)
 clean_pa_2023_05 = scrape_qpcr_xls(raw_pa_2023_05)
 clean_pa_2023_06 = scrape_qpcr_xls(raw_pa_2023_06)
 clean_pa_2023_07 = scrape_qpcr_xls(raw_pa_2023_07)
-clean_pa_2023_08 = scrape_qpcr_xls(raw_pa_2023_08)
+clean_pa_2023_08 = scrape_qpcr_xls(raw_pa_2023_08) %>%
+  mutate(sample_name = str_replace_all(sample_name, "_(\\w{0,2})(?=\\d)", ~ toupper(.x)))
 clean_pa_2023_09 = scrape_qpcr_xls(raw_pa_2023_09)
 clean_pa_2023_10 = scrape_qpcr_xls(raw_pa_2023_10)
 clean_pa_2023_11 = scrape_qpcr_xls(raw_pa_2023_11)
@@ -506,13 +507,9 @@ dbBegin(dbcon)
 tryCatch(
   {
     
-    temp_sample = stage_to_temp(dbcon, db_sample, final_bd_samples)
-    pointer = tbl(dbcon, temp_sample)
-    rows_upsert(db_sample, pointer, by="sample_id", in_place=TRUE)
+    db_sample = db_rows_upsert(dbcon, db_sample, final_bd_samples, by="sample_id")
     
-    temp_bd = stage_to_temp(dbcon, db_bd, final_bd)
-    pointer = tbl(dbcon, temp_bd)
-    rows_upsert(db_bd, pointer, by="result_id", in_place=TRUE)
+    db_bd = db_rows_upsert(dbcon, db_bd, final_bd, by="result_id")
     
     # Commit the transaction if successful
     dbCommit(dbcon)
