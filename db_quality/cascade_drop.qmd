@@ -12,11 +12,6 @@ librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr
 # connect to database
 dbcon = hopToDB("wibbitr")
 
-```
-
-Pull metadata and tables
-
-```{r}
 mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
   collect()
 
@@ -487,7 +482,105 @@ tryCatch(
 # sample ids
 
 ```{r}
-drop_ids = sample_id_drop
+drop_ids = sids
+
+# all associated capture samples
+drop_sample_all = db_sample %>%
+  filter(sample_id %in% drop_ids)
+
+# associated capture samples with bd results
+bd_samples = db_bd %>%
+  select(sample_id) %>%
+  distinct() %>%
+  inner_join(drop_sample_all, by = "sample_id") %>%
+  filter(!is.na(sample_id))
+
+# associated capture samples with mucosome results
+mucosome_samples = db_mucosome %>%
+  select(sample_id) %>%
+  distinct() %>%
+  inner_join(drop_sample_all, by = "sample_id") %>%
+  filter(!is.na(sample_id))
+
+# associated capture samples with amp results
+amp_samples = dplyr::union(
+  db_amp_total %>%
+    select(sample_id),
+  db_amp_peak %>%
+    select(sample_id),
+  db_amp_intensity %>%
+    select(sample_id),
+  db_amp_gia %>%
+    select(sample_id)
+) %>%
+  distinct() %>%
+  inner_join(drop_sample_all, by = "sample_id") %>%
+  filter(!is.na(sample_id))
+
+# updated samples
+update_sample_bd = drop_sample_all %>%
+  inner_join(bd_samples %>% select(sample_id), by = "sample_id") %>%
+  collect()
+
+update_sample_musosome = drop_sample_all %>%
+  inner_join(mucosome_samples %>% select(sample_id), by = "sample_id") %>%
+  collect()
+
+update_sample_amp = drop_sample_all %>%
+  inner_join(amp_samples %>% select(sample_id), by = "sample_id") %>%
+  collect()
+
+update_sample = bind_rows(update_sample_bd,
+                          update_sample_musosome,
+                          update_sample_amp) %>%
+  mutate(capture_id = NA)
+
+
+count = as.character(update_sample %>% count() %>% pull())
+cat("sample_update:", count, "\n")
+
+drop_sample = drop_sample_all %>%
+  anti_join(bd_samples, by = "sample_id") %>%
+  anti_join(mucosome_samples, by = "sample_id") %>%
+  anti_join(amp_samples, by = "sample_id")
+
+count = as.character(drop_sample %>% count() %>% pull())
+cat("sample_drop:", count, "\n")
+
+```
+
+# cascade drop (actually no cascading here...)
+```{r}
+
+
+dbBegin(dbcon)
+
+tryCatch(
+  {
+    db_sample = db_sample %>%
+      rows_delete(drop_sample %>% select(sample_id), by="sample_id", unmatched = "ignore", in_place=TRUE)
+    
+    temp_sample = stage_to_temp(dbcon, db_sample, update_sample)
+    pointer = tbl(dbcon, temp_sample)
+    db_sample = db_sample %>%
+      rows_update(pointer, by="sample_id", unmatched = "ignore", in_place=TRUE)
+    
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful!")
+    
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
+
+```
+
+
+# cascade drop samples to bd table
+```{r}
+drop_ids = sids
 
 # all associated capture samples
 drop_sample = db_sample %>%

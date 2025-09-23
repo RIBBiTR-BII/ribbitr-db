@@ -9,11 +9,8 @@ librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr
 
 ## Connect to DB
 dbcon <- hopToDB("ribbitr")
-```
 
 # table pointers
-
-```{r}
 # pull relevant chain tables from DB
 db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
 db_sample = tbl(dbcon, Id("survey_data", "sample"))
@@ -284,5 +281,54 @@ penn_day = db_survey %>%
          time_of_day == "day") %>%
   collect() %>%
   arrange(date, site, start_time)
+
+```
+
+# shiny ves query test
+```{r}
+g_data_ves = db_ves %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  mutate(year = year(date)) %>% 
+  select(!c(country_id, region_id, site_id, visit_id, survey_id, ves_id)) %>%
+  group_by(country, year) %>%
+  summarize(n_ves = sum(count_ves),
+            n_days = n_distinct(date),
+            .groups = "drop") %>%
+  collect()
+
+g_data_capture = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  mutate(year = year(date)) %>% 
+  select(!c(country_id, region_id, site_id, visit_id, survey_id, capture_id)) %>%
+  group_by(country, year) %>%
+  summarize(n_capture = n(),
+            n_days = n_distinct(date),
+            .groups = "drop") %>%
+  collect()
+
+g_data_edna = db_edna %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  mutate(year = year(date)) %>% 
+  select(!c(country_id, region_id, site_id, visit_id, survey_id, edna_id)) %>%
+  collect()
+
+g_edna_years <- g_data_edna %>% 
+  select(year) %>%
+  distinct(year) %>%
+  collect() %>%
+  arrange(year) %>%
+  drop_na()
 
 ```

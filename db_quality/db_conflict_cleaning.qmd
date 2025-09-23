@@ -13,11 +13,6 @@ librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr
 # connect to database
 dbcon = hopToDB("wibbitr")
 
-```
-
-Pull metadata and tables
-
-```{r}
 mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
   collect()
 
@@ -1388,5 +1383,29 @@ tryCatch(
     message("Transaction failed: ", e$message)
   })
 
+
+```
+# consistsant capitalization of sample names from panama
+```{r}
+sample_ids = sids
+
+prob_samples = db_sample %>%
+  filter(sample_id %in% sample_ids)
+
+lowers = prob_samples %>%
+  left_join(db_bd, by = "sample_id") %>%
+  collect()
+
+uppers = prob_samples %>%
+  mutate(sample_name_upper = toupper(sample_name)) %>%
+  left_join(db_bd, by = c("sample_name_upper" = "sample_name_bd")) %>%
+  collect()
+
+loaners = uppers %>%
+  filter(is.na(result_id)) %>%
+  pull(sample_id.x)
+
+lowners = lowers %>%
+  filter(sample_id %in% loaners)
 
 ```
