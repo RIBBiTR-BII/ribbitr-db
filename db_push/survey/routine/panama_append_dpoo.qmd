@@ -12,7 +12,7 @@ librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr
 # librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 
 ## Connect to DB
-dbcon <- hopToDB("wibbitr")
+dbcon = hopToDB("wibbitr")
 
 ## Pull metadata from database
 mdc = tbl(dbcon, Id("public", "all_columns")) %>%
@@ -23,14 +23,11 @@ mdc = tbl(dbcon, Id("public", "all_columns")) %>%
 ddir = Sys.getenv("data_dir")  # data directory
 # Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
 # wddir = here(ddir, "fulcrum", 'panama', '2024-11-18', "panama_field_3_0") # working data directory
-wddir = here(ddir, "fulcrum", 'panama', '2025-05-09', "panama_field_3_0") # working data directory
+wddir = here(ddir, "fulcrum", 'panama', '2025-09-23', "panama_field_3_0") # working data directory
 
 ```
 
-
-# 0 - Data Plan
-
-## Goals
+Goals
 
 - Integrate batches of Penn survey data with other RIBBiTR data (including other Penn data) for combined analysis
 - Compare with existing data to avoid duplicating, and facilitate automated updating
@@ -38,18 +35,10 @@ wddir = here(ddir, "fulcrum", 'panama', '2025-05-09', "panama_field_3_0") # work
 - Upload to Database in transaction
 - log transaction
 
-## Data chains (someday we can automate this...)
-
-- capture / survey / visit / site / region / location
-- aural / survey / visit / site / region / location
-- ves / survey / visit / site / region / location
-
 # 1 - Import data
 
-
 ## Pull dependent tables for each data chain
-
-### use naming convention "db\_" to distinguish the source
+use naming convention "db_" to distinguish the source
 
 ```{r}
 # pull relevant chain tables from DB
@@ -78,6 +67,7 @@ db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
 - name related tables similarly for natural grouping
 
 ```{r}
+#| include: false
 list.files(path = here(wddir))
 
 # general visit table
@@ -221,14 +211,15 @@ clean_aural = raw_aural %>%
          detection_location = as.character(detection_location),
          count_aural = as.integer(count_aural),
          microhab_moredetail = as.character(microhab_moredetail),
-         detection_type = "aural") %>%
+         detection_type = "aural",
+         detection_subtype = NA) %>%
   ribbitr_clean_taxa(taxon_aural, comments_aural) %>%
   select(-any_of(to_drop),
          -call_species,
          -call_species_other) %>%
   filter(!if_all(everything(), is.na))
 
-clean_capture_target <- raw_capture_target %>%
+clean_capture_target = raw_capture_target %>%
   rename_with(~ gsub("^capt_", "", .), starts_with("capt_")) %>%
   select(-any_of(to_drop))
 
@@ -264,6 +255,7 @@ clean_capture = raw_capture %>%
          capture_longitude = longitude) %>%
   clean_names() %>%
   mutate(detection_type = "capture",
+         detection_subtype = NA,
          bd_swab_id = ifelse(bd_swab == 1, swab_id, NA),
          mucosome_id = ifelse(mucosome_water == 1, swab_id, NA),
          amp_id = ifelse(ampshcl == 1, swab_id, NA),
@@ -273,6 +265,9 @@ clean_capture = raw_capture %>%
          genetic_id = ifelse(buccal_swab == 1, swab_id, NA),
          taxon_capture = coalesce(species, species_other),
          taxon_capture = str_to_lower(str_replace_all(taxon_capture, " ", "_")),
+         taxon_capture = gsub("_sp.", "", taxon_capture),
+         taxon_capture = gsub("\\.", "", taxon_capture),
+         taxon_capture = gsub("_potential_new_sp", "", taxon_capture),
          capture_trx_loc = as.character(capture_trx_loc),
          capture_animal_state = case_when(
            dead == "no" ~ "alive",
@@ -308,6 +303,7 @@ clean_ves = raw_ves%>%
   mutate(taxon_ves = coalesce(vis_species, vis_species_other),
          taxon_ves = str_to_lower(str_replace_all(taxon_ves, " ", "_")),
          detection_type = "visual",
+         detection_subtype = NA,
          is_numeric = !is.na(as.numeric(count_ves)) & !str_detect(count_ves, "[a-zA-Z]"),
          comments_ves = ifelse(!is_numeric, paste(comments_ves, count_ves, sep = ", "), comments_ves),
          count_ves = ifelse(is_numeric, as.numeric(count_ves), NA),
@@ -332,18 +328,21 @@ clean_edna = raw_edna %>%
   clean_names() %>%
   unite(comments_edna, c("edna_sample_info", "edna_sample_info_other", "notes_of_edna_sample"), sep=". ", remove = TRUE, na.rm = TRUE) %>%
   mutate(detection_type = "edna",
-         control = grepl("control", comments_edna),
-         filter_size = as.numeric(gsub(" um", "", filter_type)),
+         detection_subtype = NA,
+         negative_control = case_when(
+           grepl("control|negative", comments_edna, ignore.case = TRUE) ~ TRUE,
+           grepl("neg", edna_sample_name, ignore.case = TRUE) ~ TRUE,
+           .default = FALSE),
+         filter_size_um = as.numeric(gsub(" um", "", filter_type)),
          filter_volume_ml = as.integer(round(filter_volume_ml)),
-         filter_size = ifelse(is.na(filter_size),
-                              ifelse(grepl("1.2", comments_edna),
-                                     1.2,
-                                     NA),
-                              filter_size),
+         filter_size_um = ifelse(is.na(filter_size_um),
+                              case_when(
+                                grepl("1.2", comments_edna, ignore.case = TRUE) ~ 1.2,
+                                .default = NA),
+                              filter_size_um),
          collection_type = case_when(
-           grepl("active", comments_edna) ~ "active",
-           grepl("passive", comments_edna) ~ "passive",
-           .default = NA)) %>%
+           grepl("passive", comments_edna, ignore.case = TRUE) ~ "passive",
+           .default = "active")) %>%
   select(-any_of(to_drop)) %>%
   filter(!if_all(everything(), is.na))
 
@@ -430,6 +429,14 @@ clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "d65107
 clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "f1d0850c-821c-45f0-b181-d2c969531cc0"] = 941285
 clean_survey_info$environmental_utmn[clean_survey_info$temp_survey_id == "c85ce067-5c1f-4b30-80d9-6d8176ecbf74"] = 941285
 
+clean_visit_info$region[clean_visit_info$fulcrum_id == "8af00686-6af7-42bc-9f92-c420c30f2084"] = "altos_de_campana"
+clean_visit_info$region[clean_visit_info$fulcrum_id == "11e76c31-b14e-40f1-b50b-62005a0f95cd"] = "altos_de_campana"
+clean_visit_info$region[clean_visit_info$fulcrum_id == "e938d8ba-edd9-420d-b78f-cc8fcc36093a"] = "el_valle"
+clean_visit_info$region[clean_visit_info$fulcrum_id == "8a54cac0-7d98-4383-9f22-e7c583599e8d"] = "el_valle"
+clean_visit_info$region[clean_visit_info$fulcrum_id == "4d1d919d-45ef-4209-8e5a-79a77f3337da"] = "el_valle"
+clean_visit_info$region[clean_visit_info$fulcrum_id == "dd14f50c-85a1-4272-bf02-32daa347e430"] = "el_valle"
+
+
 # peace =  clean_visit_info %>%
 #   left_join(clean_survey_info, by = c("temp_visit_id" = "visit_fulcrum_id")) %>%
 #   select(site,
@@ -450,6 +457,7 @@ clean_visit_info %>%
 
 ```
 
+# sites
 
 ## gel site
 
@@ -492,6 +500,10 @@ tray = compare_for_staging(db_site %>% collect(), subset_site, "site_id", return
 upsert_site = bind_rows(tray$insert,
                        tray$update)
 
+peace = compare_updates(tray)
+hope = peace[[1]]
+
+
 # upsert visit?
 x_site = (nrow(upsert_site) > 0)
 
@@ -509,6 +521,8 @@ if (x_site) {
 db_site = tbl(dbcon, Id("survey_data", "site"))
 
 ```
+
+# visits
 
 ## unify visit
 
@@ -610,7 +624,7 @@ db_visit = tbl(dbcon, Id("survey_data", "visit"))
 
 ```
 
-# One chain at a time
+# Chains
 
 ## Environmental chain
 
@@ -620,6 +634,7 @@ unified_env = clean_visit_info %>%
   left_join(clean_survey_info, by = c("temp_visit_id" = "visit_fulcrum_id")) %>%
   distinct() %>%
   mutate(detection_type = "environmental",
+         detection_subtype = NA,
          air_time = start_time,
          water_time = start_time) %>%
   left_join(db_site %>%
@@ -638,7 +653,7 @@ unified_env = clean_visit_info %>%
   filter(rowSums(is.na(select(., air_temp_c, water_temp_c, precipitation_during_visit, environmental_utme))) < 4) %>%
   group_by(visit_id, air_temp_c, water_temp_c, precipitation_during_visit, environmental_utme) %>%
   # summarise(across(everything(), ~ first(na.omit(.)), .names = "{col}"), .groups = "drop") %>%
-  summarise(across(everything(), ~ if(all(is.na(.))) NA else first(na.omit(.))), .groups = "drop") %>%
+  summarise(across(everything(), ~ if(all(is.na(.))) NA else first(na.omit(.))), .groups = "drop") %>%  # drop fully NA columns
   # reframe(across(everything(), ~ if(all(is.na(.))) NA_character_ else first(na.omit(.)))) %>%
   ungroup() %>%
   filter(!is.na(site),
@@ -722,13 +737,10 @@ if (x_env) {
   
   tryCatch(
     {
-      temp_env_survey = stage_to_temp(dbcon, db_survey, upsert_env_survey)
-      pointer = tbl(dbcon, temp_env_survey)
-      rows_upsert(db_survey, pointer, by="survey_id", in_place=TRUE)
       
-      temp_env = stage_to_temp(dbcon, db_env, upsert_env)
-      pointer = tbl(dbcon, temp_env)
-      rows_upsert(db_env, pointer, by="environmental_id", in_place=TRUE)
+      db_survey = db_rows_upsert(dbcon, db_survey, upsert_env_survey, by="survey_id")
+  
+      db_env = db_rows_upsert(dbcon, db_env, upsert_env, by="environmental_id")
       
       # Commit the transaction if successful
       dbCommit(dbcon)
@@ -747,7 +759,7 @@ db_env = tbl(dbcon, Id("survey_data", "environmental"))
 
 ## eDNA chain
 
-# unify edna
+### unify edna
 ```{r}
 unified_edna = clean_visit_info %>%
   left_join(clean_survey_info, by = c("temp_visit_id" = "visit_fulcrum_id")) %>%
@@ -774,7 +786,7 @@ if (nrow(unified_edna %>% filter(is.na(site_id))) > 0) {
 
 ```
 
-# gel edna
+### gel edna
 ```{r}
 gelled_edna = unified_edna %>%
   mutate(filter_date = date) %>%
@@ -787,10 +799,14 @@ gelled_edna = unified_edna %>%
                             UUIDfromName("5113bb6e-8cff-4a2d-9910-904403736cfb", uuid_name),
                             survey_id)) %>%
   ungroup() %>%
+  group_by(date) %>%
+  mutate(negative_control_edna_id = first(edna_id[negative_control]),
+         negative_control_edna_id = ifelse(negative_control, NA, negative_control_edna_id)) %>%
+  ungroup() %>%
   select(-fulcrum_id)
 ```
 
-# subset edna
+### subset edna
 ```{r}
 # survey
 subset_edna_survey = gelled_edna %>%
@@ -827,7 +843,7 @@ x_edna = (nrow(upsert_edna_survey) > 0) | (nrow(upsert_edna) > 0)
 
 ```
 
-# stage and commit edna
+### stage and commit edna
 ```{r}
 
 if (x_edna) {
@@ -836,13 +852,9 @@ if (x_edna) {
   
   tryCatch(
     {
-      temp_edna_survey = stage_to_temp(dbcon, db_survey, upsert_edna_survey)
-      pointer = tbl(dbcon, temp_edna_survey)
-      rows_upsert(db_survey, pointer, by="survey_id", in_place=TRUE)
+      db_survey = db_rows_upsert(dbcon, db_survey, upsert_edna_survey, by="survey_id")
       
-      temp_edna = stage_to_temp(dbcon, db_edna, upsert_edna)
-      pointer = tbl(dbcon, temp_edna)
-      rows_upsert(db_edna, pointer, by="edna_id", in_place=TRUE)
+      db_edna = db_rows_upsert(dbcon, db_edna, upsert_edna, by="edna_id")
       
       # Commit the transaction if successful
       dbCommit(dbcon)
@@ -968,17 +980,11 @@ if (x_aural) {
   
   tryCatch(
     {
-      temp_aural_survey = stage_to_temp(dbcon, db_survey, upsert_aural_survey)
-      pointer = tbl(dbcon, temp_aural_survey)
-      rows_upsert(db_survey, pointer, by="survey_id", in_place=TRUE)
+      db_survey = db_rows_upsert(dbcon, db_survey, upsert_aural_survey, by="survey_id")
       
-      temp_aural_taxa = stage_to_temp(dbcon, db_taxa, insert_aural_taxa)
-      pointer = tbl(dbcon, temp_aural_taxa)
-      rows_insert(db_taxa, pointer, by="taxon_id", in_place=TRUE, conflict = "ignore")
+      db_taxa = db_rows_upsert(dbcon, db_taxa, insert_aural_taxa, by="taxon_id")
       
-      temp_aural = stage_to_temp(dbcon, db_aural, upsert_aural)
-      pointer = tbl(dbcon, temp_aural)
-      rows_upsert(db_aural, pointer, by="aural_id", in_place=TRUE)
+      db_aural = db_rows_upsert(dbcon, db_aural, upsert_aural, by="aural_id")
       
       # Commit the transaction if successful
       dbCommit(dbcon)
@@ -1106,17 +1112,13 @@ if (x_ves) {
   
   tryCatch(
     {
-      temp_ves_survey = stage_to_temp(dbcon, db_survey, upsert_ves_survey)
-      pointer = tbl(dbcon, temp_ves_survey)
-      rows_upsert(db_survey, pointer, by="survey_id", in_place=TRUE)
       
-      temp_ves_taxa = stage_to_temp(dbcon, db_taxa, insert_ves_taxa)
-      pointer = tbl(dbcon, temp_ves_taxa)
-      rows_insert(db_taxa, pointer, by="taxon_id", in_place=TRUE, conflict = "ignore")
+      db_survey = db_rows_upsert(dbcon, db_survey, upsert_ves_survey, by="survey_id")
       
-      temp_ves = stage_to_temp(dbcon, db_ves, upsert_ves)
-      pointer = tbl(dbcon, temp_ves)
-      rows_upsert(db_ves, pointer, by="ves_id", in_place=TRUE)
+      db_taxa = db_rows_upsert(dbcon, db_taxa, insert_ves_taxa, by="taxon_id")
+      
+      db_ves = db_rows_upsert(dbcon, db_ves, upsert_ves, by="ves_id")
+      
       # Commit the transaction if successful
       dbCommit(dbcon)
       print("Transaction successful!")
@@ -1134,6 +1136,8 @@ db_ves = tbl(dbcon, Id("survey_data", "ves"))
 
 ## Capture chain
 - capture / survey / visit / site / region / location
+
+### unify captures
 
 ```{r}
 
@@ -1195,7 +1199,7 @@ upsert_cmr = bind_rows(tray$insert,
 
 ```
 
-# Gelled capture
+### Gelled capture
 
 ```{r}
 gelled_capture = unified_capture %>%
@@ -1233,6 +1237,28 @@ gelled_capture = unified_capture %>%
 ### Samples capture
 
 ```{r}
+# negative controls
+negative_controls = gelled_capture %>%
+  select(visit_id,
+         mucosome_control_id,
+         microbiome_control_id,
+         amps_control_id,
+         amps_hcl_control_id) %>%
+  pivot_longer(c(mucosome_control_id,
+                 microbiome_control_id,
+                 amps_control_id,
+                 amps_hcl_control_id),
+               values_to = "sample_name") %>%
+  mutate(sample_type = case_match(name,
+                                  "mucosome_control_id" ~ "mucosome",
+                                  "microbiome_control_id" ~ "microbiome",
+                                  "amps_control_id" ~ "antibody",
+                                  "amps_hcl_control_id" ~ "amp"),
+         negative_control = TRUE) %>%
+  select(-name) %>%
+  filter(!is.na(sample_name)) %>%
+  distinct()
+
 unified_sample = gelled_capture %>%
   rename(bd = bd_swab_id,
          genetic = genetic_id,
@@ -1252,8 +1278,10 @@ unified_sample = gelled_capture %>%
                values_to = "sample_name") %>%
   select(sample_name,
          sample_type,
-         capture_id) %>%
+         capture_id,
+         visit_id) %>%
   filter(!is.na(sample_name)) %>%
+  mutate(sample_name = str_replace_all(sample_name, "_(\\w{0,2})(?=\\d)", ~ toupper(.x))) %>%
   group_by(sample_name, sample_type) %>%
   mutate(row_num = row_number(),
          dupe = ifelse(n() > 1, TRUE, FALSE),
@@ -1263,21 +1291,30 @@ unified_sample = gelled_capture %>%
   ungroup() %>%
   mutate(sample_name = ifelse(dupe,
                               paste0(sample_name, "_", letters[row_num]),
-                              sample_name)) %>%
+                              sample_name),
+         negative_control = FALSE) %>%
   select(-dupe,
-         -row_num)
+         -row_num) %>%
+  bind_rows(negative_controls)
 
 gelled_sample = unified_sample %>%
   left_join(db_sample %>%
-              select(-capture_id) %>%
+              select(sample_id,
+                     sample_name,
+                     sample_type) %>%
               collect(), by = c("sample_name", "sample_type")) %>%
   mutate(uuid_name = paste0(sample_name, sample_type),
-         sample_id = ifelse(is.na(sample_id), UUIDfromName("1208e62f-d3a1-462c-984f-0bf1f43f5837", uuid_name), sample_id))
+         sample_id = ifelse(is.na(sample_id), UUIDfromName("1208e62f-d3a1-462c-984f-0bf1f43f5837", uuid_name), sample_id)) %>%
+  group_by(visit_id, sample_type) %>%
+  mutate(negative_control_sample_id = first(sample_id[negative_control]),
+         negative_control_sample_id = ifelse(negative_control, NA, negative_control_sample_id),
+         capture_id = ifelse(negative_control, NA, capture_id)) %>%
+  ungroup()
 
 ```
 
 
-### 5 - Subset final capture tables
+### Subset final capture tables
 
 ```{r}
 # survey
@@ -1335,8 +1372,16 @@ compare_sample = compare_df_cols(db_sample %>%
 
 tray = compare_for_staging(db_sample %>% collect(), subset_sample, "sample_id", return_all = TRUE, report = "sample")
 peace = compare_updates(tray)
+hope = peace[[1]]
 upsert_sample = bind_rows(tray$insert,
                           tray$update)
+
+
+upsert_sample_nc = upsert_sample %>%
+  filter(negative_control)
+
+upsert_sample_normal = upsert_sample %>%
+  filter(!negative_control)
 
 
 if (nrow(tray$update) > 0) {
@@ -1351,28 +1396,34 @@ x_capture = (nrow(upsert_capture_survey) > 0) | (nrow(insert_capture_taxa) > 0) 
 ### Stage and commit capture tables
 
 ```{r}
+
 if (x_capture) {
   # begin transaction temp
   dbBegin(dbcon)
   
   tryCatch(
     {
+      # db_cmr = db_rows_update(dbcon, db_cmr, upsert_cmr, by="cmr_id")
       temp_cmr = stage_to_temp(dbcon, db_cmr, upsert_cmr)
       pointer = tbl(dbcon, temp_cmr)
       rows_upsert(db_cmr, pointer, by="cmr_id", in_place=TRUE)
       
+      # db_survey = db_rows_update(dbcon, db_survey, upsert_capture_survey, by="survey_id")
       temp_capture_survey = stage_to_temp(dbcon, db_survey, upsert_capture_survey)
       pointer = tbl(dbcon, temp_capture_survey)
       rows_upsert(db_survey, pointer, by="survey_id", in_place=TRUE)
-      
+
+      # db_taxa = db_rows_update(dbcon, db_taxa, insert_capture_taxa, by="taxon_id")
       temp_capture_taxa = stage_to_temp(dbcon, db_taxa, insert_capture_taxa)
       pointer = tbl(dbcon, temp_capture_taxa)
       rows_insert(db_taxa, pointer, by="taxon_id", in_place=TRUE, conflict = "ignore")
       
+      # db_capture = db_rows_update(dbcon, db_capture, upsert_capture, by="capture_id")
       temp_capture = stage_to_temp(dbcon, db_capture, upsert_capture)
       pointer = tbl(dbcon, temp_capture)
       rows_upsert(db_capture, pointer, by="capture_id", in_place=TRUE)
       
+      # db_sample = db_rows_update(dbcon, db_sample, upsert_sample_nc, by="sample_id")
       temp_sample = stage_to_temp(dbcon, db_sample, upsert_sample)
       pointer = tbl(dbcon, temp_sample)
       rows_upsert(db_sample, pointer, by="sample_id", in_place=TRUE)
