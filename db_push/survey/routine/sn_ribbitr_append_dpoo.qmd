@@ -244,8 +244,19 @@ clean_capture = bind_rows(raw_sample_2022 %>%
            !is.na(local_cmr_id) & tag_new ~ "new",
            !is.na(local_cmr_id) & !tag_new ~ "recapture",
            .default = NA_character_),
-         time_of_day = "day") %>%
-  filter(!is.na(species))
+         time_of_day = "day",
+         negative_control = case_when(
+           grepl("ajs5056|ajs5190|sn_16s0391|sn_16s0390|sn_16s0389|sn_16s0477", comments_capture, ignore.case = TRUE) ~ FALSE,  # ignore cases where the corresponding negative control was listed in the comment
+           grepl("negative|control", comments_capture, ignore.case = TRUE) ~ TRUE,  # if comment contains negative or control, mark as true
+           .default = FALSE)) %>%  # otherwise false
+  add_row(site = "10225", date = as.Date("2024-08-21"), microbiome = "sn_16s0389", comments_capture = "negative_control", negative_control = TRUE) %>%
+  add_row(site = "10225", date = as.Date("2024-08-22"), microbiome = "sn_16s0389", comments_capture = "negative_control", negative_control = TRUE) %>%
+  add_row(site = "10225", date = as.Date("2024-08-23"), microbiome = "sn_16s0389", comments_capture = "negative_control", negative_control = TRUE) %>%
+  add_row(site = "10223", date = as.Date("2024-08-21"), microbiome = "sn_16s0390", comments_capture = "negative_control", negative_control = TRUE) %>%
+  add_row(site = "10223", date = as.Date("2024-08-22"), microbiome = "sn_16s0390", comments_capture = "negative_control", negative_control = TRUE) %>%
+  add_row(site = "10206", date = as.Date("2024-08-21"), microbiome = "sn_16s0391", comments_capture = "negative_control", negative_control = TRUE) %>%
+  add_row(site = "10206", date = as.Date("2024-08-22"), microbiome = "sn_16s0391", comments_capture = "negative_control", negative_control = TRUE) %>%
+  add_row(site = "10055", date = as.Date("2024-09-05"), microbiome = "sn_16s0477", comments_capture = "negative_control", negative_control = TRUE)
 
 # RKS36420 -> RKS35420
 clean_capture$bd[clean_capture$capture_id == "d43c9ff7-909e-4b83-adae-5df1c6ea4862"] = "RKS35420"
@@ -557,7 +568,7 @@ unified_capture = clean_capture %>%
   distinguish_muscosa_sierrae(taxon_capture)
 ```
 
-### CMR table
+## CMR table
 ```{r}
 
 unified_cmr = unified_capture %>%
@@ -594,7 +605,7 @@ upsert_cmr = bind_rows(tray$insert,
                        tray$update)
 ```
 
-### Gel capture 
+## Gel capture 
 ```{r}
 
 coalesce_duplicates <- function(data, suffix = c(".x", ".y")) {
@@ -672,7 +683,7 @@ gelled_capture = unified_capture %>%
   arrange(date, site)
 ```
 
-### Samples capture
+## Samples capture
 ```{r}
 unified_sample = gelled_capture %>%
   pivot_longer(cols = c("bd",
@@ -686,7 +697,11 @@ unified_sample = gelled_capture %>%
                values_to = "sample_name") %>%
   select(sample_name,
          sample_type,
-         capture_id) %>%
+         capture_id,
+         negative_control,
+         date,
+         site,
+         comments_capture) %>%
   filter(!is.na(sample_name)) %>%
   group_by(sample_name, sample_type) %>%
   mutate(row_num = row_number(),
@@ -695,27 +710,43 @@ unified_sample = gelled_capture %>%
 
 gelled_sample = unified_sample %>%
   left_join(db_sample %>%
+              select(sample_id, sample_name, sample_type, capture_id) %>%
               rename(capture_id_old = capture_id) %>%
               collect(), by = c("sample_name", "sample_type")) %>%
   mutate(uuid_name = paste0(sample_name, sample_type),
-         sample_id = ifelse(is.na(sample_id), UUIDfromName("1208e62f-d3a1-462c-984f-0bf1f43f5837", uuid_name), sample_id))
+         sample_id = ifelse(is.na(sample_id), UUIDfromName("1208e62f-d3a1-462c-984f-0bf1f43f5837", uuid_name), sample_id)) %>%
+  group_by(date, site, sample_type) %>%
+  mutate(negative_control_sample_id = first(sample_id[negative_control]),
+         negative_control_sample_id = ifelse(negative_control, NA, negative_control_sample_id),
+         capture_id = ifelse(negative_control, NA, capture_id)
+         ) %>%
+  ungroup() %>%
+  select(-date,
+         -site,
+         -comments_capture,
+         -row_num) %>%
+  distinct()
 
-# constrained_sample = gelled_sample %>%
-#   resolve_sample_conflicts(db_sample)
 
-dupes_sample_id = get_dupes(gelled_sample, sample_id)
 dupes_sample = get_dupes(gelled_sample, sample_name, sample_type)
 
 ```
 
-### 5 - Subset capture tables
+### drop negative controls from capture
+```{r}
+gelled_capture_clean = gelled_capture %>%
+  filter(!negative_control)
+```
+
+## Subset capture tables
 
 ```{r}
 # survey
 subset_capture_survey = gelled_capture %>%
   select(any_of(colnames(db_survey))) %>%
   distinct() %>%
-  filter(!is.na(survey_id))
+  filter(!is.na(survey_id),
+         !is.na(visit_id))
 
 # compare columns
 compare_capture_survey = compare_df_cols(db_survey %>%
@@ -737,7 +768,7 @@ tray = compare_for_staging(db_taxa %>% collect(), subset_capture_taxa, "taxon_id
 insert_capture_taxa = tray$insert
 
 # capture
-subset_capture = gelled_capture %>%
+subset_capture = gelled_capture_clean %>%
   select(any_of(colnames(db_capture))) %>%
   distinct() %>%
   filter(!is.na(capture_id))
@@ -769,7 +800,7 @@ upsert_sample = bind_rows(tray$insert,
 x_capture = (nrow(upsert_capture_survey) > 0) | (nrow(insert_capture_taxa) > 0) | (nrow(upsert_capture) > 0 | nrow(upsert_cmr) > 0 | nrow(upsert_sample) > 0)
 ```
 
-### Stage and commit capture tables
+## Stage and commit capture tables
 
 ```{r}
 if (x_capture) {
@@ -778,25 +809,30 @@ if (x_capture) {
   
   tryCatch(
     {
-      temp_cmr = stage_to_temp(dbcon, db_cmr, upsert_cmr)
-      pointer = tbl(dbcon, temp_cmr)
-      rows_upsert(db_cmr, pointer, by="cmr_id", in_place=TRUE)
+      db_cmr = db_rows_upsert(dbcon, db_cmr, upsert_cmr, "cmr_id")
+      # temp_cmr = stage_to_temp(dbcon, db_cmr, upsert_cmr)
+      # pointer = tbl(dbcon, temp_cmr)
+      # rows_upsert(db_cmr, pointer, by="cmr_id", in_place=TRUE)
       
-      temp_capture_survey = stage_to_temp(dbcon, db_survey, upsert_capture_survey)
-      pointer = tbl(dbcon, temp_capture_survey)
-      rows_upsert(db_survey, pointer, by="survey_id", in_place=TRUE)
+      db_survey = db_rows_upsert(dbcon, db_survey, upsert_capture_survey, "survey_id")
+      # temp_capture_survey = stage_to_temp(dbcon, db_survey, upsert_capture_survey)
+      # pointer = tbl(dbcon, temp_capture_survey)
+      # rows_upsert(db_survey, pointer, by="survey_id", in_place=TRUE)
       
-      temp_capture_taxa = stage_to_temp(dbcon, db_taxa, insert_capture_taxa)
-      pointer = tbl(dbcon, temp_capture_taxa)
-      rows_insert(db_taxa, pointer, by="taxon_id", in_place=TRUE, conflict = "ignore")
+      db_taxa = db_rows_insert(dbcon, db_taxa, insert_capture_taxa, "taxon_id")
+      # temp_capture_taxa = stage_to_temp(dbcon, db_taxa, insert_capture_taxa)
+      # pointer = tbl(dbcon, temp_capture_taxa)
+      # rows_insert(db_taxa, pointer, by="taxon_id", in_place=TRUE, conflict = "ignore")
       
-      temp_capture = stage_to_temp(dbcon, db_capture, upsert_capture)
-      pointer = tbl(dbcon, temp_capture)
-      rows_upsert(db_capture, pointer, by="capture_id", in_place=TRUE)
+      db_capture = db_rows_upsert(dbcon, db_capture, upsert_capture, "capture_id")
+      # temp_capture = stage_to_temp(dbcon, db_capture, upsert_capture)
+      # pointer = tbl(dbcon, temp_capture)
+      # rows_upsert(db_capture, pointer, by="capture_id", in_place=TRUE)
       
-      temp_sample = stage_to_temp(dbcon, db_sample, upsert_sample)
-      pointer = tbl(dbcon, temp_sample)
-      rows_upsert(db_sample, pointer, by="sample_id", in_place=TRUE)
+      db_sample = db_rows_upsert(dbcon, db_sample, upsert_sample, "sample_id")
+      # temp_sample = stage_to_temp(dbcon, db_sample, upsert_sample)
+      # pointer = tbl(dbcon, temp_sample)
+      # rows_upsert(db_sample, pointer, by="sample_id", in_place=TRUE)
       
       # Commit the transaction if successful
       dbCommit(dbcon)
