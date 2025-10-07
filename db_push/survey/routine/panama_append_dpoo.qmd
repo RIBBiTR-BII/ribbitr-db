@@ -340,7 +340,7 @@ clean_edna = raw_edna %>%
                                 grepl("1.2", comments_edna, ignore.case = TRUE) ~ 1.2,
                                 .default = NA),
                               filter_size_um),
-         collection_type = case_when(
+         filter_method = case_when(
            grepl("passive", comments_edna, ignore.case = TRUE) ~ "passive",
            .default = "active")) %>%
   select(-any_of(to_drop)) %>%
@@ -1310,6 +1310,22 @@ gelled_sample = unified_sample %>%
          negative_control_sample_id = ifelse(negative_control, NA, negative_control_sample_id),
          capture_id = ifelse(negative_control, NA, capture_id)) %>%
   ungroup()
+
+samps_no_nc = gelled_sample %>%
+  filter(!negative_control,
+         is.na(negative_control_sample_id),
+         sample_type %in% c("microbione",
+                            "mucosome",
+                            "amps",
+                            "antibody")) %>%
+  left_join(db_visit %>%
+              filter(visit_id %in% gelled_sample$visit_id) %>%
+              collect(), by = "visit_id") %>%
+  left_join(db_site %>% collect(), by = "site_id") %>%
+  select(date, time_of_day, site, sample_type, sample_name) %>%
+  arrange(date, time_of_day, site, sample_type, sample_name)
+
+write_csv(samps_no_nc, here("staging", "panama_samples_missing_negative_control_2025-09-24.csv"))
 
 ```
 

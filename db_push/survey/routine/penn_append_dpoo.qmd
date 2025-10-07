@@ -527,7 +527,7 @@ clean_edna_2022_cs = clean_survey_info %>%
   filter(src == 2022) %>%
   rename(edna_latitude = environmental_latitude,
          edna_longitude = environmental_longitude) %>%
-  mutate(collection_type = "passive_bag",
+  mutate(filter_method = "passive",
          collection_time = air_time,
          collection_volume_ml = edna_volume_collected_l * 1000,
          edna_id = temp_survey_id,
@@ -547,7 +547,7 @@ clean_edna_collection = raw_edna_collection %>%
                                          "yes" ~ TRUE,
                                          "no" ~ FALSE)),
          negative_control = grepl("control", comments_edna),
-         collection_type = tolower(gsub("-", "_", collection_type))) %>%
+         filter_method = tolower(gsub("-", "_", filter_method))) %>%
   select(-any_of(to_drop))
 
 clean_edna_filtering  = raw_edna_filtering %>%

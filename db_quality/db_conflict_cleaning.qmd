@@ -1409,3 +1409,15 @@ lowners = lowers %>%
   filter(sample_id %in% loaners)
 
 ```
+
+# edna filter method "passive-bag" -> "passive
+```{r}
+
+edna_update = db_edna %>%
+  filter(filter_method =="passive_bag") %>%
+  mutate(filter_method = "passive")
+
+db_edna = rows_update(db_edna, edna_update, by = "edna_id", unmatched = "ignore", in_place = TRUE)
+
+
+```

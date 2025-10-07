@@ -12,7 +12,7 @@ librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr
 # librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 
 ## Connect to DB
-dbcon <- hopToDB("wibbitr")
+dbcon = hopToDB("wibbitr")
 
 ## Pull metadata from database
 mdc = tbl(dbcon, Id("public", "all_columns")) %>%
@@ -55,6 +55,7 @@ db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
 ## Load csv files
 
 ```{r}
+#| include: false
 # list.files(path = here(wddir))
 
 in_focal = import_list(here(wddir, '2025-01-27', "RIBBiTR_Brazil_FocalSp_2024.xlsx"))
@@ -335,7 +336,7 @@ clean_edna = bind_rows(raw_edna_2022 %>%
                                 edna_volume_ml = as.numeric(edna_volume_ml))) %>%
   rename(edna_latitude = latitude,
          edna_longitude = longitude,
-         collection_type = active_passive,
+         filter_method = active_passive,
          date = date_ymd,
          edna_sample_name = edna_sample_id,
          edna_transect_m = location_m,
@@ -655,7 +656,7 @@ gelled_edna = unified_edna %>%
                             UUIDfromName("c02ab86e-9e5a-4ac2-a1a6-bfa6c32ab614", uuid_name),
                             survey_id)) %>%
   ungroup() %>%
-  mutate(uuid_name = paste0(survey_id, edna_sample_name, edna_latitude, collection_time, collection_type, filter_start_time),
+  mutate(uuid_name = paste0(survey_id, edna_sample_name, edna_latitude, collection_time, filter_method, filter_start_time),
          edna_id = UUIDfromName("e4d345d4-6433-40d2-9997-1b4ee8b1a627", uuid_name))
 ```
 
