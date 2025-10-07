@@ -5,15 +5,16 @@ format: html
 
 # Setup
 
+## connections
 ```{r}
 librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
 # librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 
 ## Connect to RIBBiTR DB
-dbcon <- hopToDB("wibbitr")
+dbcon = hopToDB("wibbitr")
 
 ## Connect to SN amphibians DB
-sncon <- hopToDB("amphibians")
+sncon = hopToDB("amphibians")
 
 ## Pull metadata from database
 mdc = tbl(dbcon, Id("public", "all_columns")) %>%
@@ -23,11 +24,11 @@ mdc = tbl(dbcon, Id("public", "all_columns")) %>%
 ## Point to local data directory
 ddir = Sys.getenv("data_dir")  # data directory
 # Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
-wddir = here(ddir, "sierra") # working data directory
+wddir = here(ddir, "sierra", "2025-10-06") # working data directory
 
 ```
 
-# table pointers
+## table pointers
 ```{r}
 # pull relevant chain tables from RIBBiTR DB
 db_sample = tbl(dbcon, Id("survey_data", "sample"))
@@ -61,16 +62,20 @@ local_tz = "America/Los_Angeles"
 
 ```
 
-# files
+## files
 ```{r}
+#| include: false
 
-raw_sample_2022 = read_csv(here(wddir, "2025-04-10", "2022_SierraNevada_sampleData_Lindauer_220929.csv"))
-raw_sample_2023 = read_csv(here(wddir, "2025-04-10", "2023_SierraNevada_sampleData_Lindauer_231116_pits.csv"))
-raw_sample_2024 = read_csv(here(wddir, "2025-03-18", "2024_SierraNevada_sampleData_Lindauer_241229.csv"))
+raw_sample_2022 = read_csv(here(wddir, "2022_SierraNevada_sampleData_Lindauer_220929.csv"))
+raw_sample_2023 = read_csv(here(wddir, "2023_SierraNevada_sampleData_Lindauer_231116_pits.csv"))
+raw_sample_2024 = read_csv(here(wddir, "2024_SierraNevada_sampleData_Lindauer_241229.csv"))
+
+raw_edna_2022 = read_csv(here(wddir, "edna_sierra_2022_fullData_230228_lindauer.csv"))
+raw_edna_2023 = read_csv(here(wddir, "edna_sierra_2023_fullData_240130_lindauer.csv"))
 
 ```
 
-# identify rana muscosa sites
+## identify rana muscosa sites
 ```{r}
 ca_sites = db_site %>%
   left_join(db_region, by = "region_id") %>%
@@ -107,7 +112,7 @@ distinguish_muscosa_sierrae = function(data, taxon_column) {
 
 ```
 
-# clean data
+# Clean data
 
 ```{r}
 # clean_site = sn_site %>%
@@ -242,7 +247,6 @@ clean_capture = bind_rows(raw_sample_2022 %>%
          time_of_day = "day") %>%
   filter(!is.na(species))
 
-
 # RKS36420 -> RKS35420
 clean_capture$bd[clean_capture$capture_id == "d43c9ff7-909e-4b83-adae-5df1c6ea4862"] = "RKS35420"
 
@@ -261,6 +265,46 @@ clean_capture$local_cmr_id[clean_capture$capture_id == "b84ce965-93c9-48fd-8f0b-
 clean_capture$bd[clean_capture$capture_id == "39526851-83e9-46b7-b971-e902ee67d53e"] = "RKS34982"
 clean_capture$bd[clean_capture$capture_id == "a86f5dae-4eb3-4abf-a360-3b99501c2384"] = "RKS35542"
 clean_capture$bd[clean_capture$capture_id == "f0d98710-038e-407b-894b-648ade3f297a"] = "RKS36429"
+
+clean_edna = bind_rows(raw_edna_2022,
+                       raw_edna_2023) %>%
+  clean_names() %>%
+  rename(sn_visit_id = visit_id,
+         sn_survey_id = survey_id,
+         date = visit_date,
+         filter_method = active_passive,
+         collection_time = collect_time,
+         collection_volume_ml = edna_volume,
+         edna_utme = utm_easting_edna,
+         edna_utmn = utm_northing_edna,
+         # edna_utm_zone = 11,
+         comments_edna = edna_sample_comment,
+         filter_size_um = filter_size,
+         filter_start_time = start_time_edna,
+         filter_end_time = end_time_edna,
+         edna_sample_name = edna_filter_id,
+         site = site_id,
+         observers_survey = surveyor_id,
+         comments_survey = survey_comment) %>%
+  mutate(site = as.character(site),
+         time_of_day = "day",
+         detection_type = "edna",
+         detection_subtype = NA,
+         transect = NA,
+         negative_control = grepl("negative|control", comments_edna, ignore.case = TRUE),
+         frozen = !is.na(frozen_hrs),
+         filter_date = date,
+         filter_volumne_ml = collection_volume_ml,
+         sample_processing = case_match(sample_processing,
+                                        "onsite" ~ "Sample filtered on site.",
+                                        "cooled" ~ "Sample cooled and filtered off site.",
+                                        .default = NA),
+         location_edna = if_else(is.na(location_edna), NA, paste0("Collected at ", location_edna, ".")),
+         comments_edna = if_else(str_ends(comments_edna, "\\."), comments_edna, paste0(comments_edna, "."))) %>%
+  unite("comments_edna", c(comments_edna, location_edna, sample_processing), na.rm = TRUE, remove = FALSE, sep = " ")
+
+
+clean_edna$end_time[clean_edna$sn_survey_id == "5fef543c-90e1-4bc6-a801-23cd697228ae"] = "12:50:00"
 
 ```
 
@@ -282,10 +326,14 @@ if (any(is.na(gelled_site$site_id))) {
 
 # visits
 ```{r}
-gelled_visit = clean_capture %>%
-  select(site,
-         date,
-         time_of_day) %>%
+gelled_visit = bind_rows(clean_capture %>%
+                           select(site,
+                                  date,
+                                  time_of_day),
+                         clean_edna %>%
+                           select(site,
+                                  date,
+                                  time_of_day)) %>%  
   distinct() %>%
   left_join(db_site %>%
               select(tbl_keys("site", mdc)) %>%
@@ -360,6 +408,126 @@ if (x_visit) {
 
 db_visit = tbl(dbcon, Id("survey_data", "visit"))
 
+```
+
+# eDNA
+## unify edna
+```{r}
+
+unified_edna = clean_edna %>%
+  left_join(db_site %>%
+              select(site,
+                     site_id,
+                     site_utm_zone) %>%
+              collect(),
+            by = "site") %>%
+  rename(edna_utm_zone = site_utm_zone) %>%
+  left_join(db_visit %>%
+              select(site_id,
+                     date,
+                     time_of_day,
+                     visit_id) %>%
+              collect(),
+            by = c("site_id", "date", "time_of_day")) %>%
+  left_join(db_survey %>%
+              select(survey_id, visit_id, detection_type, detection_subtype, start_time) %>%
+              filter(!is.na(visit_id)) %>%
+              collect(),
+            by = c("visit_id", "detection_type", "detection_subtype", "start_time")) %>%
+  left_join(db_edna %>%
+              select(edna_id, edna_sample_name) %>%
+              collect(), by = "edna_sample_name") %>%
+  filter(!is.na(site),
+         !is.na(date))
+
+```
+
+## gel edna
+```{r}
+gelled_edna = unified_edna %>%
+  group_by_at(tbl_nkey("survey", mdc)) %>%
+  mutate(comments_survey = str_c(comments_survey, collapse = ", "),
+         start_timestamp_utc = start_timestamp_utc(date, start_time, local_tz),
+         number_observers = count_observers(paste(observers_survey, collapse = ",")),
+         uuid_name = paste0(visit_id, start_time, detection_type),
+         survey_id = ifelse(is.na(survey_id),
+                            UUIDfromName("5113bb6e-8cff-4a2d-9910-904403736cfb", uuid_name),
+                            survey_id)) %>%
+  ungroup() %>%
+  mutate(uuid_name = paste0(survey_id, edna_sample_name, edna_utmn, collection_time, filter_method, filter_start_time),
+         edna_id = UUIDfromName("e4d345d4-6433-40d2-9997-1b4ee8b1a627", uuid_name)) %>%
+  # try assigning negative control aligned with filter size and collection method
+  group_by(visit_id, filter_method, filter_size_um) %>%
+  mutate(negative_control_edna_id = first(edna_id[negative_control]),
+         negative_control_edna_id = ifelse(negative_control, NA, negative_control_edna_id)) %>%
+  ungroup() %>%
+  # for those still without negative control, use, whatever is available
+  group_by(visit_id, negative_control_edna_id) %>%
+  mutate(negative_control_edna_id = if_else(is.na(negative_control_edna_id), first(edna_id[negative_control]), negative_control_edna_id),
+         negative_control_edna_id = ifelse(negative_control, NA, negative_control_edna_id)) %>%
+  ungroup()
+```
+
+## subset edna
+```{r}
+# survey
+subset_edna_survey = gelled_edna %>%
+  select(any_of(colnames(db_survey))) %>%
+  distinct() %>%
+  filter(!is.na(survey_id))
+
+# compare columns
+compare_edna_survey = compare_df_cols(db_survey %>%
+                                        filter(FALSE) %>%
+                                        collect(), subset_edna_survey)
+tray = compare_for_staging(db_survey %>% collect(), subset_edna_survey, "survey_id", return_all = TRUE, report = "edna_survey")
+upsert_edna_survey = bind_rows(tray$insert,
+                               tray$update)
+
+# edna
+subset_edna = gelled_edna %>%
+  select(any_of(colnames(db_edna))) %>%
+  distinct() %>%
+  filter(!is.na(edna_id))
+
+# compare columns
+compare_edna = compare_df_cols(db_edna %>%
+                                 filter(FALSE) %>%
+                                 collect(), subset_edna)
+tray = compare_for_staging(db_edna %>% collect(), subset_edna, "edna_id", return_all = TRUE, report = "edna")
+upsert_edna = bind_rows(tray$insert,
+                        tray$update)
+x_edna = (nrow(upsert_edna_survey) > 0) | (nrow(upsert_edna) > 0)
+```
+
+## stage and commit edna
+```{r}
+
+if (x_edna) {
+  # begin transaction temp
+  dbBegin(dbcon)
+  
+  tryCatch(
+    {
+      
+      db_survey = db_rows_upsert(dbcon, db_survey, upsert_edna_survey, "survey_id")
+      
+      db_edna = db_rows_upsert(dbcon, db_edna, upsert_edna, "edna_id")
+      
+      # Commit the transaction if successful
+      dbCommit(dbcon)
+      print("Transaction successful!")
+      
+    }, error = function(e) {
+      # Rollback in case of error
+      dbRollback(dbcon)
+      stop("Transaction failed: ", e$message)
+    })
+}
+
+# refresh
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_edna = tbl(dbcon, Id("survey_data", "edna"))
 ```
 
 # Capture chain
