@@ -107,7 +107,7 @@ tz_local = "America/New_York"
 
 ```
 
-## scrape xls files
+## scrape xls files & clean data
 ```{r}
 scrape_qpcr_xls <- function(raw_xls) {
   xls <- clean_names(raw_xls)
@@ -408,6 +408,7 @@ violations_unique = get_dupes(qc_results, sample_name)
 
 # gelled
 ```{r}
+# align data with ids where already exist, otherwise create new ids
 gelled_results = qc_results %>%
   left_join(db_sample %>% collect(), by = c("sample_name", "sample_type")) %>%
   group_by(sample_name, sample_type) %>%
@@ -443,6 +444,7 @@ sample_id_drop = gelled_results %>%
 
 # subset data
 ```{r}
+# break wide table into corresponding database tables
 subset_bd_samples = gelled_results %>%
   select(any_of(colnames(db_sample))) %>%
   distinct() %>%
@@ -499,24 +501,24 @@ peace = compare_updates(tray, id_cols = c("result_id", "sample_name_bd", "qpcr_p
 ```
 
 # commit
-
 ```{r}
 
+# start transaction
 dbBegin(dbcon)
 
 tryCatch(
   {
-    
+    # upsert to sample table
     db_sample = db_rows_upsert(dbcon, db_sample, final_bd_samples, by="sample_id")
-    
+    # upseret to bd table
     db_bd = db_rows_upsert(dbcon, db_bd, final_bd, by="result_id")
     
-    # Commit the transaction if successful
+    # Commit transaction if successful
     dbCommit(dbcon)
     print("Transaction successful!")
     
   }, error = function(e) {
-    # Rollback in case of error
+    # Rollback transaction in case of error
     dbRollback(dbcon)
     message("Transaction failed: ", e$message)
   })
