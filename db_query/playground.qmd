@@ -300,6 +300,7 @@ g_data_ves = db_ves %>%
             .groups = "drop") %>%
   collect()
 
+
 g_data_capture = db_capture %>%
   left_join(db_survey, by = "survey_id") %>%
   left_join(db_visit, by = "visit_id") %>%
@@ -331,4 +332,31 @@ g_edna_years <- g_data_edna %>%
   arrange(year) %>%
   drop_na()
 
+```
+
+# Caecilia
+```{r}
+
+caecilia = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(taxon_capture == "gymnophiona") %>%
+  collect()
+
+```
+
+# SN edna
+```{r}
+
+sn_edna = db_edna %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(region == "california") %>%
+  collect()
 ```
