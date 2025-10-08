@@ -92,8 +92,6 @@ local_tz = "America/Sao_Paulo"
 
 # 2 - Clean data
 
-## check for null columns & duplicated rows
-- purely informational, all action taken in next step
 ```{r}
 clean_focal = bind_rows(raw_focal_2022 %>%
                           clean_names() %>%
@@ -197,6 +195,8 @@ clean_ls = raw_ls %>%
                                         .default = NA_character_),
          uuid_name_capture = paste0(project_id, date, sample_id),
          capture_id = UUIDfromName("e3c835a4-4c8d-491c-9970-011aba853686", uuid_name_capture),
+         latitude = latitude / 1e6,
+         longitude = longitude / 1e6,
          is_duplicate = FALSE)
 
 clean_sv = raw_sv %>%
@@ -299,8 +299,9 @@ clean_capture = bind_rows(clean_focal,
                             site == "pirapitinga" ~ "santa_virginia",
                             site == "olho_de_agua" ~ "santa_virginia",
                             TRUE ~ region),
-         capture_latitude = ifelse(capture_longitude > -30, NA, capture_latitude),
-         capture_longitude = ifelse(capture_longitude > -30, NA, capture_longitude),
+         bad_lat_lon = (capture_latitude < -90 | capture_latitude > 90 | capture_longitude < -180 | capture_longitude > 180),
+         capture_latitude = ifelse(bad_lat_lon, NA, capture_latitude),
+         capture_longitude = ifelse(bad_lat_lon, NA, capture_longitude),
          capture_latitude = ifelse(capture_latitude == -23.35632 & capture_longitude == -45.88978, -23.65632, capture_latitude),
          transect = transect_type,
          observer_capture = gsub("_", ",", observer_capture),
@@ -341,7 +342,8 @@ clean_edna = bind_rows(raw_edna_2022 %>%
          edna_sample_name = edna_sample_id,
          edna_transect_m = location_m,
          edna_elevation_m = elevation_m,
-         collection_time = collect_time) %>%
+         collection_time = collect_time,
+         negative_control = control) %>%
   unite("comments_edna", c("comments_based_renatos_spreadsheet", "notes"), sep = "; ", na.rm = TRUE) %>%
   mutate(detection_type = "edna",
          new_transect_id = ifelse(new_transect_id == "NA", NA_character_, new_transect_id),
@@ -361,11 +363,14 @@ clean_edna = bind_rows(raw_edna_2022 %>%
          air_pressure_mbar = as.numeric(air_pressure_in_hg) * 33.8639,
          edna_elevation_m = as.numeric(edna_elevation_m),
          site = tolower(coalesce(new_transect_id, transect_id)),
+         transect = NA,
          time_of_day = case_when(collection_time >= as_hms("08:00:00") & collection_time < as_hms("20:00:00") ~ "day",
                                  collection_time < as_hms("08:00:00") | collection_time >= as_hms("20:00:00") ~ "night",
                                  .default = NA_character_),
-         project_id = "ribbitr")
+         project_id = "ribbitr",
+         visit_lab = "becker_lab")
 ```
+# Visits
 
 ## unify visit
 ```{r}
@@ -458,7 +463,9 @@ db_visit = tbl(dbcon, Id("survey_data", "visit"))
 
 ```
 
-# environmental
+# Environmental
+
+## unify
 ```{r}
 unified_env = bind_rows(clean_edna %>%
                           rename(obs_time = collection_time),
@@ -484,6 +491,7 @@ unified_env = bind_rows(clean_edna %>%
             by = tbl_nkey("visit", mdc))
 ```
 
+## gel
 ```{r}
 gelled_env = unified_env %>%
   group_by(site,
@@ -533,7 +541,7 @@ gelled_env = unified_env %>%
 
 ```
 
-### 5 - Subset env tables
+## Subset env tables
 
 ```{r}
 
@@ -576,7 +584,7 @@ x_env = (nrow(upsert_env_survey) > 0) | (nrow(upsert_env) > 0)
 
 ```
 
-### Stage and commit env tables
+## Stage and commit env tables
 
 ```{r}
 
@@ -610,9 +618,23 @@ db_env = tbl(dbcon, Id("survey_data", "environmental"))
 ```
 
 # eDNA
+
+## unify
 ```{r}
 unified_edna = clean_edna %>%
-  mutate(transect = NA) %>%
+  group_by(date) %>%
+  mutate(
+    # Find the first row index where both site and time_of_day are non-NA
+    first_valid_row = which(!is.na(site) & !is.na(time_of_day))[1],
+    possible_site = site[first_valid_row],
+    possible_time_of_day = time_of_day[first_valid_row]
+  ) %>%
+  ungroup() %>%
+  mutate(
+    site = if_else(is.na(site) & negative_control, possible_site, site),
+    time_of_day = if_else(is.na(time_of_day) & negative_control, possible_time_of_day, time_of_day)
+  ) %>%
+  select(-first_valid_row, -possible_site, -possible_time_of_day) %>%
   group_by(site,
            date,
            time_of_day,
@@ -625,9 +647,9 @@ unified_edna = clean_edna %>%
               collect(),
             by = "site") %>%
   left_join(db_visit %>%
-              select(tbl_keys("visit", mdc)) %>%
+              select(visit_id, date, time_of_day, site_id) %>%
               collect(),
-            by = tbl_nkey("visit", mdc)) %>%
+            by = c("date", "site_id", "time_of_day")) %>%
   left_join(db_survey %>%
               select(tbl_keys("survey", mdc)) %>%
               filter(!is.na(visit_id)) %>%
@@ -636,8 +658,7 @@ unified_edna = clean_edna %>%
                    "visit_id",
                    "start_time",
                    "detection_type")) %>%
-  filter(!is.na(site),
-         !is.na(date))
+  filter(!is.na(date))
 
 if (nrow(unified_edna %>% filter(is.na(site_id))) > 0) {
   stop("Unknown sites returned, consider importing first.")
@@ -645,6 +666,7 @@ if (nrow(unified_edna %>% filter(is.na(site_id))) > 0) {
 
 ```
 
+## gel
 ```{r}
 gelled_edna = unified_edna %>%
   mutate(filter_date = date) %>%
@@ -652,16 +674,22 @@ gelled_edna = unified_edna %>%
   mutate(start_timestamp_utc = start_timestamp_utc(date, start_time, local_tz),
          end_timestamp_utc = end_timestamp_utc(date, start_time, end_time, local_tz),
          uuid_name = paste0(visit_id, start_time, transect, detection_type),
-         survey_id = ifelse(is.na(survey_id),
+         survey_id = ifelse(is.na(survey_id), 
                             UUIDfromName("c02ab86e-9e5a-4ac2-a1a6-bfa6c32ab614", uuid_name),
                             survey_id)) %>%
   ungroup() %>%
   mutate(uuid_name = paste0(survey_id, edna_sample_name, edna_latitude, collection_time, filter_method, filter_start_time),
-         edna_id = UUIDfromName("e4d345d4-6433-40d2-9997-1b4ee8b1a627", uuid_name))
+         edna_id = UUIDfromName("e4d345d4-6433-40d2-9997-1b4ee8b1a627", uuid_name)) %>%
+  group_by(date) %>%
+  mutate(has_negative_control = sum(negative_control) > 0,
+         negative_control_group_id = if_else(has_negative_control,
+                                             UUIDfromName("42e537a1-5992-45d3-9eed-0f4920625be0", paste0("edna", date)),
+                                             NA)) %>%
+  ungroup()
 ```
 
 
-# subset edna
+## subset edna
 ```{r}
 # survey
 subset_edna_survey = gelled_edna %>%
@@ -699,7 +727,7 @@ x_edna = (nrow(upsert_edna_survey) > 0) | (nrow(upsert_edna) > 0)
 
 ```
 
-# stage and commit edna
+## stage and commit edna
 ```{r}
 
 if (x_edna) {
@@ -733,6 +761,7 @@ db_edna = tbl(dbcon, Id("survey_data", "edna"))
 ```
 
 # Capture
+## unify capture
 ```{r}
 unified_capture = clean_capture %>%
   # inherit/assign site_id
@@ -759,6 +788,7 @@ unified_capture = clean_capture %>%
 
 ```
 
+## gel capture
 ```{r}
 
 gelled_capture = unified_capture %>%
@@ -784,7 +814,7 @@ peace = get_dupes(gelled_capture, capture_id)
 
 ```
 
-# samples
+## gel samples
 ```{r}
 # sample_subtype = gelled_capture %>%
 #   select(capture_id,
@@ -831,8 +861,7 @@ gelled_sample = gelled_capture %>%
 ```
 
 
-
-# subset & compare
+## subset & compare
 ```{r}
 
 subset_capture_survey = gelled_capture %>%
@@ -895,7 +924,7 @@ x_capture = (nrow(upsert_capture_survey) > 0) | (nrow(insert_capture_taxa) > 0) 
 ```
 
 
-# commit changes
+## commit changes
 ```{r}
 # update all landscape
 dbBegin(dbcon)

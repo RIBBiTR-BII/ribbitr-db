@@ -37,7 +37,7 @@ Goals
 
 # 1 - Import data
 
-## Pull dependent tables for each data chain
+## db table pointers
 use naming convention "db_" to distinguish the source
 
 ```{r}
@@ -62,7 +62,7 @@ db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
 ```
 
 
-## Load most recent raw CSV Exports
+## raw CSV import
 - use naming convention "raw_" to distinguish source
 - name related tables similarly for natural grouping
 
@@ -110,11 +110,11 @@ local_tz = "America/Panama"
 ```
 # 2 - Clean data
 
-## check for null columns & duplicated rows
+check for null columns & duplicated rows
 - purely informational, all action taken in next step
 
 
-## Drop irrelevant & fix structural issues
+Drop irrelevant & fix structural issues
 - clean column names
 - rename/mutate/drop specific columns
 - Split, concatenate, coalesce related columns
@@ -449,7 +449,7 @@ clean_visit_info$region[clean_visit_info$fulcrum_id == "dd14f50c-85a1-4272-bf02-
 
 ```
 
-# 3 Checks
+# Checks
 ```{r}
 clean_visit_info %>%
   filter(date != start_date) %>%
@@ -624,7 +624,7 @@ db_visit = tbl(dbcon, Id("survey_data", "visit"))
 
 ```
 
-# Chains
+# Update Chains
 
 ## Environmental chain
 
@@ -800,8 +800,10 @@ gelled_edna = unified_edna %>%
                             survey_id)) %>%
   ungroup() %>%
   group_by(date) %>%
-  mutate(negative_control_edna_id = first(edna_id[negative_control]),
-         negative_control_edna_id = ifelse(negative_control, NA, negative_control_edna_id)) %>%
+  mutate(has_negative_control = sum(negative_control) > 0,
+         negative_control_group_id = if_else(has_negative_control,
+                                             UUIDfromName("42e537a1-5992-45d3-9eed-0f4920625be0", paste0("edna", date)),
+                                             NA)) %>%
   ungroup() %>%
   select(-fulcrum_id)
 ```
@@ -1254,10 +1256,24 @@ negative_controls = gelled_capture %>%
                                   "microbiome_control_id" ~ "microbiome",
                                   "amps_control_id" ~ "antibody",
                                   "amps_hcl_control_id" ~ "amp"),
-         negative_control = TRUE) %>%
+         negative_control = TRUE,
+         old_sample_name = sample_name,
+         sample_name = tolower(gsub(" ", "", sample_name))) %>%
   select(-name) %>%
   filter(!is.na(sample_name)) %>%
   distinct()
+
+negative_controls$sample_name[negative_controls$sample_name == "221121_negacontrol"] = "221121_negcontrol"
+negative_controls$sample_name[negative_controls$sample_name == "231129_negativwcontrol"] = "231129_negativecontrol"
+
+# drop these outside of workflow to leave a clean trail
+nc_old_sample_names = negative_controls %>%
+  filter(sample_name != old_sample_name) %>%
+  select(sample_type, old_sample_name)
+
+sids = db_sample %>%
+  inner_join(nc_old_sample_names, by = c("sample_type", "sample_name" = "old_sample_name"), copy = TRUE) %>%
+  pull(sample_id)
 
 unified_sample = gelled_capture %>%
   rename(bd = bd_swab_id,
@@ -1297,7 +1313,26 @@ unified_sample = gelled_capture %>%
          -row_num) %>%
   bind_rows(negative_controls)
 
+# negative control groups don't always align with site and date (some span multiple sites)
+nc_groups = unified_sample %>%
+  filter(negative_control) %>%
+  select(sample_name, sample_type, visit_id) %>%
+  group_by(sample_name, sample_type) %>%
+  mutate(name_multi = n() > 1,
+         group_id_1 = if_else(first(name_multi),
+                              UUIDfromName("cc753aec-4d93-4fdc-b4a4-5c4d51954f58", paste0(first(sample_type), first(sample_name))),
+                              NA)) %>%
+  ungroup() %>%
+  group_by(visit_id, sample_type) %>%
+  mutate(group_id_2 = UUIDfromName("cc753aec-4d93-4fdc-b4a4-5c4d51954f58", paste0(sample_type, visit_id))) %>%
+  ungroup() %>%
+  mutate(group_id = coalesce(group_id_1, group_id_2)) %>%
+  arrange(sample_name, sample_type) %>%
+  select(sample_name, sample_type, group_id) %>%
+  distinct()
+
 gelled_sample = unified_sample %>%
+  left_join(nc_groups, by = c("sample_type", "sample_name")) %>%
   left_join(db_sample %>%
               select(sample_id,
                      sample_name,
@@ -1306,14 +1341,16 @@ gelled_sample = unified_sample %>%
   mutate(uuid_name = paste0(sample_name, sample_type),
          sample_id = ifelse(is.na(sample_id), UUIDfromName("1208e62f-d3a1-462c-984f-0bf1f43f5837", uuid_name), sample_id)) %>%
   group_by(visit_id, sample_type) %>%
-  mutate(negative_control_sample_id = first(sample_id[negative_control]),
-         negative_control_sample_id = ifelse(negative_control, NA, negative_control_sample_id),
-         capture_id = ifelse(negative_control, NA, capture_id)) %>%
-  ungroup()
+  mutate(has_negative_control = sum(negative_control) > 0,
+         negative_control_group_id = if_else(has_negative_control,
+                                             first(group_id, na_rm = TRUE),
+                                             NA)) %>%
+  ungroup() %>%
+  mutate(capture_id = ifelse(negative_control, NA, capture_id))
 
 samps_no_nc = gelled_sample %>%
   filter(!negative_control,
-         is.na(negative_control_sample_id),
+         is.na(negative_control_group_id),
          sample_type %in% c("microbione",
                             "mucosome",
                             "amps",
@@ -1325,7 +1362,7 @@ samps_no_nc = gelled_sample %>%
   select(date, time_of_day, site, sample_type, sample_name) %>%
   arrange(date, time_of_day, site, sample_type, sample_name)
 
-write_csv(samps_no_nc, here("staging", "panama_samples_missing_negative_control_2025-09-24.csv"))
+# write_csv(samps_no_nc, here("staging", "panama_samples_missing_negative_control_2025-09-24.csv"))
 
 ```
 
@@ -1391,6 +1428,8 @@ peace = compare_updates(tray)
 hope = peace[[1]]
 upsert_sample = bind_rows(tray$insert,
                           tray$update)
+
+peace = get_dupes(subset_sample, sample_id)
 
 
 upsert_sample_nc = upsert_sample %>%

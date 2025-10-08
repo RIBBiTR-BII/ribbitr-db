@@ -7,7 +7,7 @@ format: html
 
 ## connections
 ```{r}
-librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr, igraph)
 # librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 
 ## Connect to RIBBiTR DB
@@ -62,7 +62,7 @@ local_tz = "America/Los_Angeles"
 
 ```
 
-## files
+## CSV files
 ```{r}
 #| include: false
 
@@ -451,6 +451,8 @@ unified_edna = clean_edna %>%
   filter(!is.na(site),
          !is.na(date))
 
+peace = get_dupes(clean_edna, edna_sample_name)
+
 ```
 
 ## gel edna
@@ -708,7 +710,26 @@ unified_sample = gelled_capture %>%
          dupe = ifelse(n() > 1, TRUE, FALSE)) %>%
   ungroup()
 
+# negative control groups don't always align with site and date (some span multiple sites)
+nc_groups = unified_sample %>%
+  filter(negative_control) %>%
+  select(sample_name, sample_type, site, date) %>%
+  group_by(sample_name, sample_type) %>%
+  mutate(name_multi = n() > 1,
+         group_id_1 = if_else(first(name_multi),
+                              UUIDfromName("cc753aec-4d93-4fdc-b4a4-5c4d51954f58", paste0(first(sample_type), first(sample_name))),
+                              NA)) %>%
+  ungroup() %>%
+  group_by(site, date, sample_type) %>%
+  mutate(group_id_2 = UUIDfromName("cc753aec-4d93-4fdc-b4a4-5c4d51954f58", paste0(sample_type, site, date))) %>%
+  ungroup() %>%
+  mutate(group_id = coalesce(group_id_1, group_id_2)) %>%
+  arrange(sample_name, sample_type) %>%
+  select(sample_name, sample_type, group_id) %>%
+  distinct()
+
 gelled_sample = unified_sample %>%
+  left_join(nc_groups, by = c("sample_name", "sample_type")) %>%
   left_join(db_sample %>%
               select(sample_id, sample_name, sample_type, capture_id) %>%
               rename(capture_id_old = capture_id) %>%
@@ -716,11 +737,12 @@ gelled_sample = unified_sample %>%
   mutate(uuid_name = paste0(sample_name, sample_type),
          sample_id = ifelse(is.na(sample_id), UUIDfromName("1208e62f-d3a1-462c-984f-0bf1f43f5837", uuid_name), sample_id)) %>%
   group_by(date, site, sample_type) %>%
-  mutate(negative_control_sample_id = first(sample_id[negative_control]),
-         negative_control_sample_id = ifelse(negative_control, NA, negative_control_sample_id),
-         capture_id = ifelse(negative_control, NA, capture_id)
-         ) %>%
+  mutate(has_negative_control = sum(negative_control) > 0,
+         negative_control_group_id = if_else(has_negative_control,
+                                             first(group_id, na_rm = TRUE),
+                                             NA)) %>%
   ungroup() %>%
+  mutate(capture_id = ifelse(negative_control, NA, capture_id)) %>%
   select(-date,
          -site,
          -comments_capture,

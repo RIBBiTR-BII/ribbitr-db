@@ -29,9 +29,7 @@ wddir = here(ddir, "fulcrum", 'penn', '2024-11-18') # working data directory
 
 ```
 
-# 0 - Data Plan
-
-## Goals
+Goals
 
 -   Integrate batches of Penn survey data with other RIBBiTR data (including other Penn data) for combined analysis
 -   Compare with existing data to avoid duplicating, and facilitate automated updating
@@ -39,7 +37,7 @@ wddir = here(ddir, "fulcrum", 'penn', '2024-11-18') # working data directory
 -   Upload to Database in transaction
 -   log transaction
 
-## Data chains (someday we can automate this...)
+Data chains (someday we can automate this...)
 
 -   capture / survey / visit / site / region / country
 -   aural / survey / visit / site / region / country
@@ -47,10 +45,11 @@ wddir = here(ddir, "fulcrum", 'penn', '2024-11-18') # working data directory
 
 # 1 - Import data
 
-## Pull dependent tables for each data chain
+Pull dependent tables for each data chain
 
-### use naming convention "db_" to distinguish the source
+use naming convention "db_" to distinguish the source
 
+## database table pointers
 ```{r}
 # pull relevant chain tables from DB
 db_sample = tbl(dbcon, Id("survey_data", "sample"))
@@ -72,7 +71,7 @@ db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
 
 ```
 
-## Load most recent raw CSV Exports
+## raw CSV files
 
 -   use naming convention "raw\_" to distinguish source
 -   name related tables similarly for natural grouping
@@ -152,7 +151,7 @@ local_tz = "America/New_York"
 
 ```
 
-# whats going on with the 2022 changesets?
+## investigate 2022 changesets?
 ```{r}
 clean_changesets = function(fulc_table, obs = FALSE) {
   if(obs) {
@@ -187,7 +186,7 @@ raw_sample_obs_2022_cs = clean_changesets(raw_sample_obs_2022, obs = TRUE)
 
 # 2 - Clean data
 
-## Drop irrelevant & fix structural issues
+Drop irrelevant & fix structural issues
 
 -   clean column names
 -   rename/mutate/drop specific columns
@@ -539,7 +538,8 @@ clean_edna_collection = raw_edna_collection %>%
   clean_names() %>%
   rename(edna_latitude = latitude,
          edna_longitude = longitude,
-         collection_volume_ml = edna_volume) %>%
+         collection_volume_ml = edna_volume,
+         filter_method = collection_type) %>%
   unite(comments_edna, c("edna_sample_comments", "edna_collection_description"), sep=" ", remove = TRUE, na.rm = TRUE) %>%
   mutate(start_time = collection_time,
          edna_id = fulcrum_id,
@@ -547,7 +547,7 @@ clean_edna_collection = raw_edna_collection %>%
                                          "yes" ~ TRUE,
                                          "no" ~ FALSE)),
          negative_control = grepl("control", comments_edna),
-         filter_method = tolower(gsub("-", "_", filter_method))) %>%
+         filter_method = tolower(gsub("-Bag", "", filter_method))) %>%
   select(-any_of(to_drop))
 
 clean_edna_filtering  = raw_edna_filtering %>%
@@ -632,9 +632,9 @@ clean_sample_obs$mucosome_id[clean_sample_obs$fulcrum_id == "c3f4fcd0-f3dc-4cd5-
 ```
 
 
-# 3 Checks
+# 3 - Update Chains
 
-## visits
+## Visits
 
 ### unify visits
 
@@ -750,10 +750,9 @@ if (x_visit) {
 db_visit = tbl(dbcon, Id("survey_data", "visit"))
 ```
 
-# One chain at a time
-
 ## Environmental chain
 
+### unify Env
 ```{r}
 unified_env = clean_survey_info %>%
   mutate(detection_type = "environmental",
@@ -803,6 +802,7 @@ if (nrow(unified_env %>% filter(is.na(site_id))) > 0) {
 
 ```
 
+### gel Env
 ```{r}
 gelled_env = unified_env %>%
   group_by_at(tbl_nkey("survey", mdc)) %>%
@@ -818,6 +818,7 @@ gelled_env = unified_env %>%
 
 ```
 
+### subset Env
 ```{r}
 # survey
 subset_env_survey = gelled_env %>%
@@ -857,6 +858,7 @@ x_env = (nrow(upsert_env_survey) > 0) | (nrow(upsert_env) > 0)
 
 ```
 
+### upsert Env
 ```{r}
 
 if (x_env) {
@@ -891,7 +893,7 @@ db_env = tbl(dbcon, Id("survey_data", "environmental"))
 
 ## eDNA chain
 
-# unify edna
+### unify edna
 ```{r}
 unified_edna = clean_edna_collection %>%
   left_join(clean_edna_filtering, by = c("fulcrum_id" = "fulcrum_parent_id")) %>%
@@ -916,7 +918,7 @@ unified_edna = clean_edna_collection %>%
 
 ```
 
-# gel edna
+### gel edna
 ```{r}
 gelled_edna = unified_edna %>%
   group_by_at(tbl_nkey("survey", mdc)) %>%
@@ -929,13 +931,15 @@ gelled_edna = unified_edna %>%
                             survey_id)) %>%
   ungroup() %>%
   group_by(date) %>%
-  mutate(negative_control_edna_id = first(edna_id[negative_control]),
-         negative_control_edna_id = ifelse(negative_control, NA, negative_control_edna_id)) %>%
+  mutate(has_negative_control = sum(negative_control) > 0,
+         negative_control_group_id = if_else(has_negative_control,
+                                             UUIDfromName("42e537a1-5992-45d3-9eed-0f4920625be0", paste0("edna", date)),
+                                             NA)) %>%
   ungroup() %>%
   select(-fulcrum_id)
 ```
 
-# subset edna
+### subset edna
 ```{r}
 # survey
 subset_edna_survey = gelled_edna %>%
@@ -974,7 +978,7 @@ x_edna = (nrow(upsert_edna_survey) > 0) | (nrow(upsert_edna) > 0)
 
 ```
 
-# stage and commit edna
+### stage and commit edna
 ```{r}
 
 if (x_edna) {
@@ -1008,7 +1012,7 @@ db_edna = tbl(dbcon, Id("survey_data", "edna"))
 
 -   aural / survey / visit / site / region / location
 
-### 3 - Unify aural data
+### Unify aural data
 
 (including unmatched surveys as "environmental". Not great though long term. Needs better fix.)
 
@@ -1041,7 +1045,7 @@ if (nrow(unified_aural %>% filter(is.na(site_id))) > 0) {
 
 ```
 
-### 4 - Gelled aural data
+### Gelled aural data
 
 ```{r}
 gelled_aural = unified_aural %>%
@@ -1058,7 +1062,7 @@ gelled_aural = unified_aural %>%
 
 ```
 
-### 5 - Subset aural tables
+### Subset aural tables
 
 ```{r}
 
@@ -1203,7 +1207,7 @@ gelled_ves = unified_ves %>%
   select(-fulcrum_id)
 ```
 
-### 5 - Subset final ves tables
+### Subset final ves tables
 
 ```{r}
 
@@ -1298,6 +1302,7 @@ db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
 
 -   capture / survey / visit / site / region / country
 
+### unify captures
 ```{r}
 
 unified_sample =  clean_sample_obs %>% 
@@ -1430,7 +1435,7 @@ upsert_cmr = bind_rows(tray$insert,
 
 ```
 
-### Gelled capture
+### gelled capture
 
 ```{r}
 gelled_capture = unified_capture %>%
@@ -1457,7 +1462,7 @@ gelled_capture = unified_capture %>%
   drop_na(visit_id)
 ```
 
-### Samples capture
+### gelled Samples
 
 ```{r}
 sample_lookup_gen <- function(table, id_col, sample_cols, sample_type) {
@@ -1548,12 +1553,14 @@ gelled_sample = clean_sample %>%
               collect(), by = c("sample_name", "sample_type")) %>%
   mutate(uuid_name = paste0(sample_name, sample_type),
          sample_id = ifelse(is.na(sample_id), UUIDfromName("1208e62f-d3a1-462c-984f-0bf1f43f5837", uuid_name), sample_id)) %>%
-  group_by(date) %>%
-  mutate(negative_control_sample_id = first(sample_id[negative_control]),
-         negative_control_sample_id = ifelse(negative_control, NA, negative_control_sample_id),
-         capture_id = ifelse(negative_control, NA, capture_id)) %>%
+  group_by(date, sample_type) %>%
+  mutate(has_negative_control = sum(negative_control) > 0,
+         negative_control_group_id = if_else(has_negative_control,
+                                             UUIDfromName("42e537a1-5992-45d3-9eed-0f4920625be0", paste0(sample_type, date)),
+                                             NA)) %>%
   ungroup() %>%
-  mutate(digits = str_extract(sample_name, "\\d{5}")) %>%
+  mutate(capture_id = ifelse(negative_control, NA, capture_id),
+         digits = str_extract(sample_name, "\\d{5}")) %>%
   filter(digits != "00000")
   
 
@@ -1651,39 +1658,6 @@ x_capture = (nrow(upsert_capture_survey) > 0) | (nrow(insert_capture_taxa) > 0) 
 
 ```
 
-```{r}
-upsert_sample %>%
-  filter(!(capture_id %in% upsert_capture$capture_id))
-
-d_new = upsert_capture %>%
-  left_join(hope %>%
-              select(capture_id_old,
-                     capture_id_new) %>%
-              distinct(), by = c("capture_id" = "capture_id_new")) %>%
-  mutate(capture_id = capture_id_old) %>%
-  arrange(capture_id)
-
-d_old = db_capture %>%
-  filter(capture_id %in% tray$update_old$capture_id) %>%
-  collect() %>%
-  arrange(capture_id)
-
-common_cols = intersect(colnames(d_new), colnames(d_old))
-
-comps = setdiff(d_old %>%
-                  select(all_of(common_cols)),
-                d_new %>%
-                  select(all_of(common_cols)))
-
-cfs = compare_for_staging(d_old, d_new, "capture_id", report = "test")
-
-meow = compare_updates(cfs)
-woof = meow[[1]]
-
-
-wtf = gelled_capture_clean %>%
-  filter(capture_id %in% upsert_capture$capture_id)
-```
 ### Stage and commit capture tables
 
 ```{r}
