@@ -172,7 +172,7 @@ peace = drop_sample %>%
 
 ```
 
-# cascade drop
+## cascade drop
 ```{r}
 
 dbBegin(dbcon)
@@ -330,7 +330,7 @@ count = as.character(drop_sample %>% count() %>% pull())
 cat("sample_drop:", count, "\n")
 ```
 
-# cascade drop
+## cascade drop
 ```{r}
 
 
@@ -448,7 +448,7 @@ count = as.character(drop_sample %>% count() %>% pull())
 cat("sample_drop:", count, "\n")
 ```
 
-# cascade drop
+## cascade drop
 ```{r}
 
 
@@ -549,7 +549,7 @@ cat("sample_drop:", count, "\n")
 
 ```
 
-# cascade drop (actually no cascading here...)
+## drop (actually no cascading here...)
 ```{r}
 
 
@@ -595,7 +595,7 @@ drop_bd = db_bd %>%
   filter(!is.na(sample_id))
 ```
 
-# cascade drop
+## cascade drop
 ```{r}
 
 

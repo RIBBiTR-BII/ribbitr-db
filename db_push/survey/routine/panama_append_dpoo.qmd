@@ -110,10 +110,6 @@ local_tz = "America/Panama"
 ```
 # 2 - Clean data
 
-check for null columns & duplicated rows
-- purely informational, all action taken in next step
-
-
 Drop irrelevant & fix structural issues
 - clean column names
 - rename/mutate/drop specific columns
@@ -1258,12 +1254,13 @@ negative_controls = gelled_capture %>%
                                   "amps_hcl_control_id" ~ "amp"),
          negative_control = TRUE,
          old_sample_name = sample_name,
-         sample_name = tolower(gsub(" ", "", sample_name))) %>%
+         sample_name = tolower(gsub(" ", "", sample_name)),
+         sample_name = gsub("negcontrol", "negativecontrol", sample_name)) %>%
   select(-name) %>%
   filter(!is.na(sample_name)) %>%
   distinct()
 
-negative_controls$sample_name[negative_controls$sample_name == "221121_negacontrol"] = "221121_negcontrol"
+negative_controls$sample_name[negative_controls$sample_name == "221121_negacontrol"] = "221121_negativecontrol"
 negative_controls$sample_name[negative_controls$sample_name == "231129_negativwcontrol"] = "231129_negativecontrol"
 
 # drop these outside of workflow to leave a clean trail
