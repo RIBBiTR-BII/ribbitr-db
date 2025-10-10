@@ -1421,3 +1421,40 @@ db_edna = rows_update(db_edna, edna_update, by = "edna_id", unmatched = "ignore"
 
 
 ```
+
+# drop sierra enda errors
+```{r}
+
+drop_edna = db_edna %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  filter(site == "50783",
+         date == "2023-09-07")
+sid = drop_edna %>%
+  pull(survey_id) %>%
+  unique()
+
+vid = drop_edna %>%
+  pull(visit_id) %>%
+  unique()
+
+surveys = db_survey %>%
+  filter(visit_id == vid) %>%
+  collect()
+
+edna = db_edna %>%
+  filter(survey_id == sid) %>%
+  collect()
+
+d_edna = drop_edna %>%
+  select(edna_id)
+
+d_survey = drop_edna %>%
+  select(survey_id) %>%
+  distinct()
+
+db_edna = rows_delete(db_edna, d_edna, by = "edna_id", in_place = TRUE, unmatched = "ignore")
+db_survey = rows_delete(db_survey, d_survey, by = "survey_id", in_place = TRUE, unmatched = "ignore")
+
+```

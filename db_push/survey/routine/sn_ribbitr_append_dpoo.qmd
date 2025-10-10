@@ -71,7 +71,7 @@ raw_sample_2023 = read_csv(here(wddir, "2023_SierraNevada_sampleData_Lindauer_23
 raw_sample_2024 = read_csv(here(wddir, "2024_SierraNevada_sampleData_Lindauer_241229.csv"))
 
 raw_edna_2022 = read_csv(here(wddir, "edna_sierra_2022_fullData_230228_lindauer.csv"))
-raw_edna_2023 = read_csv(here(wddir, "edna_sierra_2023_fullData_240130_lindauer.csv"))
+raw_edna_2023 = read_csv(here(wddir, "edna_sierra_2023_fullData_251010_lindauer.csv"))
 
 ```
 
@@ -278,7 +278,8 @@ clean_capture$bd[clean_capture$capture_id == "a86f5dae-4eb3-4abf-a360-3b99501c23
 clean_capture$bd[clean_capture$capture_id == "f0d98710-038e-407b-894b-648ade3f297a"] = "RKS36429"
 
 clean_edna = bind_rows(raw_edna_2022,
-                       raw_edna_2023) %>%
+                       raw_edna_2023 %>%
+                         mutate(visit_date = mdy(visit_date))) %>%
   clean_names() %>%
   rename(sn_visit_id = visit_id,
          sn_survey_id = survey_id,
@@ -469,16 +470,13 @@ gelled_edna = unified_edna %>%
   ungroup() %>%
   mutate(uuid_name = paste0(survey_id, edna_sample_name, edna_utmn, collection_time, filter_method, filter_start_time),
          edna_id = UUIDfromName("e4d345d4-6433-40d2-9997-1b4ee8b1a627", uuid_name)) %>%
-  # try assigning negative control aligned with filter size and collection method
-  group_by(visit_id, filter_method, filter_size_um) %>%
-  mutate(negative_control_edna_id = first(edna_id[negative_control]),
-         negative_control_edna_id = ifelse(negative_control, NA, negative_control_edna_id)) %>%
-  ungroup() %>%
-  # for those still without negative control, use, whatever is available
-  group_by(visit_id, negative_control_edna_id) %>%
-  mutate(negative_control_edna_id = if_else(is.na(negative_control_edna_id), first(edna_id[negative_control]), negative_control_edna_id),
-         negative_control_edna_id = ifelse(negative_control, NA, negative_control_edna_id)) %>%
+  group_by(visit_id) %>%
+  mutate(has_negative_control = sum(negative_control) > 0,
+         negative_control_group_id = if_else(has_negative_control,
+                                             UUIDfromName("42e537a1-5992-45d3-9eed-0f4920625be0", paste0("edna", visit_id)),
+                                             NA)) %>%
   ungroup()
+
 ```
 
 ## subset edna
