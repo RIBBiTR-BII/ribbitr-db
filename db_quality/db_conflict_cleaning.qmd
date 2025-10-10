@@ -3,7 +3,7 @@ title: "db_conflict_cleaning"
 format: html
 editor: source
 ---
-
+# setup
 ```{r}
 
 # librarian downloads, if not already downloaded, and reads in needed packages
@@ -1456,5 +1456,23 @@ d_survey = drop_edna %>%
 
 db_edna = rows_delete(db_edna, d_edna, by = "edna_id", in_place = TRUE, unmatched = "ignore")
 db_survey = rows_delete(db_survey, d_survey, by = "survey_id", in_place = TRUE, unmatched = "ignore")
+
+```
+
+# duplicate edna sample names
+```{r}
+peace = db_edna %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  group_by(edna_sample_name) %>%
+  mutate(count = n()) %>%
+  ungroup() %>%
+  filter(count > 1) %>%
+  collect()
+
+hope = get_dupes(peace, edna_sample_name)
 
 ```
