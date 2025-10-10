@@ -20,8 +20,9 @@ mdc = tbl(dbcon, Id("public", "all_columns")) %>%
 db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
 db_amp_total = tbl(dbcon, Id("survey_data", "amp_total"))
 db_amp_gia = tbl(dbcon, Id("survey_data", "amp_gia"))
-db_amp_mp = tbl(dbcon, Id("survey_data", "amp_maldi_peak"))
-db_amp_mi = tbl(dbcon, Id("survey_data", "amp_maldi_intensity"))
+db_amp_peak = tbl(dbcon, Id("survey_data", "amp_maldi_peak"))
+db_amp_int = tbl(dbcon, Id("survey_data", "amp_maldi_intensity"))
+db_mucosome = tbl(dbcon, Id("survey_data", "mucosome_gia"))
 
 
 db_sample = tbl(dbcon, Id("survey_data", "sample"))
@@ -122,19 +123,29 @@ amp_tables = db_sample %>%
               select(sample_id) %>%
               distinct() %>%
               mutate(amp_gia = TRUE), by = "sample_id") %>%
-  left_join(db_amp_mp %>%
+  left_join(db_amp_peak %>%
               select(sample_id) %>%
               distinct() %>%
               mutate(amp_maldi_peak = TRUE), by = "sample_id") %>%
-  left_join(db_amp_mi %>%
+  left_join(db_amp_int %>%
               select(sample_id) %>%
               distinct() %>%
               mutate(amp_maldi_intensity = TRUE), by = "sample_id") %>%
   arrange(sample_name) %>%
   collect() %>%
   mutate(
-    across(c(amp_total, amp_gia, amp_maldi_peak, amp_maldi_intensity), ~ ifelse(is.na(.), FALSE, .))
-  )
+    across(c(amp_total, amp_gia, amp_maldi_peak, amp_maldi_intensity), ~ ifelse(is.na(.), FALSE, .)),
+    results = (amp_total | amp_gia | amp_maldi_peak | amp_maldi_intensity),
+    survey = !is.na(negative_control) | !is.na(capture_id)
+  ) %>%
+  select(results,
+         survey,
+         everything()) %>%
+  arrange(sample_name)
+
+# mismatched
+amp_mismatchatch = amp_tables %>%
+  filter(xor(results, survey))
 
 # amp
 unmatched_results_amp = amp_tables %>%

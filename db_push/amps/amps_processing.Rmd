@@ -66,9 +66,16 @@ raw_intensity_pe_2022_rcat = read_csv(here(ri_wddir, "pennsylvania", "PLE 2022 R
 
 raw_peptide_pe_2023 = read_csv(here(ri_wddir, "pennsylvania", "2023_AMP PLE peptide quantity mBCA data.csv"))
 raw_maldi_pe_2023 = read_csv(here(ri_wddir, "pennsylvania", "PLE MALDI peak list 2023 species combined.csv"))
+raw_maldi_pe_2023$amp_id_2[raw_maldi_pe_2023$amp_id == "Pe_AMP00116_00119"] = "Pe_AMP00119"
+raw_maldi_pe_2023$amp_id[raw_maldi_pe_2023$amp_id == "Pe_AMP00116_00119"] = "Pe_AMP00116"
+raw_maldi_pe_2023$amp_id_2[raw_maldi_pe_2023$amp_id == "Pe_AMP00157,_Pe_AMP00160"] = "Pe_AMP00160"
+raw_maldi_pe_2023$amp_id[raw_maldi_pe_2023$amp_id == "Pe_AMP00157,_Pe_AMP00160"] = "Pe_AMP00157"
+
+
 raw_intensity_pe_2023_rpip = read_csv(here(ri_wddir, "pennsylvania", "2023_ PA R. pipiens amp ID intensity.csv"))
 raw_intensity_pe_2023_rcat = read_csv(here(ri_wddir, "pennsylvania", "2023_ PA R. catesbeiana amp ID intensity.csv"))
 raw_intensity_pe_2023_rcla = read_csv(here(ri_wddir, "pennsylvania","2023_ PA R. clamitans amp ID intensity.csv"))
+raw_intensity_pe_2023_rcla$amp_id[raw_intensity_pe_2023_rcla$amp_id == "Pe-AMP00154"] = "Pe_AMP00154"
 
 # sierra nevada
 raw_peptide_sn_2022 = read_csv(here(ri_wddir, "sierra nevada", "BII Sierra 2022 peptides.csv"))
@@ -98,6 +105,7 @@ clean_panama_controls = function(df) {
   df %>%
     mutate(old_amp_id = amp_id,
            amp_id = gsub("nc", "negativecontrol", amp_id, ignore.case = TRUE),
+           amp_id = gsub("neg$", "negativecontrol", amp_id, ignore.case = TRUE),
            amp_id = gsub("negative_control", "negativecontrol", amp_id, ignore.case = TRUE),
            amp_id = gsub("negcon", "negativecontrol", amp_id, ignore.case = TRUE),
            amp_id = if_else(grepl("negative|control", amp_id, ignore.case = TRUE), tolower(amp_id), amp_id))
@@ -152,6 +160,8 @@ clean_total = bind_rows(raw_peptide_br_2022 %>%
          notes) %>%
   rename(sample_name = amp_id) %>%
   mutate(amp_lab = "rs_lab")
+
+clean_total$sample_name[clean_total$sample_name == "BR Control 9-Nov-22"] = "BR-Control-9-Nov-22"
 
 # row join all maldi data
 clean_peak = bind_rows(raw_maldi_br_2022 %>%
@@ -362,6 +372,10 @@ clean_gia = bind_rows(raw_gia_pe %>%
   group_by(sample_name, bd_isolate_id) %>%
   mutate(replicate_id = row_number()) %>%
   ungroup()
+
+clean_gia$sample_name[clean_gia$sample_name == "PeAMP00154"] = "Pe_AMP00154"
+clean_gia$sample_name[clean_gia$sample_name == "Pe_AMP00247*"] = "Pe_AMP00247"
+
 
 ```
 

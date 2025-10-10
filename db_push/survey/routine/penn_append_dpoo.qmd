@@ -151,7 +151,7 @@ local_tz = "America/New_York"
 
 ```
 
-## investigate 2022 changesets?
+## 2022 clean changesets
 ```{r}
 clean_changesets = function(fulc_table, obs = FALSE) {
   if(obs) {
@@ -618,8 +618,7 @@ clean_sample_obs$mucosome_id[clean_sample_obs$fulcrum_id == "c3f4fcd0-f3dc-4cd5-
 clean_sample_obs$mucosome_id[clean_sample_obs$fulcrum_id == "c0cb8dc7-2fb3-4fb0-8055-9b5757ce64a0"] = "Pe_Muc00000"
 
 # discrepancy, flag & differentiate for now
-clean_sample_obs$amp_id_2[clean_sample_obs$fulcrum_id == "639c4eba-ece0-40ea-9aa1-be09c398c627"] = "Pe_AMP00118_a"
-clean_sample_obs$amp_id_2[clean_sample_obs$fulcrum_id == "4421e02c-c5d8-4070-88f7-a9e2c2498f65"] = "Pe_AMP00118_b"
+clean_sample_obs$amp_id_2[clean_sample_obs$fulcrum_id == "4421e02c-c5d8-4070-88f7-a9e2c2498f65"] = "Pe_AMP00119"
 clean_sample_obs$bacterial_swab_id[clean_sample_obs$fulcrum_id == "2a182461-9cfa-47ab-bedb-4dea02e5d59d"] = "Pe_Bac00658_a"
 clean_sample_obs$bacterial_swab_id[clean_sample_obs$fulcrum_id == "5cbfc389-fc24-4157-88e1-db8359ad4a60"] = "Pe_Bac00658_b"
 clean_sample_obs$antibody_id_4[clean_sample_obs$fulcrum_id == "5cbfc389-fc24-4157-88e1-db8359ad4a60"] = "Pe_IG00000"
