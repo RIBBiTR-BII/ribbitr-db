@@ -13,7 +13,7 @@ librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr
 # librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 
 ## Connect to DB
-dbcon <- hopToDB("wibbitr")
+dbcon = hopToDB("wibbitr")
 
 ## Pull metadata from database
 mdc = tbl(dbcon, Id("public", "all_columns")) %>%
@@ -210,6 +210,10 @@ to_drop = c(
   "project",
   "assigned_to",
   "geometry",
+  "gps_speed",
+  "gps_horizontal_accuracy",
+  "gps_course",
+  "max_version",
   "fulcrum_record_id",
   "site_other" # ignoring sites outside RIBBiTR... could include though.
 )
@@ -223,7 +227,8 @@ clean_survey_info <- bind_rows(
     mutate(src = 2022,
            end_time = if_else(is.na(end_time), start_time, end_time),
            survey_time = if_else(hour(end_time) > 6 & hour(end_time) < 18, "day", "night")),
-  raw_survey_info) %>%
+  raw_survey_info %>%
+    mutate(src = 2023)) %>%
   clean_names() %>% 
   rename(air_temp_c = air_temperature_c,
          air_time = air_temperature_measurement_time,
@@ -371,7 +376,7 @@ clean_capture_survey <- bind_rows(
   filter(!if_all(everything(), is.na),
          !is.na(site))  # drop any rows all null
 
-clean_capture_obs <- bind_rows(
+clean_capture_obs = bind_rows(
   raw_capture_obs_2022_cs %>%
     rename(species_capture = species),
   raw_capture_obs) %>%
@@ -421,7 +426,8 @@ clean_cmr <- bind_rows(
   filter(!if_all(everything(), is.na))  # drop any rows all null
 
 clean_sample_processing <- bind_rows(
-  raw_sample_processing_2022_cs,
+  raw_sample_processing_2022_cs %>%
+    mutate(survey_time = "night"),
   raw_sample_processing) %>%
   clean_names() %>%
   rename(site = location,
@@ -444,7 +450,7 @@ clean_sample_processing <- bind_rows(
          -longitude) %>%
   filter(!if_all(everything(), is.na)) # drop any rows all null
 
-clean_sample_obs <- bind_rows(
+clean_sample_obs = bind_rows(
   raw_sample_obs_2022_cs %>%
     rename(amp_id = amp_id_1,
            antibody_id = antibody_id_1,
@@ -1339,6 +1345,8 @@ unified_capture = clean_capture_obs %>%
 capture_dupes = get_dupes(unified_capture %>%
                             filter(!negative_control), capture_id)
 
+peace = get_dupes(unified_sample, "site", "date", "time_of_day", "bag_id")
+
 # catch for example if duplicate bad ids
 if (nrow(capture_dupes) > 0) {
   stop("Duplicate captures found.")
@@ -1348,7 +1356,13 @@ if (nrow(unified_capture %>% filter(is.na(site_id))) > 0) {
   stop("Unknown sites returned, consider importing first.")
 }
 
-
+peace = unified_capture %>%
+  select(fulcrum_id,
+         capture_id,
+         any_of(tbl_keys("visit", mdc)),
+         site,
+         bag_id,
+         amp_id)
 # QA/QC
 
 # exploration
@@ -1478,14 +1492,14 @@ sample_lookup_gen <- function(table, id_col, sample_cols, sample_type) {
                   all_id_cols))) %>%
     pivot_longer(!all_of(all_id_cols), names_to = "name", values_to = "value") %>%
     filter(!is.na(value),
-           value != "Pe_Bd00000",
-           value != "Pe_Toe00000",
-           value != "Pe_16S00000",
-           value != "Pe_AMP00000",
-           value != "Pe_Muc00000",
-           value != "Pe_Bac00000",
-           value != "Pe_IG00000",
-           ) %>%
+           # value != "Pe_Bd00000",
+           # value != "Pe_Toe00000",
+           # value != "Pe_16S00000",
+           # value != "Pe_AMP00000",
+           # value != "Pe_Muc00000",
+           # value != "Pe_Bac00000",
+           # value != "Pe_IG00000",
+           !grepl("00000$", value)) %>%
     rename(sample_name = value) %>%
     mutate(sample_type = sample_type) %>%
     select(sample_name,
