@@ -11,7 +11,7 @@ librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, rio, RPostgres, st
 # librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 
 ## Connect to DB
-dbcon <- hopToDB("wibbitr")
+dbcon = hopToDB("wibbitr")
 sncon = hopToDB("qpcr")
 
 ```
