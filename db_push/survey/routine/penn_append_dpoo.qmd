@@ -215,6 +215,7 @@ to_drop = c(
   "gps_course",
   "max_version",
   "fulcrum_record_id",
+  "fulcrum_record_version",
   "site_other" # ignoring sites outside RIBBiTR... could include though.
 )
 
@@ -509,6 +510,10 @@ clean_sample_obs = bind_rows(
                    "sex_other"))) %>%
   filter(!if_all(everything(), is.na),
          # !(taxon_sample == "negative_control")
+         !(fulcrum_id %in% c(
+           "2f55cc7c-975b-458f-8f89-78e9ab53ef97",
+           "484d8ef9-2f71-4b70-953d-9d0ee91b89ef",
+           "b31fdc78-08fa-48c1-8661-a0a0cc635deb"))
          )
 
 clean_edna_survey = raw_edna_survey %>%
@@ -598,6 +603,9 @@ clean_sample_obs$bag_id[clean_sample_obs$fulcrum_id == "46c33c92-feb9-47ca-91d9-
 clean_sample_obs$bag_id[clean_sample_obs$fulcrum_id == "6d285d19-c288-456c-8dda-42ea35352dff"] = "BAG83"
 clean_sample_obs$bag_id[clean_sample_obs$fulcrum_id == "fe17b685-1c7a-4305-93cb-d3083de38654"] = "BAG16"
 clean_sample_obs$bag_id[clean_sample_obs$fulcrum_id == "9f72d0b0-9252-46e6-8391-8531174e1f97"] = "BAG68"
+# clean_sample_obs$bag_id[clean_sample_obs$fulcrum_id == "9fdd22ff-100c-474a-9b42-09eed5abd09a"] = "BAG68"
+
+
 
 clean_capture_obs$bag_id[clean_capture_obs$fulcrum_id == "78e8394d-60e4-4977-9f3b-9e57601b0980"] = "BAG10"
 clean_capture_obs$bag_id[clean_capture_obs$fulcrum_id == "c513fba1-d5bb-41cb-add0-5330250c6d0f"] = "BAG06"
@@ -622,17 +630,42 @@ clean_sample_obs$microbiome_swab_id[clean_sample_obs$fulcrum_id == "c228c10b-cba
 clean_sample_obs$microbiome_swab_id[clean_sample_obs$fulcrum_id == "878bf835-7368-45fc-a17f-ce8f290f1ca3"] = "Pe_16S00546"
 clean_sample_obs$mucosome_id[clean_sample_obs$fulcrum_id == "c3f4fcd0-f3dc-4cd5-a886-145cbc52d2bb"] = "Pe_Muc00038"
 clean_sample_obs$mucosome_id[clean_sample_obs$fulcrum_id == "c0cb8dc7-2fb3-4fb0-8055-9b5757ce64a0"] = "Pe_Muc00000"
+clean_sample_obs$amp_id[clean_sample_obs$fulcrum_id == "15726e63-04ad-46fa-8f93-e7e5c5f3377a"] = "AMPBath00038"
+clean_sample_obs$antibody_id[clean_sample_obs$fulcrum_id == "15726e63-04ad-46fa-8f93-e7e5c5f3377a"] = "AntiBod00038"
+clean_sample_obs$amp_id_2[clean_sample_obs$fulcrum_id == "faa4a322-b353-4ae7-9066-a1f9d96e57da"] = "AMPBath00000"
+clean_sample_obs$bacterial_swab_id[clean_sample_obs$fulcrum_id == "6095d594-6932-4d76-8171-8f241c24e2e4"] = "BacSwab00282"
+clean_sample_obs$crispr_id[clean_sample_obs$fulcrum_id == "6095d594-6932-4d76-8171-8f241c24e2e4"] = "CRSwab00209"
+clean_sample_obs$bd_swab_id[clean_sample_obs$fulcrum_id == "c83cb275-1261-4ed5-a84c-16db25ad0d8e"] = "BdSwab00203"
+clean_sample_obs$microbiome_swab_id[clean_sample_obs$fulcrum_id == "c228c10b-cba5-442a-b54c-4e6a33bff8b4"] = "Pe_16S00513"
+clean_sample_obs$microbiome_swab_id[clean_sample_obs$fulcrum_id == "878bf835-7368-45fc-a17f-ce8f290f1ca3"] = "Pe_16S00546"
+clean_sample_obs$amp_id_2[clean_sample_obs$fulcrum_id == "639c4eba-ece0-40ea-9aa1-be09c398c627"] = "Pe_AMP00000"
+clean_sample_obs$amp_id[clean_sample_obs$fulcrum_id == "08d85662-12df-479d-ae2c-e6d6dc010038"] = "Pe_AMP00153"
+clean_sample_obs$bacterial_swab_id[clean_sample_obs$fulcrum_id == "7e8bd4d0-b393-4e85-8d57-c2decb0df8d4"] = "Pe_Bac00464"
+clean_sample_obs$bacterial_swab_id[clean_sample_obs$fulcrum_id == "2a182461-9cfa-47ab-bedb-4dea02e5d59d"] = "Pe_Bac00520"
+clean_sample_obs$bd_swab_id[clean_sample_obs$fulcrum_id == "e9b21478-cf75-4f3f-80ee-bd004693b55f"] = "Pe_Bd00220"
+clean_sample_obs$bd_swab_id[clean_sample_obs$fulcrum_id == "63aa0e0f-a43a-4121-9a5d-ffb47391564b"] = "Pe_Bd00224"
+clean_sample_obs$bd_swab_id[clean_sample_obs$fulcrum_id == "5f9332eb-a5b9-4b6a-85cd-4c0d47331840"] = "Pe_Bd00656"
+clean_sample_obs$antibody_id[clean_sample_obs$fulcrum_id == "0c6f00bb-cae1-456d-8319-0ebd319c055e"] = "Pe_IG00110"
+clean_sample_obs$antibody_id_4[clean_sample_obs$fulcrum_id == "5cbfc389-fc24-4157-88e1-db8359ad4a60"] = "Pe_IG00000"
+clean_sample_obs$mucosome_id[clean_sample_obs$fulcrum_id == "c3f4fcd0-f3dc-4cd5-a886-145cbc52d2bb"] = "Pe_Muc00048"
+clean_sample_obs$mucosome_id[clean_sample_obs$fulcrum_id == "6f881dea-0980-48a1-ad67-44aa27acb3a3"] = "Pe_Muc00325"
+clean_sample_obs$genetic_id[clean_sample_obs$fulcrum_id == "1f854c06-7073-4931-88b1-008a85ce739f"] = "Pe_Toe00000"
+clean_sample_obs$genetic_id[clean_sample_obs$fulcrum_id == "f76279e2-987a-41eb-b6f0-b0e310342dbb"] = "Pe_Toe00029"
+
+# clean_sample_obs$mucosome_id[clean_sample_obs$fulcrum_id == "441f3864-d891-4f2a-a6f8-558b95aead39"] = "Pe_Muc00000"
+clean_sample_obs$mucosome_id[clean_sample_obs$fulcrum_id == "c3f4fcd0-f3dc-4cd5-a886-145cbc52d2bb"] = "Pe_Muc00000"
+
 
 # discrepancy, flag & differentiate for now
-clean_sample_obs$amp_id_2[clean_sample_obs$fulcrum_id == "4421e02c-c5d8-4070-88f7-a9e2c2498f65"] = "Pe_AMP00119"
-clean_sample_obs$bacterial_swab_id[clean_sample_obs$fulcrum_id == "2a182461-9cfa-47ab-bedb-4dea02e5d59d"] = "Pe_Bac00658_a"
-clean_sample_obs$bacterial_swab_id[clean_sample_obs$fulcrum_id == "5cbfc389-fc24-4157-88e1-db8359ad4a60"] = "Pe_Bac00658_b"
-clean_sample_obs$antibody_id_4[clean_sample_obs$fulcrum_id == "5cbfc389-fc24-4157-88e1-db8359ad4a60"] = "Pe_IG00000"
-clean_sample_obs$bd_swab_id[clean_sample_obs$fulcrum_id == "80a1f7fe-47fd-488d-a8a3-2f97c23add7c"] = "Pe_Bd00566_a"
-clean_sample_obs$bd_swab_id[clean_sample_obs$fulcrum_id == "5f9332eb-a5b9-4b6a-85cd-4c0d47331840"] = "Pe_Bd00566_b"
-clean_sample_obs$bacterial_swab_id[clean_sample_obs$fulcrum_id == "7e8bd4d0-b393-4e85-8d57-c2decb0df8d4"] = "Pe_Bac00464"
-clean_sample_obs$amp_id[clean_sample_obs$fulcrum_id == "08d85662-12df-479d-ae2c-e6d6dc010038"] = "Pe_AMP00153"
-clean_sample_obs$mucosome_id[clean_sample_obs$fulcrum_id == "c3f4fcd0-f3dc-4cd5-a886-145cbc52d2bb"] = "Pe_Muc00000"
+# clean_sample_obs$amp_id_2[clean_sample_obs$fulcrum_id == "4421e02c-c5d8-4070-88f7-a9e2c2498f65"] = "Pe_AMP00119"
+# clean_sample_obs$bacterial_swab_id[clean_sample_obs$fulcrum_id == "2a182461-9cfa-47ab-bedb-4dea02e5d59d"] = "Pe_Bac00658_a"
+# clean_sample_obs$bacterial_swab_id[clean_sample_obs$fulcrum_id == "5cbfc389-fc24-4157-88e1-db8359ad4a60"] = "Pe_Bac00658_b"
+# clean_sample_obs$antibody_id_4[clean_sample_obs$fulcrum_id == "5cbfc389-fc24-4157-88e1-db8359ad4a60"] = "Pe_IG00000"
+# clean_sample_obs$bd_swab_id[clean_sample_obs$fulcrum_id == "80a1f7fe-47fd-488d-a8a3-2f97c23add7c"] = "Pe_Bd00566_a"
+# clean_sample_obs$bd_swab_id[clean_sample_obs$fulcrum_id == "5f9332eb-a5b9-4b6a-85cd-4c0d47331840"] = "Pe_Bd00566_b"
+# clean_sample_obs$bacterial_swab_id[clean_sample_obs$fulcrum_id == "7e8bd4d0-b393-4e85-8d57-c2decb0df8d4"] = "Pe_Bac00464"
+# clean_sample_obs$amp_id[clean_sample_obs$fulcrum_id == "08d85662-12df-479d-ae2c-e6d6dc010038"] = "Pe_AMP00153"
+# clean_sample_obs$mucosome_id[clean_sample_obs$fulcrum_id == "c3f4fcd0-f3dc-4cd5-a886-145cbc52d2bb"] = "Pe_Muc00000"
 
 ```
 
@@ -1313,9 +1346,10 @@ db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
 unified_sample =  clean_sample_obs %>% 
   full_join(clean_sample_processing, by= c("fulcrum_parent_id" = "fulcrum_id")) %>%
   unite("comments_sample", c("comments_sample.x", "comments_sample.y"), sep=",", remove = TRUE, na.rm = TRUE) %>%
-  select(-fulcrum_id,
-         -fulcrum_parent_id) %>%
-  filter(bag_id != "BAG00")
+  # select(-fulcrum_id,
+  #      -fulcrum_parent_id) %>%
+  filter(bag_id != "BAG00") %>%
+  arrange(date, site, bag_id)
 
 unified_capture = clean_capture_obs %>%
   left_join(clean_capture_survey, by = c("fulcrum_parent_id" = "fulcrum_id")) %>%
@@ -1325,7 +1359,7 @@ unified_capture = clean_capture_obs %>%
   mutate(taxon_capture = coalesce(taxon_sample, taxon_capture),
          uuid_cap_name = paste0(taxon_capture, bag_id, svl_mm, body_mass_g, life_stage, sex, time_of_capture, site, date),
          capture_id = ifelse(is.na(capture_id), UUIDfromName("2128d8af-bb98-4206-a356-25faa67ac3f9", uuid_cap_name), capture_id)) %>%
-  select(-taxon_sample) %>%
+  # select(-taxon_sample) %>%
   unite("comments_capture", c("comments_capture", "comments_sample"), sep=",", remove = TRUE, na.rm = TRUE) %>%
   left_join(clean_survey_info, by = c("site", "date", "time_of_day")) %>%
   mutate(photo = !is.na(photo_id)) %>%
@@ -1345,7 +1379,26 @@ unified_capture = clean_capture_obs %>%
 capture_dupes = get_dupes(unified_capture %>%
                             filter(!negative_control), capture_id)
 
-peace = get_dupes(unified_sample, "site", "date", "time_of_day", "bag_id")
+# peace = get_dupes(unified_capture %>%
+#                     filter(!is.na(bag_id)), "site", "date", "time_of_day", "bag_id") %>%
+#   select(site,
+#          date,
+#          time_of_day,
+#          bag_id,
+#          taxon_capture,
+#          taxon_sample,
+#          everything())
+# 
+# peace = get_dupes(unified_sample %>%
+#                     filter(!is.na(bag_id)), "site", "date", "time_of_day", "bag_id") %>%
+#   select(site,
+#          date,
+#          time_of_day,
+#          bag_id,
+#          taxon_sample,
+#          everything())
+
+
 
 # catch for example if duplicate bad ids
 if (nrow(capture_dupes) > 0) {
@@ -1356,13 +1409,13 @@ if (nrow(unified_capture %>% filter(is.na(site_id))) > 0) {
   stop("Unknown sites returned, consider importing first.")
 }
 
-peace = unified_capture %>%
-  select(fulcrum_id,
-         capture_id,
-         any_of(tbl_keys("visit", mdc)),
-         site,
-         bag_id,
-         amp_id)
+# peace = unified_capture %>%
+#   select(fulcrum_id,
+#          capture_id,
+#          any_of(tbl_keys("visit", mdc)),
+#          site,
+#          bag_id,
+#          amp_id)
 # QA/QC
 
 # exploration
