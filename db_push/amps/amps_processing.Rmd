@@ -97,8 +97,6 @@ raw_maldi_pe_2023$amp_id_2[raw_maldi_pe_2023$amp_id == "Pe_AMP00157,_Pe_AMP00160
 raw_maldi_pe_2023$amp_id[raw_maldi_pe_2023$amp_id == "Pe_AMP00157,_Pe_AMP00160"] = "Pe_AMP00157"
 
 raw_intensity_pe_2023_rcla$amp_id[raw_intensity_pe_2023_rcla$amp_id == "Pe-AMP00154"] = "Pe_AMP00154"
-
-
 ```
 
 # combine similar and clean
@@ -357,7 +355,10 @@ clean_gia = bind_rows(raw_gia_pe %>%
          bd_isolate_id = case_match(bd_isolate_id,
                                     "JEL197" ~ "JEL197_RIBBiTR",
                                     "JEL197 (2023)" ~ "JEL197_RIBBiTR",
-                                    .default = bd_isolate_id)) %>%
+                                    .default = bd_isolate_id),
+         sample_name = if_else(grepl("^AMP\\d{5}$", sample_name),
+                               gsub("AMP", "AMPBath", sample_name),
+                               sample_name)) %>%
     select("sample_name",
          "date_gia",
          "bd_isolate_id",
@@ -377,6 +378,7 @@ clean_gia = bind_rows(raw_gia_pe %>%
   group_by(sample_name, bd_isolate_id) %>%
   mutate(replicate_id = row_number()) %>%
   ungroup()
+
 
 clean_gia$sample_name[clean_gia$sample_name == "PeAMP00154"] = "Pe_AMP00154"
 clean_gia$sample_name[clean_gia$sample_name == "Pe_AMP00247*"] = "Pe_AMP00247"
@@ -581,19 +583,19 @@ dbBegin(dbcon)
       # rows_upsert(db_total, pointer, by="result_id", in_place=TRUE)
       
       # peak
-      db_total = db_rows_upsert(dbcon, db_peak, upsert_peak, by="result_id")
+      db_peak = db_rows_upsert(dbcon, db_peak, upsert_peak, by="result_id")
       # temp_peak = stage_to_temp(dbcon, db_peak, upsert_peak)
       # pointer = tbl(dbcon, temp_peak)
       # rows_upsert(db_peak, pointer, by="result_id", in_place=TRUE)
       
       # intensity
-      db_total = db_rows_upsert(dbcon, db_intensity, upsert_intensity, by="result_id")
+      db_intensity = db_rows_upsert(dbcon, db_intensity, upsert_intensity, by="result_id")
       # temp_intensity = stage_to_temp(dbcon, db_intensity, upsert_intensity)
       # pointer = tbl(dbcon, temp_intensity)
       # rows_upsert(db_intensity, pointer, by="result_id", in_place=TRUE)
       
       # gia
-      db_total = db_rows_upsert(dbcon, db_gia, upsert_gia, by="result_id")
+      db_gia = db_rows_upsert(dbcon, db_gia, upsert_gia, by="result_id")
       # temp_gia = stage_to_temp(dbcon, db_gia, upsert_gia)
       # pointer = tbl(dbcon, temp_gia)
       # rows_upsert(db_gia, pointer, by="result_id", in_place=TRUE)
