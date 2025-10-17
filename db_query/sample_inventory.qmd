@@ -8,7 +8,7 @@ format: html
 librarian::shelf(tidyverse, dbplyr, here, lubridate, RPostgres, DBI, RIBBiTR-BII/ribbitrrr)
 
 ## Connect to DB
-dbcon <- hopToDB("ribbitr")
+dbcon = hopToDB("ribbitr")
 
 ## Pull column metadata from database
 mdc = tbl(dbcon, Id("public", "all_columns")) %>%
@@ -148,8 +148,8 @@ amp_mismatchatch = amp_tables %>%
   filter(xor(results, survey))
 
 # amp
-unmatched_results_amp = amp_tables %>%
-  filter(is.na(capture_id))
+amp_results_unmatched = amp_tables %>%
+  filter(results & !survey)
 
 unmatched_samples_amp = amp_tables %>%
   rowwise() %>%

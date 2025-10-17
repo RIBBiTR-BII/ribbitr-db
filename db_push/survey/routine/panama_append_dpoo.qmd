@@ -432,16 +432,73 @@ clean_visit_info$region[clean_visit_info$fulcrum_id == "8a54cac0-7d98-4383-9f22-
 clean_visit_info$region[clean_visit_info$fulcrum_id == "4d1d919d-45ef-4209-8e5a-79a77f3337da"] = "el_valle"
 clean_visit_info$region[clean_visit_info$fulcrum_id == "dd14f50c-85a1-4272-bf02-32daa347e430"] = "el_valle"
 
+# start dates
+clean_visit_info$date[clean_visit_info$fulcrum_id == "31450e5e-cb89-4a31-8296-bbc242b47f39"] = "2022-11-20"
+clean_visit_info$start_date[clean_visit_info$fulcrum_id == "31450e5e-cb89-4a31-8296-bbc242b47f39"] = "2022-11-20"
 
-# peace =  clean_visit_info %>%
-#   left_join(clean_survey_info, by = c("temp_visit_id" = "visit_fulcrum_id")) %>%
-#   select(site,
-#          temp_survey_id,
-#          utmz,
-#          environmental_utme,
-#          environmental_utmn) %>%
-#     arrange(site,
-#             environmental_utmn)
+clean_visit_info$date[clean_visit_info$fulcrum_id == "38033072-39bb-4428-bd29-936c4f871b69"] = "2023-08-09"
+clean_visit_info$start_date[clean_visit_info$fulcrum_id == "38033072-39bb-4428-bd29-936c4f871b69"] = "2023-08-09"
+
+clean_visit_info$date[clean_visit_info$fulcrum_id == "6bc0e6b9-f46b-4722-83db-2b851bbcced5"] = "2023-07-28"
+clean_visit_info$start_date[clean_visit_info$fulcrum_id == "6bc0e6b9-f46b-4722-83db-2b851bbcced5"] = "2023-07-28"
+
+clean_visit_info$date[clean_visit_info$fulcrum_id == "e9b2462f-a946-4640-8ce3-52651168bd37"] = "2024-08-04"
+clean_visit_info$start_date[clean_visit_info$fulcrum_id == "e9b2462f-a946-4640-8ce3-52651168bd37"] = "2024-08-04"
+
+clean_visit_info$date[clean_visit_info$fulcrum_id == "5c01ebd0-4c0b-4079-9de9-491595e36533"] = "2025-08-05"
+clean_visit_info$start_date[clean_visit_info$fulcrum_id == "5c01ebd0-4c0b-4079-9de9-491595e36533"] = "2025-08-05"
+
+clean_visit_info$date[clean_visit_info$fulcrum_id == "261783b4-a4da-45ac-a986-f8be91d48e9b"] = "2025-07-24"
+clean_visit_info$start_date[clean_visit_info$fulcrum_id == "261783b4-a4da-45ac-a986-f8be91d48e9b"] = "2025-07-24"
+clean_visit_info$end_date[clean_visit_info$fulcrum_id == "261783b4-a4da-45ac-a986-f8be91d48e9b"] = "2025-07-24"
+
+clean_visit_info$date[clean_visit_info$fulcrum_id == "b2287586-7a8d-4e66-9515-a72cc3aea436"] = "2025-07-25"
+clean_visit_info$start_date[clean_visit_info$fulcrum_id == "b2287586-7a8d-4e66-9515-a72cc3aea436"] = "2025-07-25"
+clean_visit_info$end_date[clean_visit_info$fulcrum_id == "b2287586-7a8d-4e66-9515-a72cc3aea436"] = "2025-07-25"
+
+# end dates
+clean_visit_info$end_date[clean_visit_info$fulcrum_id == "68a08f04-7393-4b88-9daf-eed7a283644d"] = "2022-12-10"
+clean_visit_info$end_date[clean_visit_info$fulcrum_id == "01c9839c-a6a5-4d85-bc4e-4b6cb89a5f79"] = "2023-07-30"
+clean_visit_info$end_date[clean_visit_info$fulcrum_id == "97e573f4-d96e-424c-9230-d7aba28cd370"] = "2024-11-27"
+
+
+# missing negative controls
+clean_visit_info[clean_visit_info$fulcrum_id == "31450e5e-cb89-4a31-8296-bbc242b47f39", 
+                 c("mucosome_control_id", "microbiome_control_id", "amps_control_id", "amps_hcl_control_id")] = "221120_NegControl"
+clean_visit_info[clean_visit_info$fulcrum_id == "ed2f1d0e-83f8-4792-8ffe-af7a2402d6c2", 
+                 c("mucosome_control_id", "microbiome_control_id", "amps_control_id", "amps_hcl_control_id")] = "221122_NegControl"
+clean_visit_info[clean_visit_info$fulcrum_id == "876ad2aa-c6f7-414b-ac4a-c8bb7ce7e17d", 
+                 c("mucosome_control_id", "microbiome_control_id", "amps_control_id", "amps_hcl_control_id")] = "221127_NegControl"
+clean_visit_info[clean_visit_info$fulcrum_id == "9c6f0a4a-dd7d-4d8d-8584-b661e8497edb", 
+                 c("mucosome_control_id", "microbiome_control_id", "amps_control_id", "amps_hcl_control_id")] = "221127_NegControl"
+clean_visit_info[clean_visit_info$fulcrum_id == "82dddaae-4382-4483-9b5e-3e90dec6b696", 
+                 c("mucosome_control_id", "microbiome_control_id", "amps_control_id", "amps_hcl_control_id")] = "230721_NegControl"
+clean_visit_info[clean_visit_info$fulcrum_id == "5be2521f-d898-4a23-a0f8-a0bb82c59f71", 
+                 c("mucosome_control_id", "microbiome_control_id", "amps_control_id", "amps_hcl_control_id")] = "230804_NegControl"
+clean_visit_info[clean_visit_info$fulcrum_id == "54ab702e-c144-4e80-a3d9-5a13978e9c71", 
+                 c("mucosome_control_id", "microbiome_control_id", "amps_control_id", "amps_hcl_control_id")] = "230807_NegControl"
+clean_visit_info[clean_visit_info$fulcrum_id == "391c5db8-5ca7-4d76-8b38-b57eeb556fc3", 
+                 c("mucosome_control_id", "microbiome_control_id", "amps_control_id", "amps_hcl_control_id")] = "231206_NegControl"
+
+
+clean_visit_info[clean_visit_info$fulcrum_id == "eed014eb-d2ad-4af0-9ab3-6f4e4cc71e94", 
+                 c("mucosome_control_id", "microbiome_control_id", "amps_control_id", "amps_hcl_control_id")] = "221120_NegControl"
+clean_visit_info[clean_visit_info$fulcrum_id == "8d364048-b524-4f0f-b953-a1facee2ccdb", 
+                 c("mucosome_control_id", "microbiome_control_id", "amps_control_id", "amps_hcl_control_id")] = "221118_NegControl"
+clean_visit_info[clean_visit_info$fulcrum_id == "0904e2c7-5f8b-4ab9-b2d3-e8dd8120f016", 
+                 c("mucosome_control_id", "microbiome_control_id", "amps_control_id", "amps_hcl_control_id")] = "221121_NegControl"
+clean_visit_info[clean_visit_info$fulcrum_id == "41ac0d8c-0403-460f-bc24-f4d656177063", 
+                 c("mucosome_control_id", "microbiome_control_id", "amps_control_id", "amps_hcl_control_id")] = "230807_NegControl"
+clean_visit_info[clean_visit_info$fulcrum_id == "09551521-d1d2-46af-b348-493874cdc3d3", 
+                 c("mucosome_control_id", "microbiome_control_id", "amps_control_id", "amps_hcl_control_id")] = "231121_Negative Control"
+clean_visit_info[clean_visit_info$fulcrum_id == "adc9924e-d119-4c0d-b4ef-a93ec982c005", 
+                 c("mucosome_control_id", "microbiome_control_id", "amps_control_id", "amps_hcl_control_id")] = "231129_NegativeControl"
+clean_visit_info[clean_visit_info$fulcrum_id == "71b0b99d-f214-42d1-abbb-025f9a5a6832", 
+                 c("mucosome_control_id", "microbiome_control_id", "amps_control_id", "amps_hcl_control_id")] = "240722_NegativeControl"
+clean_visit_info[clean_visit_info$fulcrum_id == "8fe0679c-8833-4e97-9ee3-d9e983f161b9", 
+                 c("mucosome_control_id", "microbiome_control_id", "amps_control_id", "amps_hcl_control_id")] = "240721_NegativeControl"
+clean_visit_info[clean_visit_info$fulcrum_id == "c3b97614-e3df-4b92-9d78-65583e9785de", 
+                 c("mucosome_control_id", "microbiome_control_id", "amps_control_id", "amps_hcl_control_id")] = "240721_NegativeControl"
 
 ```
 
@@ -557,6 +614,10 @@ gelled_visit = unified_visit %>%
 
 
 peace = get_dupes(gelled_visit, date, time_of_day, site_id)
+
+vids = gelled_visit %>%
+  filter(temp_visit_id %in% f_vids) %>%
+  pull(visit_id)
 ```
 
 ## Generate stats for log
@@ -1255,13 +1316,11 @@ negative_controls = gelled_capture %>%
          negative_control = TRUE,
          old_sample_name = sample_name,
          sample_name = tolower(gsub(" ", "", sample_name)),
-         sample_name = gsub("negcontrol", "negativecontrol", sample_name)) %>%
+         sample_name = gsub("negcontrol", "negativecontrol", sample_name),
+         sample_name = gsub("amps_hcl_neg_con$|amps_neg_con$|bac_neg_con$|mucosome_neg_con$|negacontrol$|negativwcontrol$", "negativecontrol", sample_name)) %>%
   select(-name) %>%
   filter(!is.na(sample_name)) %>%
   distinct()
-
-negative_controls$sample_name[negative_controls$sample_name == "221121_negacontrol"] = "221121_negativecontrol"
-negative_controls$sample_name[negative_controls$sample_name == "231129_negativwcontrol"] = "231129_negativecontrol"
 
 # drop these outside of workflow to leave a clean trail
 nc_old_sample_names = negative_controls %>%
@@ -1455,30 +1514,30 @@ if (x_capture) {
   
   tryCatch(
     {
-      # db_cmr = db_rows_update(dbcon, db_cmr, upsert_cmr, by="cmr_id")
-      temp_cmr = stage_to_temp(dbcon, db_cmr, upsert_cmr)
-      pointer = tbl(dbcon, temp_cmr)
-      rows_upsert(db_cmr, pointer, by="cmr_id", in_place=TRUE)
+      db_cmr = db_rows_update(dbcon, db_cmr, upsert_cmr, by="cmr_id")
+      # temp_cmr = stage_to_temp(dbcon, db_cmr, upsert_cmr)
+      # pointer = tbl(dbcon, temp_cmr)
+      # rows_upsert(db_cmr, pointer, by="cmr_id", in_place=TRUE)
       
-      # db_survey = db_rows_update(dbcon, db_survey, upsert_capture_survey, by="survey_id")
-      temp_capture_survey = stage_to_temp(dbcon, db_survey, upsert_capture_survey)
-      pointer = tbl(dbcon, temp_capture_survey)
-      rows_upsert(db_survey, pointer, by="survey_id", in_place=TRUE)
+      db_survey = db_rows_update(dbcon, db_survey, upsert_capture_survey, by="survey_id")
+      # temp_capture_survey = stage_to_temp(dbcon, db_survey, upsert_capture_survey)
+      # pointer = tbl(dbcon, temp_capture_survey)
+      # rows_upsert(db_survey, pointer, by="survey_id", in_place=TRUE)
 
-      # db_taxa = db_rows_update(dbcon, db_taxa, insert_capture_taxa, by="taxon_id")
-      temp_capture_taxa = stage_to_temp(dbcon, db_taxa, insert_capture_taxa)
-      pointer = tbl(dbcon, temp_capture_taxa)
-      rows_insert(db_taxa, pointer, by="taxon_id", in_place=TRUE, conflict = "ignore")
+      db_taxa = db_rows_update(dbcon, db_taxa, insert_capture_taxa, by="taxon_id")
+      # temp_capture_taxa = stage_to_temp(dbcon, db_taxa, insert_capture_taxa)
+      # pointer = tbl(dbcon, temp_capture_taxa)
+      # rows_insert(db_taxa, pointer, by="taxon_id", in_place=TRUE, conflict = "ignore")
       
-      # db_capture = db_rows_update(dbcon, db_capture, upsert_capture, by="capture_id")
-      temp_capture = stage_to_temp(dbcon, db_capture, upsert_capture)
-      pointer = tbl(dbcon, temp_capture)
-      rows_upsert(db_capture, pointer, by="capture_id", in_place=TRUE)
+      db_capture = db_rows_update(dbcon, db_capture, upsert_capture, by="capture_id")
+      # temp_capture = stage_to_temp(dbcon, db_capture, upsert_capture)
+      # pointer = tbl(dbcon, temp_capture)
+      # rows_upsert(db_capture, pointer, by="capture_id", in_place=TRUE)
       
-      # db_sample = db_rows_update(dbcon, db_sample, upsert_sample_nc, by="sample_id")
-      temp_sample = stage_to_temp(dbcon, db_sample, upsert_sample)
-      pointer = tbl(dbcon, temp_sample)
-      rows_upsert(db_sample, pointer, by="sample_id", in_place=TRUE)
+      db_sample = db_rows_update(dbcon, db_sample, upsert_sample_nc, by="sample_id")
+      # temp_sample = stage_to_temp(dbcon, db_sample, upsert_sample)
+      # pointer = tbl(dbcon, temp_sample)
+      # rows_upsert(db_sample, pointer, by="sample_id", in_place=TRUE)
       
       # Commit the transaction if successful
       dbCommit(dbcon)

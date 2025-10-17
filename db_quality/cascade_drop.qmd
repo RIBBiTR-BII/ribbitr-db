@@ -41,7 +41,7 @@ db_country = tbl(dbcon, Id("survey_data", "country"))
 
 # Visit orphans
 ```{r}
-drop_ids = tray$orphan$visit_id
+drop_ids = vids
   
 drop_visit = db_visit %>%
   filter(visit_id %in% drop_ids)

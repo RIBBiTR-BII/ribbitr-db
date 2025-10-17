@@ -66,16 +66,10 @@ raw_intensity_pe_2022_rcat = read_csv(here(ri_wddir, "pennsylvania", "PLE 2022 R
 
 raw_peptide_pe_2023 = read_csv(here(ri_wddir, "pennsylvania", "2023_AMP PLE peptide quantity mBCA data.csv"))
 raw_maldi_pe_2023 = read_csv(here(ri_wddir, "pennsylvania", "PLE MALDI peak list 2023 species combined.csv"))
-raw_maldi_pe_2023$amp_id_2[raw_maldi_pe_2023$amp_id == "Pe_AMP00116_00119"] = "Pe_AMP00119"
-raw_maldi_pe_2023$amp_id[raw_maldi_pe_2023$amp_id == "Pe_AMP00116_00119"] = "Pe_AMP00116"
-raw_maldi_pe_2023$amp_id_2[raw_maldi_pe_2023$amp_id == "Pe_AMP00157,_Pe_AMP00160"] = "Pe_AMP00160"
-raw_maldi_pe_2023$amp_id[raw_maldi_pe_2023$amp_id == "Pe_AMP00157,_Pe_AMP00160"] = "Pe_AMP00157"
-
 
 raw_intensity_pe_2023_rpip = read_csv(here(ri_wddir, "pennsylvania", "2023_ PA R. pipiens amp ID intensity.csv"))
 raw_intensity_pe_2023_rcat = read_csv(here(ri_wddir, "pennsylvania", "2023_ PA R. catesbeiana amp ID intensity.csv"))
 raw_intensity_pe_2023_rcla = read_csv(here(ri_wddir, "pennsylvania","2023_ PA R. clamitans amp ID intensity.csv"))
-raw_intensity_pe_2023_rcla$amp_id[raw_intensity_pe_2023_rcla$amp_id == "Pe-AMP00154"] = "Pe_AMP00154"
 
 # sierra nevada
 raw_peptide_sn_2022 = read_csv(here(ri_wddir, "sierra nevada", "BII Sierra 2022 peptides.csv"))
@@ -95,6 +89,15 @@ raw_gia_pe = read_csv(here(ri_wddir, "gia_data", "2025-03-25", "Summary PA GIAs-
 raw_gia_serdp = read_csv(here(sr_wddir, "amp_gia_serdp.csv"))
 
 raw_total_serdp = read_csv(here(sr_wddir, "amp_total_serdp.csv"))
+
+# specific corrections
+raw_maldi_pe_2023$amp_id_2[raw_maldi_pe_2023$amp_id == "Pe_AMP00116_00119"] = "Pe_AMP00119"
+raw_maldi_pe_2023$amp_id[raw_maldi_pe_2023$amp_id == "Pe_AMP00116_00119"] = "Pe_AMP00116"
+raw_maldi_pe_2023$amp_id_2[raw_maldi_pe_2023$amp_id == "Pe_AMP00157,_Pe_AMP00160"] = "Pe_AMP00160"
+raw_maldi_pe_2023$amp_id[raw_maldi_pe_2023$amp_id == "Pe_AMP00157,_Pe_AMP00160"] = "Pe_AMP00157"
+
+raw_intensity_pe_2023_rcla$amp_id[raw_intensity_pe_2023_rcla$amp_id == "Pe-AMP00154"] = "Pe_AMP00154"
+
 
 ```
 
@@ -171,11 +174,13 @@ clean_peak = bind_rows(raw_maldi_br_2022 %>%
                          clean_names(),
                        raw_maldi_pa_2022_cpan %>%
                          rename(amp_id = Sample_ID) %>%
-                         clean_names(),
+                         clean_names() %>%
+                         clean_panama_controls(),
                        raw_maldi_pa_2022_lwarz %>%
                          rename(amp_id = Sample_ID) %>%
-                         clean_names,
-                       peace = raw_maldi_pa_2023 %>%
+                         clean_names %>%
+                         clean_panama_controls(),
+                       raw_maldi_pa_2023 %>%
                          clean_names() %>%
                          clean_panama_controls(),
                        raw_maldi_pe_2022 %>%
@@ -564,29 +569,34 @@ dbBegin(dbcon)
   tryCatch(
     {
       # all samples
-      temp_sample = stage_to_temp(dbcon, db_sample, upsert_sample_all)
-      pointer = tbl(dbcon, temp_sample)
-      rows_upsert(db_sample, pointer, by="sample_id", in_place=TRUE)
+      db_sample = db_rows_upsert(dbcon, db_sample, upsert_sample_all, by="sample_id")
+      # temp_sample = stage_to_temp(dbcon, db_sample, upsert_sample_all)
+      # pointer = tbl(dbcon, temp_sample)
+      # rows_upsert(db_sample, pointer, by="sample_id", in_place=TRUE)
       
       # total
-      temp_total = stage_to_temp(dbcon, db_total, upsert_total)
-      pointer = tbl(dbcon, temp_total)
-      rows_upsert(db_total, pointer, by="result_id", in_place=TRUE)
+      db_total = db_rows_upsert(dbcon, db_total, upsert_total, by="result_id")
+      # temp_total = stage_to_temp(dbcon, db_total, upsert_total)
+      # pointer = tbl(dbcon, temp_total)
+      # rows_upsert(db_total, pointer, by="result_id", in_place=TRUE)
       
       # peak
-      temp_peak = stage_to_temp(dbcon, db_peak, upsert_peak)
-      pointer = tbl(dbcon, temp_peak)
-      rows_upsert(db_peak, pointer, by="result_id", in_place=TRUE)
+      db_total = db_rows_upsert(dbcon, db_peak, upsert_peak, by="result_id")
+      # temp_peak = stage_to_temp(dbcon, db_peak, upsert_peak)
+      # pointer = tbl(dbcon, temp_peak)
+      # rows_upsert(db_peak, pointer, by="result_id", in_place=TRUE)
       
       # intensity
-      temp_intensity = stage_to_temp(dbcon, db_intensity, upsert_intensity)
-      pointer = tbl(dbcon, temp_intensity)
-      rows_upsert(db_intensity, pointer, by="result_id", in_place=TRUE)
+      db_total = db_rows_upsert(dbcon, db_intensity, upsert_intensity, by="result_id")
+      # temp_intensity = stage_to_temp(dbcon, db_intensity, upsert_intensity)
+      # pointer = tbl(dbcon, temp_intensity)
+      # rows_upsert(db_intensity, pointer, by="result_id", in_place=TRUE)
       
       # gia
-      temp_gia = stage_to_temp(dbcon, db_gia, upsert_gia)
-      pointer = tbl(dbcon, temp_gia)
-      rows_upsert(db_gia, pointer, by="result_id", in_place=TRUE)
+      db_total = db_rows_upsert(dbcon, db_gia, upsert_gia, by="result_id")
+      # temp_gia = stage_to_temp(dbcon, db_gia, upsert_gia)
+      # pointer = tbl(dbcon, temp_gia)
+      # rows_upsert(db_gia, pointer, by="result_id", in_place=TRUE)
       
       # Commit the transaction if successful
       dbCommit(dbcon)
