@@ -1596,6 +1596,10 @@ clean_penn_sample_case <- function(dataframe, sample_name = "sample_name") {
     mutate(!!sample_sym := updated_col)
 }
 
+bd_dryswabs = s3 %>%
+  filter(grepl("^dryswab\\d{5}$", sample_name, ignore.case = TRUE)) %>%
+  mutate(sample_type = "bd")
+
 clean_sample = rbind(s1 %>%
                      select(all_of(select_cols)),
                    s2 %>%
@@ -1609,6 +1613,8 @@ clean_sample = rbind(s1 %>%
                    s6 %>%
                      select(all_of(select_cols)),
                    s7 %>%
+                     select(all_of(select_cols)),
+                   bd_dryswabs %>%
                      select(all_of(select_cols))) %>%
   clean_penn_sample_case()
 
@@ -1714,7 +1720,69 @@ peace = compare_updates(tray, c("sample_name", "sample_type", "negative_control"
 upsert_sample = bind_rows(tray$insert,
                           tray$update)
 
+##### investigate some duplicates in the database...
+
 hope = peace[[1]]
+
+ds_new = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  filter(capture_id %in% hope$capture_id_new) %>%
+  select(visit_id) %>%
+  distinct() %>%
+  arrange(visit_id) %>%
+  pull(visit_id)
+
+ds_old = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  filter(capture_id %in% hope$capture_id_old) %>%
+  select(visit_id) %>%
+  distinct() %>%
+  arrange(visit_id) %>%
+  pull(visit_id)
+
+common = intersect(ds_new, ds_old)
+
+ds_surveys_new = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  filter(capture_id %in% hope$capture_id_new) %>%
+  select(survey_id) %>%
+  distinct() %>%
+  arrange(survey_id) %>%
+  collect()
+
+ds_surveys_old = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  filter(capture_id %in% hope$capture_id_old) %>%
+  select(survey_id) %>%
+  distinct() %>%
+  arrange(survey_id) %>%
+  collect()
+
+common_surveys = db_survey %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  filter(visit_id %in% common) %>%
+  arrange(date, site, detection_type) %>%
+  select(all_of(tbl_keys("survey", mdc)),
+         all_of(tbl_keys("visit", mdc)),
+         site) %>%
+  collect()
+
+drop_surveys = common_surveys %>%
+  filter(!grepl("[A-Z]", observers_survey))
+
+sids = drop_surveys %>%
+  pull(survey_id)
+
+#####
 
 if (nrow(tray$update) > 0) {
   warning("Sample updates may indicate duplicate capture_ids. Investigation recommended.")
