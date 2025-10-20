@@ -9,7 +9,7 @@ editor: source
 ## Load Packages
 
 ```{r}
-librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr, readxl)
 # librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 
 ## Connect to DB
@@ -127,9 +127,14 @@ raw_cmr <- read_csv(here(wddir, "supp_penn_cmrids", "supp_penn_cmrids.csv"))
 raw_sample_processing <- read_csv(here(wddir, "6_penn_sampleprocessing", "6_penn_sampleprocessing.csv"))
 raw_sample_obs <- read_csv(here(wddir, "6_penn_sampleprocessing", "6_penn_sampleprocessing_amphibian_capture_survey_collections.csv"))
 
-raw_edna_survey <- read_csv(here(wddir, "3_penn_ednasurvey", "3_penn_ednasurvey.csv"))
-raw_edna_collection <- read_csv(here(wddir, "3_penn_ednasurvey", "3_penn_ednasurvey_edna_collection.csv"))
-raw_edna_filtering <- read_csv(here(wddir, "3_penn_ednasurvey", "3_penn_ednasurvey_edna_collection_edna_filtering.csv"))
+# raw_edna_survey <- read_csv(here(wddir, "3_penn_ednasurvey", "3_penn_ednasurvey.csv"))
+# raw_edna_collection <- read_csv(here(wddir, "3_penn_ednasurvey", "3_penn_ednasurvey_edna_collection.csv"))
+# raw_edna_filtering <- read_csv(here(wddir, "3_penn_ednasurvey", "3_penn_ednasurvey_edna_collection_edna_filtering.csv"))
+
+raw_edna_2022 = read_xlsx(here(wddir, "eDNA Collection Data PENN 22-25_2025-10-20.xlsx"), sheet = "Pennsylvania '22")
+raw_edna_2023 = read_xlsx(here(wddir, "eDNA Collection Data PENN 22-25_2025-10-20.xlsx"), sheet = "Pennsylvania '23")
+raw_edna_2024 = read_xlsx(here(wddir, "eDNA Collection Data PENN 22-25_2025-10-20.xlsx"), sheet = "Pennsylvania '24")
+raw_edna_2025 = read_xlsx(here(wddir, "eDNA Collection Data PENN 22-25_2025-10-20.xlsx"), sheet = "Pennsylvania '25")
 
 raw_tables = c(
   "raw_survey_info",
@@ -516,61 +521,95 @@ clean_sample_obs = bind_rows(
            "b31fdc78-08fa-48c1-8661-a0a0cc635deb"))
          )
 
-clean_edna_survey = raw_edna_survey %>%
+# clean_edna_survey = raw_edna_survey %>%
+#   clean_names() %>%
+#   rename(comments_survey = edna_survey_comments,
+#          survey_latitude = latitude,
+#          survey_longitude = longitude) %>%
+#   mutate(site = str_to_lower(site),
+#          site = str_replace_all(site, "-", "_"),
+#          site = str_replace_all(site, " ", "_"),
+#          time_of_day = str_to_lower(survey_time),
+#          transect = NA,
+#          detection_type = "edna",
+#          detection_subtype = NA_character_) %>%
+#   unite(observer_edna, c("observer", "observer_other"), sep=",", remove = TRUE, na.rm = TRUE) %>%
+#   select(-any_of(to_drop)) %>%
+#   filter(!if_all(everything(), is.na),
+#          !is.na(site)) 
+# 
+# clean_edna_2022_cs = clean_survey_info %>%
+#   filter(src == 2022) %>%
+#   rename(edna_latitude = environmental_latitude,
+#          edna_longitude = environmental_longitude) %>%
+#   mutate(filter_method = "passive",
+#          collection_time = air_time,
+#          collection_volume_ml = edna_volume_collected_l * 1000,
+#          edna_id = temp_survey_id,
+#          detection_type = "edna",
+#          detection_subtype = NA_character_) %>%
+#   select(-any_of(to_drop))
+# 
+# clean_edna_collection = raw_edna_collection %>%
+#   clean_names() %>%
+#   rename(edna_latitude = latitude,
+#          edna_longitude = longitude,
+#          collection_volume_ml = edna_volume,
+#          filter_method = collection_type) %>%
+#   unite(comments_edna, c("edna_sample_comments", "edna_collection_description"), sep=" ", remove = TRUE, na.rm = TRUE) %>%
+#   mutate(start_time = collection_time,
+#          edna_id = fulcrum_id,
+#          frozen =  as.logical(case_match(frozen,
+#                                          "yes" ~ TRUE,
+#                                          "no" ~ FALSE)),
+#          negative_control = grepl("control", comments_edna),
+#          filter_method = tolower(gsub("-Bag", "", filter_method))) %>%
+#   select(-any_of(to_drop))
+# 
+# clean_edna_filtering  = raw_edna_filtering %>%
+#   clean_names() %>%
+#   rename(filter_date = filtration_date,
+#          filter_size_um = filter_size,
+#          filter_start_time = filtration_start_time,
+#          filter_end_time = filtration_end_time,
+#          edna_sample_name = edna_tube_id) %>%
+#   select(-any_of(to_drop),
+#          -latitude,
+#          -longitude)
+
+clean_edna = bind_rows(raw_edna_2022 %>%
+                         select(-`Sample ID`),
+                       raw_edna_2023 %>%
+                         mutate(`mLs Filtered` = as.numeric(`mLs Filtered`)),
+                       raw_edna_2024,
+                       raw_edna_2025) %>%
   clean_names() %>%
-  rename(comments_survey = edna_survey_comments,
-         survey_latitude = latitude,
-         survey_longitude = longitude) %>%
-  mutate(site = str_to_lower(site),
-         site = str_replace_all(site, "-", "_"),
-         site = str_replace_all(site, " ", "_"),
-         time_of_day = str_to_lower(survey_time),
+  filter(nc_sample != "Sterile") %>%
+  mutate(sample_id = if_else(is.na(sample_id),
+                             gsub("_2\\d{1}_", "_", edited_sample_id),
+                             sample_id),
+         sample_id = gsub("eDNA_(\\d{3})$", "eDNA00\\1", sample_id),
+         negative_control = nc_sample == "NC",
+         filter_method = tolower(passive_active),
+         site = gsub(" |-", "_", tolower(site)),
+         site = if_else(site != "tryon_weber",
+                        paste0(site, "_pond"),
+                        site),
+         detection_type = "edna",
+         detection_subtype = NA,
          transect = NA,
-         detection_type = "edna",
-         detection_subtype = NA_character_) %>%
-  unite(observer_edna, c("observer", "observer_other"), sep=",", remove = TRUE, na.rm = TRUE) %>%
-  select(-any_of(to_drop)) %>%
-  filter(!if_all(everything(), is.na),
-         !is.na(site)) 
-
-clean_edna_2022_cs = clean_survey_info %>%
-  filter(src == 2022) %>%
-  rename(edna_latitude = environmental_latitude,
-         edna_longitude = environmental_longitude) %>%
-  mutate(filter_method = "passive",
-         collection_time = air_time,
-         collection_volume_ml = edna_volume_collected_l * 1000,
-         edna_id = temp_survey_id,
-         detection_type = "edna",
-         detection_subtype = NA_character_) %>%
-  select(-any_of(to_drop))
-
-clean_edna_collection = raw_edna_collection %>%
-  clean_names() %>%
-  rename(edna_latitude = latitude,
-         edna_longitude = longitude,
-         collection_volume_ml = edna_volume,
-         filter_method = collection_type) %>%
-  unite(comments_edna, c("edna_sample_comments", "edna_collection_description"), sep=" ", remove = TRUE, na.rm = TRUE) %>%
-  mutate(start_time = collection_time,
-         edna_id = fulcrum_id,
-         frozen =  as.logical(case_match(frozen,
-                                         "yes" ~ TRUE,
-                                         "no" ~ FALSE)),
-         negative_control = grepl("control", comments_edna),
-         filter_method = tolower(gsub("-Bag", "", filter_method))) %>%
-  select(-any_of(to_drop))
-
-clean_edna_filtering  = raw_edna_filtering %>%
-  clean_names() %>%
-  rename(filter_date = filtration_date,
-         filter_size_um = filter_size,
-         filter_start_time = filtration_start_time,
-         filter_end_time = filtration_end_time,
-         edna_sample_name = edna_tube_id) %>%
-  select(-any_of(to_drop),
-         -latitude,
-         -longitude)
+         start_time = NA) %>%
+  rename(edna_sample_name = edited_sample_id,
+         filter_volume_ml = m_ls_filtered,
+         date = collection_date,
+         filter_date = filtration_date,
+         comments_edna = filtering_notes) %>%
+  left_join(clean_survey_info %>%
+              select(site, date, time_of_day), by = c("site", "date"), relationship = "many-to-many") %>%
+  arrange(date, time_of_day) %>%
+  group_by(edna_sample_name) %>%
+  slice_head(n = 1) %>%
+  ungroup()
 
 
 ## Revisions: Handle special cases on a row-by-row basis
@@ -681,14 +720,33 @@ unique_visit <- bind_rows(clean_survey_info,
                           clean_aural_survey,
                           clean_capture_survey,
                           clean_sample_processing,
-                          clean_edna_survey,
+                          # clean_edna,
                           clean_ves_survey) %>% 
   select(date, site, time_of_day) %>%
   distinct()
 
+# edna_visits = clean_edna %>%
+#   select(date, site, time_of_day) %>%
+#   distinct()
+# 
+# vids = edna_visits %>%
+#   anti_join(unique_visit, by = c("date", "site", "time_of_day")) %>%
+#   left_join(db_site %>%
+#               select(tbl_keys("site", mdc)) %>%
+#               collect(),
+#             by = tbl_nkey("site", mdc)) %>%
+#   left_join(db_visit %>%
+#               select(tbl_keys("visit", mdc)) %>%
+#               collect(),
+#             by = tbl_nkey("visit", mdc)) %>%
+#   filter(!is.na(visit_id)) %>%
+#   pull(visit_id)
+
 unified_visit = clean_survey_info %>%
   full_join(unique_visit, by = c("site", "date", "time_of_day")) %>%
-  filter(!is.na(site))
+  filter(!is.na(site)) %>%
+  mutate(visit_lab = "rz_lab",
+         project_id = "ribbitr")
 
 ```
 
@@ -933,12 +991,8 @@ db_env = tbl(dbcon, Id("survey_data", "environmental"))
 
 ### unify edna
 ```{r}
-unified_edna = clean_edna_collection %>%
-  left_join(clean_edna_filtering, by = c("fulcrum_id" = "fulcrum_parent_id")) %>%
-  left_join(clean_edna_survey, by = c("fulcrum_parent_id" = "fulcrum_id")) %>%
-  select(-fulcrum_parent_id) %>%
+unified_edna = clean_edna %>%
   left_join(clean_survey_info, by = c("site", "date", "time_of_day")) %>%
-  bind_rows(clean_edna_2022_cs) %>%
   left_join(db_site %>%
               select(tbl_keys("site", mdc)) %>%
               collect(),
@@ -960,21 +1014,17 @@ unified_edna = clean_edna_collection %>%
 ```{r}
 gelled_edna = unified_edna %>%
   group_by_at(tbl_nkey("survey", mdc)) %>%
-  mutate(comments_survey = str_c(comments_survey, collapse = ", "),
-         start_timestamp_utc = start_timestamp_utc(date, start_time, local_tz),
-         number_observers = count_observers(paste(observers_survey, collapse = ",")),
-         uuid_name = paste0(visit_id, start_time, transect, detection_type),
+  mutate(uuid_name = paste0(visit_id, detection_type),
          survey_id = ifelse(is.na(survey_id),
                             UUIDfromName("5113bb6e-8cff-4a2d-9910-904403736cfb", uuid_name),
                             survey_id)) %>%
   ungroup() %>%
-  group_by(date) %>%
+  group_by(date, site) %>%
   mutate(has_negative_control = sum(negative_control) > 0,
          negative_control_group_id = if_else(has_negative_control,
                                              UUIDfromName("42e537a1-5992-45d3-9eed-0f4920625be0", paste0("edna", date)),
                                              NA)) %>%
-  ungroup() %>%
-  select(-fulcrum_id)
+  ungroup()
 ```
 
 ### subset edna
@@ -1782,7 +1832,7 @@ drop_surveys = common_surveys %>%
 sids = drop_surveys %>%
   pull(survey_id)
 
-#####
+######
 
 if (nrow(tray$update) > 0) {
   warning("Sample updates may indicate duplicate capture_ids. Investigation recommended.")

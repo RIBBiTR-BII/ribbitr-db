@@ -217,7 +217,7 @@ tryCatch(
 ```
 # survey orphans
 ```{r}
-drop_ids = pa_sids
+drop_ids = sids
 
 drop_survey = db_survey %>%
   filter(survey_id %in% drop_ids)
