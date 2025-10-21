@@ -24,8 +24,8 @@ mdc = tbl(dbcon, Id("public", "all_columns")) %>%
 ddir = Sys.getenv("data_dir")  # data directory
 
 # Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
-wddir_2022 = here(ddir, "fulcrum", "penn", "Fulcrum_Data_2022")
-wddir = here(ddir, "fulcrum", 'penn', '2024-11-18') # working data directory
+wddir_2022 = here(ddir, "pennsylvania", "fulcrum", "Fulcrum_Data_2022")
+wddir = here(ddir, "pennsylvania", "fulcrum", '2025-10-21') # working data directory
 
 ```
 
@@ -131,10 +131,10 @@ raw_sample_obs <- read_csv(here(wddir, "6_penn_sampleprocessing", "6_penn_sample
 # raw_edna_collection <- read_csv(here(wddir, "3_penn_ednasurvey", "3_penn_ednasurvey_edna_collection.csv"))
 # raw_edna_filtering <- read_csv(here(wddir, "3_penn_ednasurvey", "3_penn_ednasurvey_edna_collection_edna_filtering.csv"))
 
-raw_edna_2022 = read_xlsx(here(wddir, "eDNA Collection Data PENN 22-25_2025-10-20.xlsx"), sheet = "Pennsylvania '22")
-raw_edna_2023 = read_xlsx(here(wddir, "eDNA Collection Data PENN 22-25_2025-10-20.xlsx"), sheet = "Pennsylvania '23")
-raw_edna_2024 = read_xlsx(here(wddir, "eDNA Collection Data PENN 22-25_2025-10-20.xlsx"), sheet = "Pennsylvania '24")
-raw_edna_2025 = read_xlsx(here(wddir, "eDNA Collection Data PENN 22-25_2025-10-20.xlsx"), sheet = "Pennsylvania '25")
+raw_edna_2022 = read_xlsx(here(ddir, "pennsylvania", "edna", "eDNA Collection Data PENN 22-25_2025-10-20.xlsx"), sheet = "Pennsylvania '22")
+raw_edna_2023 = read_xlsx(here(ddir, "pennsylvania", "edna", "eDNA Collection Data PENN 22-25_2025-10-20.xlsx"), sheet = "Pennsylvania '23")
+raw_edna_2024 = read_xlsx(here(ddir, "pennsylvania", "edna", "eDNA Collection Data PENN 22-25_2025-10-20.xlsx"), sheet = "Pennsylvania '24")
+raw_edna_2025 = read_xlsx(here(ddir, "pennsylvania", "edna", "eDNA Collection Data PENN 22-25_2025-10-20.xlsx"), sheet = "Pennsylvania '25")
 
 raw_tables = c(
   "raw_survey_info",
@@ -229,7 +229,8 @@ peace = compare_df_cols(raw_survey_info, raw_survey_info_2022_cs)
 # Begin cleaning
 clean_survey_info <- bind_rows(
   raw_survey_info_2022_cs %>%
-    rename(site = location) %>%
+    rename(site = location,
+           conductivity_us_cm = conductivity_us) %>%
     mutate(src = 2022,
            end_time = if_else(is.na(end_time), start_time, end_time),
            survey_time = if_else(hour(end_time) > 6 & hour(end_time) < 18, "day", "night")),
@@ -248,7 +249,6 @@ clean_survey_info <- bind_rows(
          dissolved_o2_percent = dissolved_oxygen,
          tds_ppm = total_dissolved_solids,
          p_h = ph,
-         conductivity_us_cm = conductivity_us,
          comments_visit = sampling_event_comments,
          temp_survey_id = fulcrum_id,
          time_of_day = survey_time,
@@ -384,11 +384,12 @@ clean_capture_survey <- bind_rows(
 
 clean_capture_obs = bind_rows(
   raw_capture_obs_2022_cs %>%
-    rename(species_capture = species),
-  raw_capture_obs) %>%
+    rename(species_capture = species,
+           body_temp_c = body_temperature),
+  raw_capture_obs %>%
+    rename(body_temp_c = body_temperature_c)) %>%
   clean_names() %>%
-  rename(body_temp_c = body_temperature,
-         comments_capture = amphibian_comments,
+  rename(comments_capture = amphibian_comments,
          capture_latitude = latitude,
          capture_longitude = longitude,
          photo_id = bag_photo) %>%
@@ -609,7 +610,8 @@ clean_edna = bind_rows(raw_edna_2022 %>%
   arrange(date, time_of_day) %>%
   group_by(edna_sample_name) %>%
   slice_head(n = 1) %>%
-  ungroup()
+  ungroup() %>%
+  mutate(time_of_day = if_else(is.na(time_of_day), "night", time_of_day))
 
 
 ## Revisions: Handle special cases on a row-by-row basis
@@ -642,6 +644,8 @@ clean_sample_obs$bag_id[clean_sample_obs$fulcrum_id == "46c33c92-feb9-47ca-91d9-
 clean_sample_obs$bag_id[clean_sample_obs$fulcrum_id == "6d285d19-c288-456c-8dda-42ea35352dff"] = "BAG83"
 clean_sample_obs$bag_id[clean_sample_obs$fulcrum_id == "fe17b685-1c7a-4305-93cb-d3083de38654"] = "BAG16"
 clean_sample_obs$bag_id[clean_sample_obs$fulcrum_id == "9f72d0b0-9252-46e6-8391-8531174e1f97"] = "BAG68"
+clean_sample_obs$bag_id[clean_sample_obs$fulcrum_id == "a21f4b06-0219-425e-a3ee-e353aa3649c9"] = "BAG07"
+
 # clean_sample_obs$bag_id[clean_sample_obs$fulcrum_id == "9fdd22ff-100c-474a-9b42-09eed5abd09a"] = "BAG68"
 
 
@@ -690,8 +694,10 @@ clean_sample_obs$mucosome_id[clean_sample_obs$fulcrum_id == "c3f4fcd0-f3dc-4cd5-
 clean_sample_obs$mucosome_id[clean_sample_obs$fulcrum_id == "6f881dea-0980-48a1-ad67-44aa27acb3a3"] = "Pe_Muc00325"
 clean_sample_obs$genetic_id[clean_sample_obs$fulcrum_id == "1f854c06-7073-4931-88b1-008a85ce739f"] = "Pe_Toe00000"
 clean_sample_obs$genetic_id[clean_sample_obs$fulcrum_id == "f76279e2-987a-41eb-b6f0-b0e310342dbb"] = "Pe_Toe00029"
-
-# clean_sample_obs$mucosome_id[clean_sample_obs$fulcrum_id == "441f3864-d891-4f2a-a6f8-558b95aead39"] = "Pe_Muc00000"
+clean_sample_obs$bd_swab_id[clean_sample_obs$fulcrum_id == "eef67003-b1e6-4592-988d-bdd0851abba5"] = "Pe_Bd01307"
+clean_sample_obs$bd_swab_id[clean_sample_obs$fulcrum_id == "b77060cc-2dcf-4667-bb3e-4e411460e290"] = "Pe_Bd01318"
+clean_sample_obs$bd_swab_id[clean_sample_obs$fulcrum_id == "331bf6ec-0ac0-4ae3-931b-73caf48b86f5"] = "Pe_Bd01345"
+clean_sample_obs$bd_swab_id[clean_sample_obs$fulcrum_id == "fde64a12-03e7-4feb-adc6-1f8b7dddc56e"] = "Pe_Bd01347"
 clean_sample_obs$mucosome_id[clean_sample_obs$fulcrum_id == "c3f4fcd0-f3dc-4cd5-a886-145cbc52d2bb"] = "Pe_Muc00000"
 
 
@@ -720,7 +726,7 @@ unique_visit <- bind_rows(clean_survey_info,
                           clean_aural_survey,
                           clean_capture_survey,
                           clean_sample_processing,
-                          # clean_edna,
+                          clean_edna,
                           clean_ves_survey) %>% 
   select(date, site, time_of_day) %>%
   distinct()
@@ -814,7 +820,6 @@ upsert_visit = bind_rows(tray$insert,
                         tray$update)
 
 # db_visit = db_rows_delete(dbcon, db_visit, tray$orphan, "visit_id")
-
 peace = tray$orphan
 hope = tray$insert
 
@@ -1019,6 +1024,8 @@ gelled_edna = unified_edna %>%
                             UUIDfromName("5113bb6e-8cff-4a2d-9910-904403736cfb", uuid_name),
                             survey_id)) %>%
   ungroup() %>%
+  mutate(uuid_name = paste0(edna_sample_name, site, date),
+         edna_id = UUIDfromName("e4d345d4-6433-40d2-9997-1b4ee8b1a627", uuid_name)) %>%
   group_by(date, site) %>%
   mutate(has_negative_control = sum(negative_control) > 0,
          negative_control_group_id = if_else(has_negative_control,
@@ -1356,17 +1363,20 @@ if (x_ves) {
   
   tryCatch(
     {
-      temp_ves_survey = stage_to_temp(dbcon, db_survey, upsert_ves_survey)
-      pointer = tbl(dbcon, temp_ves_survey)
-      rows_upsert(db_survey, pointer, by="survey_id", in_place=TRUE)
+      db_survey = db_rows_upsert(dbcon, db_survey, upsert_ves_survey, by="survey_id")
+      # temp_ves_survey = stage_to_temp(dbcon, db_survey, upsert_ves_survey)
+      # pointer = tbl(dbcon, temp_ves_survey)
+      # rows_upsert(db_survey, pointer, by="survey_id", in_place=TRUE)
       
-      temp_ves_taxa = stage_to_temp(dbcon, db_taxa, insert_ves_taxa)
-      pointer = tbl(dbcon, temp_ves_taxa)
-      rows_insert(db_taxa, pointer, by="taxon_id", in_place=TRUE, conflict = "ignore")
+      db_taxa = db_rows_upsert(dbcon, db_taxa, insert_ves_taxa, by="taxon_id")
+      # temp_ves_taxa = stage_to_temp(dbcon, db_taxa, insert_ves_taxa)
+      # pointer = tbl(dbcon, temp_ves_taxa)
+      # rows_insert(db_taxa, pointer, by="taxon_id", in_place=TRUE, conflict = "ignore")
       
-      temp_ves = stage_to_temp(dbcon, db_ves, upsert_ves)
-      pointer = tbl(dbcon, temp_ves)
-      rows_upsert(db_ves, pointer, by="ves_id", in_place=TRUE)
+      db_ves = db_rows_upsert(dbcon, db_ves, upsert_ves, by="ves_id")
+      # temp_ves = stage_to_temp(dbcon, db_ves, upsert_ves)
+      # pointer = tbl(dbcon, temp_ves)
+      # rows_upsert(db_ves, pointer, by="ves_id", in_place=TRUE)
       
       # Commit the transaction if successful
       dbCommit(dbcon)
@@ -1685,18 +1695,16 @@ gelled_sample = clean_sample %>%
          digits = str_extract(sample_name, "\\d{5}")) %>%
   filter(digits != "00000")
   
+warning("Dropping all genetic samples from 2025 for now due to duplicate IDs (FIX ME!)")
+gelled_sample = gelled_sample %>%
+  filter(!(date >= "2025-01-01" & sample_type == "genetic"))
+
 
 dupes_sample = get_dupes(gelled_sample, sample_name, sample_type)
 
 if (nrow(dupes_sample) > 0) {
   stop("sample dupes found")
 }
-
-# # troubleshoot
-# 
-# fleace = gelled_capture %>%
-#   filter(mucosome_id %in% dupes_sample$sample_name)
-
 ```
 
 ### drop negative controls from capture
@@ -1748,11 +1756,9 @@ compare_capture = compare_df_cols(db_capture %>%
 
 
 tray = compare_for_staging(db_capture %>% collect(), subset_capture, "capture_id", return_all = TRUE, report = "capture")
-peace = compare_updates(tray)
+peace = compare_updates(tray, id_cols = c("capture_id"))
 upsert_capture = bind_rows(tray$insert,
                            tray$update)
-
-hope = tray$insert
 
 # sample
 subset_sample = gelled_sample %>%
@@ -1773,64 +1779,96 @@ upsert_sample = bind_rows(tray$insert,
 ##### investigate some duplicates in the database...
 
 hope = peace[[1]]
-
-ds_new = db_capture %>%
-  left_join(db_survey, by = "survey_id") %>%
-  left_join(db_visit, by = "visit_id") %>%
-  left_join(db_site, by = "site_id") %>%
-  filter(capture_id %in% hope$capture_id_new) %>%
-  select(visit_id) %>%
-  distinct() %>%
-  arrange(visit_id) %>%
-  pull(visit_id)
-
-ds_old = db_capture %>%
-  left_join(db_survey, by = "survey_id") %>%
-  left_join(db_visit, by = "visit_id") %>%
-  left_join(db_site, by = "site_id") %>%
-  filter(capture_id %in% hope$capture_id_old) %>%
-  select(visit_id) %>%
-  distinct() %>%
-  arrange(visit_id) %>%
-  pull(visit_id)
-
-common = intersect(ds_new, ds_old)
-
-ds_surveys_new = db_capture %>%
-  left_join(db_survey, by = "survey_id") %>%
-  left_join(db_visit, by = "visit_id") %>%
-  left_join(db_site, by = "site_id") %>%
-  filter(capture_id %in% hope$capture_id_new) %>%
-  select(survey_id) %>%
-  distinct() %>%
-  arrange(survey_id) %>%
-  collect()
-
-ds_surveys_old = db_capture %>%
-  left_join(db_survey, by = "survey_id") %>%
-  left_join(db_visit, by = "visit_id") %>%
-  left_join(db_site, by = "site_id") %>%
-  filter(capture_id %in% hope$capture_id_old) %>%
-  select(survey_id) %>%
-  distinct() %>%
-  arrange(survey_id) %>%
-  collect()
-
-common_surveys = db_survey %>%
-  left_join(db_visit, by = "visit_id") %>%
-  left_join(db_site, by = "site_id") %>%
-  filter(visit_id %in% common) %>%
-  arrange(date, site, detection_type) %>%
-  select(all_of(tbl_keys("survey", mdc)),
-         all_of(tbl_keys("visit", mdc)),
-         site) %>%
-  collect()
-
-drop_surveys = common_surveys %>%
-  filter(!grepl("[A-Z]", observers_survey))
-
-sids = drop_surveys %>%
-  pull(survey_id)
+# 
+# peas = hope %>%
+#   filter(!is.na(capture_id_old))
+# 
+# peas_new = db_capture %>%
+#   left_join(db_survey, by = "survey_id") %>%
+#   left_join(db_visit, by = "visit_id") %>%
+#   left_join(db_site, by = "site_id") %>%
+#   filter(capture_id %in% peas$capture_id_new) %>%
+#   select(capture_id,
+#          svl_mm,
+#          body_mass_g,
+#          date,
+#          site,
+#          visit_id) %>%
+#   arrange(date, body_mass_g) %>%
+#   collect()
+# 
+# peas_old = db_capture %>%
+#   left_join(db_survey, by = "survey_id") %>%
+#   left_join(db_visit, by = "visit_id") %>%
+#   left_join(db_site, by = "site_id") %>%
+#   filter(capture_id %in% peas$capture_id_old) %>%
+#   select(capture_id,
+#          svl_mm,
+#          body_mass_g,
+#          date,
+#          site,
+#          visit_id) %>%
+#   arrange(date, body_mass_g) %>%
+#   collect()
+# 
+# 
+# ds_new = db_capture %>%
+#   left_join(db_survey, by = "survey_id") %>%
+#   left_join(db_visit, by = "visit_id") %>%
+#   left_join(db_site, by = "site_id") %>%
+#   filter(capture_id %in% hope$capture_id_new) %>%
+#   select(visit_id) %>%
+#   distinct() %>%
+#   arrange(visit_id) %>%
+#   pull(visit_id)
+# 
+# ds_old = db_capture %>%
+#   left_join(db_survey, by = "survey_id") %>%
+#   left_join(db_visit, by = "visit_id") %>%
+#   left_join(db_site, by = "site_id") %>%
+#   filter(capture_id %in% hope$capture_id_old) %>%
+#   select(visit_id) %>%
+#   distinct() %>%
+#   arrange(visit_id) %>%
+#   pull(visit_id)
+# 
+# common = intersect(ds_new, ds_old)
+# 
+# ds_surveys_new = db_capture %>%
+#   left_join(db_survey, by = "survey_id") %>%
+#   left_join(db_visit, by = "visit_id") %>%
+#   left_join(db_site, by = "site_id") %>%
+#   filter(capture_id %in% hope$capture_id_new) %>%
+#   select(survey_id) %>%
+#   distinct() %>%
+#   arrange(survey_id) %>%
+#   collect()
+# 
+# ds_surveys_old = db_capture %>%
+#   left_join(db_survey, by = "survey_id") %>%
+#   left_join(db_visit, by = "visit_id") %>%
+#   left_join(db_site, by = "site_id") %>%
+#   filter(capture_id %in% hope$capture_id_old) %>%
+#   select(survey_id) %>%
+#   distinct() %>%
+#   arrange(survey_id) %>%
+#   collect()
+# 
+# common_surveys = db_survey %>%
+#   left_join(db_visit, by = "visit_id") %>%
+#   left_join(db_site, by = "site_id") %>%
+#   filter(visit_id %in% common) %>%
+#   arrange(date, site, detection_type) %>%
+#   select(all_of(tbl_keys("survey", mdc)),
+#          all_of(tbl_keys("visit", mdc)),
+#          site) %>%
+#   collect()
+# 
+# drop_surveys = common_surveys %>%
+#   filter(!grepl("[A-Z]", observers_survey))
+# 
+# sids = drop_surveys %>%
+#   pull(survey_id)
 
 ######
 
