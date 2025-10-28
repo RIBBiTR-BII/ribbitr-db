@@ -5,7 +5,7 @@ editor: source
 ---
 # Setup
 
-## Load Packages
+## connections and pointers
 
 ```{r}
 librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
@@ -23,24 +23,8 @@ mdc = tbl(dbcon, Id("public", "all_columns")) %>%
 ddir = Sys.getenv("data_dir")  # data directory
 # Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
 # wddir = here(ddir, "fulcrum", 'panama', '2024-11-18', "panama_field_3_0") # working data directory
-wddir = here(ddir, "fulcrum", 'panama', '2025-09-23', "panama_field_3_0") # working data directory
+wddir = here(ddir, "panama", "fulcrum", "2025-09-23", "panama_field_3_0") # working data directory
 
-```
-
-Goals
-
-- Integrate batches of Penn survey data with other RIBBiTR data (including other Penn data) for combined analysis
-- Compare with existing data to avoid duplicating, and facilitate automated updating
-- Quality control for red flag data (potential or known issues)
-- Upload to Database in transaction
-- log transaction
-
-# 1 - Import data
-
-## db table pointers
-use naming convention "db_" to distinguish the source
-
-```{r}
 # pull relevant chain tables from DB
 db_sample = tbl(dbcon, Id("survey_data", "sample"))
 
@@ -499,6 +483,8 @@ clean_visit_info[clean_visit_info$fulcrum_id == "8fe0679c-8833-4e97-9ee3-d9e983f
                  c("mucosome_control_id", "microbiome_control_id", "amps_control_id", "amps_hcl_control_id")] = "240721_NegativeControl"
 clean_visit_info[clean_visit_info$fulcrum_id == "c3b97614-e3df-4b92-9d78-65583e9785de", 
                  c("mucosome_control_id", "microbiome_control_id", "amps_control_id", "amps_hcl_control_id")] = "240721_NegativeControl"
+
+clean_capture$svl_mm[clean_capture$capture_id == "472737a9-73a0-4163-b7de-648231d5aa00"] = NA
 
 ```
 
@@ -1484,15 +1470,6 @@ peace = compare_updates(tray)
 hope = peace[[1]]
 upsert_sample = bind_rows(tray$insert,
                           tray$update)
-
-peace = get_dupes(subset_sample, sample_id)
-
-
-upsert_sample_nc = upsert_sample %>%
-  filter(negative_control)
-
-upsert_sample_normal = upsert_sample %>%
-  filter(!negative_control)
 
 
 if (nrow(tray$update) > 0) {
