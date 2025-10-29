@@ -1,0 +1,69 @@
+---
+title: "penn_bd_jack"
+output: html_document
+---
+
+# setup
+```{r}
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, RIBBiTR-BII/ribbitrrr, here)
+
+# connect to database
+dbcon = hopToDB("ribbitr")
+
+# table pointers
+db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
+```
+
+# filter and pull data
+```{r}
+
+species_oi = c(
+  "anaxyrus_americanus",
+  "hyla_versicolor",
+  "pseudacris_crucifer",
+  "rana_catesbeiana",
+  "rana_clamitans"
+)
+
+bd_samples = db_sample %>%
+  left_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(sample_type == "bd",
+         region == "pennsylvania",
+         taxon_capture %in% species_oi)
+
+bd_results = db_bd %>%
+  filter(!is.na(detected)) %>%
+  group_by(sample_id) %>%
+  slice_sample(n = 1) %>%
+  ungroup() %>%
+  inner_join(bd_samples, by = "sample_id") %>%
+  collect() %>%
+  select(sample_id,
+         sample_name_bd,
+         taxon_capture,
+         detected,
+         target_quant,
+         bd_its1_copies_per_swab,
+         capture_id,
+         site,
+         date,
+         extraction_plate_name,
+         qpcr_plate_name,
+         qpcr_well) %>%
+  write_csv(here("staging", paste0("penn_bd_jack_query_", today(), ".csv")))
+
+```
