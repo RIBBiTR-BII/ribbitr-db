@@ -19,6 +19,8 @@ sncon = hopToDB("amphibians")
 ```{r}
 db_sh = tbl(dbcon, Id("survey_data", "site_history"))
 db_site = tbl(dbcon, Id("survey_data", "site"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
 
 sn_relocate = tbl(sncon, Id("relocate"))
 sn_relocate_frog = tbl(sncon, Id("relocate_frog"))
@@ -87,4 +89,80 @@ upsert_sh = bind_rows(capture_event,
 temp_sh = stage_to_temp(dbcon, db_sh, upsert_sh)
 pointer = tbl(dbcon, temp_sh)
 db_sh = rows_upsert(db_sh, pointer, by="treatment_id", in_place=TRUE)
+```
+
+# antifungal treatments
+```{r}
+af_treatment_barrett = c(
+  "11469",
+  "11491",
+  "11493"
+)
+
+surveys_barrett = db_survey %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  filter(site %in% af_treatment_barrett,
+         date >= "2009-07-30",
+         date <= "2009-08-05",
+         detection_type == "capture") %>%
+  collect() %>%
+  arrange(date, start_time)
+
+af_treatment_dusy = c(
+  "11518",
+  "11526",
+  "11506",
+  "11518"
+)
+
+surveys_dusy_1 = db_survey %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  filter(site %in% af_treatment_dusy,
+         date >= "2010-07-27",
+         date <= "2010-08-02",
+         detection_type == "capture") %>%
+  collect() %>%
+  arrange(date, start_time)
+
+surveys_dusy_2 = db_survey %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  filter(site %in% af_treatment_dusy,
+         date >= "2012-07-12",
+         date <= "2012-07-18",
+         detection_type == "capture") %>%
+  collect() %>%
+  arrange(date, start_time)
+
+af_treatment_leconte = c(
+  "10101",
+  "10100"
+)
+
+surveys_leconte = db_survey %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  filter(site %in% af_treatment_leconte,
+         date >= "2015-08-24",
+         date <= "2015-09-15",
+         detection_type == "capture") %>%
+  collect() %>%
+  arrange(date, start_time)
+
+af_treatment_treasure = c(
+  "50839"
+)
+
+surveys_treasure = db_survey %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  filter(site %in% af_treatment_treasure,
+         date >= "2018-07-16",
+         date <= "2018-07-23",
+         detection_type == "capture") %>%
+  collect() %>%
+  arrange(date, start_time)
+
 ```
