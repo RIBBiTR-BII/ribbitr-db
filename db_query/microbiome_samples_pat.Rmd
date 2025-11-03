@@ -1,0 +1,48 @@
+---
+title: "microbiome_samples_pat"
+output: html_document
+---
+
+## Setup
+```{r}
+# minimal packages for RIBBiTR DB data discovery
+librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, RIBBiTR-BII/ribbitrrr)
+
+# establish database connection
+dbcon = hopToDB("ribbitr")
+
+# survey tables
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
+```
+
+# Build data query
+```{r}
+# un-executed (no "collect()") preliminary query
+data_mb = db_sample %>%
+  inner_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(sample_type == "microbiome") %>%
+  select(sample_id,
+         sample_name,
+         negative_control,
+         negative_control_group_id,
+         capture_id,
+         taxon_capture,
+         date,
+         site,
+         region,
+         country) %>%
+  collect()
+
+```
