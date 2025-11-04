@@ -246,3 +246,28 @@ br23 = bd_samples %>%
          year(date) == 2023)
 
 ```
+
+# mucosome samples
+```{r}
+data_muc = db_mucosome %>%
+  inner_join(db_sample, by = "sample_id") %>%
+  inner_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  select(all_of(colnames(db_mucosome)),
+         capture_id,
+         taxon_capture,
+         date,
+         site,
+         region,
+         country) %>%
+  collect()
+
+muc_year_region = data_muc %>%
+  mutate(year = year(date)) %>%
+  group_by(year, region, country) %>%
+  count()
+```
