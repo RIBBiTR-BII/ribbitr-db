@@ -1,0 +1,93 @@
+---
+title: "sn_playground"
+output: html_document
+---
+
+```{r}
+librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, RIBBiTR-BII/ribbitrrr)
+
+# establish database connection
+dbcon = hopToDB("ribbitr")
+
+# survey tables
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
+# sample tables
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+db_bdqpcr = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+
+ddir = Sys.getenv("data_dir")  # data directory
+# Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
+wddir = here(ddir, "sierra")
+
+site_pop = read.csv(here(wddir, "sn_site_pop_2_2025-10-31.csv")) %>%
+  rename(population = pop_id) %>%
+  mutate(population = if_else(!is.na(population), paste0(as.character(population), "_pop"), site),
+         site = as.character(site)) %>%
+  select(site,
+         population)
+```
+
+# sample data pull
+```{r}
+bd_capture = db_bdqpcr %>%
+  group_by(sample_id) %>%
+  slice_min(result_id, n = 1) %>%
+  ungroup() %>%
+  inner_join(db_sample, by = "sample_id") %>%
+  inner_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  filter(!is.na(cmr_id),
+         taxon_capture %in% c("rana_muscosa", "rana_sierrae")) %>%
+  select(sample_id,
+         sample_name_bd,
+         detected,
+         bd_its1_copies_per_swab,
+         capture_id,
+         cmr_id,
+         sex,
+         svl_mm,
+         body_mass_g,
+         site,
+         date) %>%
+  collect()
+
+bd_recapture = bd_capture %>%
+  left_join(site_pop, by = "site") %>%
+  group_by(population, cmr_id) %>%
+  mutate(swab_capture_count = n()) %>%
+  ungroup() %>%
+  filter(swab_capture_count > 1) %>%
+  select(sample_id,
+         sample_name_bd,
+         detected,
+         bd_its1_copies_per_swab,
+         capture_id,
+         cmr_id,
+         sex,
+         svl_mm,
+         body_mass_g,
+         site,
+         population,
+         date)
+
+bd_recapture_by_year = bd_recapture %>%
+  mutate(year = year(date)) %>%
+  group_by(year) %>%
+  count()
+
+bd_recapture_by_site = bd_recapture %>%
+  group_by(site) %>%
+  count() %>%
+  arrange(desc(n))
+
+
+```
