@@ -432,7 +432,7 @@ clean_cmr <- bind_rows(
          -cmr_id_other) %>%
   filter(!if_all(everything(), is.na))  # drop any rows all null
 
-clean_sample_processing <- bind_rows(
+clean_sample_processing = bind_rows(
   raw_sample_processing_2022_cs %>%
     mutate(survey_time = "night"),
   raw_sample_processing) %>%
@@ -466,7 +466,9 @@ clean_sample_obs = bind_rows(
            crispr_id = crispr_swab_tube_id,
            microbiome_id = dry_swab_tube_id,
            mucosome_id = mucusome_id,
-           genetic_id = toe_clip_tube_id),
+           genetic_id = toe_clip_tube_id) %>%
+    mutate(bd_swab_id = gsub("BDSwab", "BdSwab", bd_swab_id),
+           bd_swab_id_2 = microbiome_id),
   raw_sample_obs) %>%
   clean_names() %>%
   rename(svl_mm = snout_vent_length,
@@ -1622,7 +1624,7 @@ sample_lookup_gen <- function(table, id_col, sample_cols, sample_type) {
   return(sample_lookup)
 }
 
-s1 = sample_lookup_gen(gelled_capture, "capture_id", c("bd_swab_id"), "bd")
+s1 = sample_lookup_gen(gelled_capture, "capture_id", c("bd_swab_id", "bd_swab_id_2"), "bd")
 s2 = sample_lookup_gen(gelled_capture, "capture_id", c("genetic_id"), "genetic")
 s3 = sample_lookup_gen(gelled_capture, "capture_id", c("microbiome_swab_id"), "microbiome")
 s4 = sample_lookup_gen(gelled_capture, "capture_id", c("amp_id", "amp_id_2", "amp_id_3", "amp_id_4"), "amp")
@@ -1656,10 +1658,6 @@ clean_penn_sample_case <- function(dataframe, sample_name = "sample_name") {
     mutate(!!sample_sym := updated_col)
 }
 
-bd_dryswabs = s3 %>%
-  filter(grepl("^dryswab\\d{5}$", sample_name, ignore.case = TRUE)) %>%
-  mutate(sample_type = "bd")
-
 clean_sample = rbind(s1 %>%
                      select(all_of(select_cols)),
                    s2 %>%
@@ -1673,8 +1671,6 @@ clean_sample = rbind(s1 %>%
                    s6 %>%
                      select(all_of(select_cols)),
                    s7 %>%
-                     select(all_of(select_cols)),
-                   bd_dryswabs %>%
                      select(all_of(select_cols))) %>%
   clean_penn_sample_case()
 
