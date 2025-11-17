@@ -207,9 +207,11 @@ clean_pa_2024_04 = scrape_qpcr_xls(raw_pa_2024_04)
 clean_pa_2024_05 = scrape_qpcr_xls(raw_pa_2024_05)
 clean_pa_2024_06 = scrape_qpcr_xls(raw_pa_2024_06)
 
-clean_pe_2022_01 = scrape_qpcr_xls(raw_pe_2022_01)
+clean_pe_2022_01 = scrape_qpcr_xls(raw_pe_2022_01) %>%
+  mutate(sample_name = gsub("DRY0", "DrySwab0", sample_name))
 clean_pe_2022_02 = scrape_qpcr_xls(raw_pe_2022_02) %>%
-  mutate(bd_quantity_mean = as.numeric(bd_quantity_mean))
+  mutate(bd_quantity_mean = as.numeric(bd_quantity_mean),
+         sample_name = gsub("BDSwab", "BdSwab", sample_name))
 
 clean_pe_2023_01 = scrape_qpcr_xls(raw_pe_2023_01) %>%
   rename(bd_ct_mean = ct_mean,
@@ -492,12 +494,6 @@ compare_bd = compare_df_cols(db_bd %>%
 tray = compare_for_staging(db_bd %>% collect(), subset_bd, "result_id", return_all = TRUE, report = "bd")
 final_bd = bind_rows(tray$insert,
                        tray$update)
-
-cheese = tray$update
-please = tray$insert
-
-peace = compare_updates(tray, id_cols = c("result_id", "sample_name_bd", "qpcr_plate_name"))
-
 ```
 
 # commit
