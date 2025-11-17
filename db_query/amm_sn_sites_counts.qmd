@@ -11,10 +11,8 @@ librarian::shelf(tidyverse, dbplyr, here, RPostgres, DBI, RIBBiTR-BII/ribbitrrr)
 # connect to database
 dbcon = hopToDB("ribbitr")
 
-```
-
 # table pointers
-```{r}
+
 db_sample = tbl(dbcon, Id("survey_data", "sample"))
 db_capture = tbl(dbcon, Id("survey_data", "capture"))
 db_survey = tbl(dbcon, Id("survey_data", "survey"))
@@ -34,27 +32,13 @@ wddir = here(ddir, "sierra") # working data directory
 sierra_travel_times = rio::import(here(wddir, "SN_AMP_sampleTransportCovariates.xlsx")) %>%
   mutate(site = as.character(site))
 
+site_status = read_csv(here(wddir, "sn_2024_pop_status_251111.csv")) %>%
+  mutate(site = as.character(site))
+
 ```
 
 # query
 ```{r}
-pop = tibble(
-  site = c("72808",
-           "72336",
-           "50837",
-           "50895",
-           "50899",
-           "10196",
-           "10198"),
-  population = c("72808",
-                 "72808",
-                 "50899",
-                 "50899",
-                 "50899",
-                 "10196",
-                 "10196")
-)
-
 data_samps = db_sample %>%
   pivot_wider(id_cols = capture_id,
               names_from = sample_type,
@@ -82,7 +66,6 @@ data_samps = db_sample %>%
          time_of_capture,
          date,
          site,
-         site_name_alt,
          site_latitude,
          site_longitude,
          site_elevation_m,
@@ -94,7 +77,7 @@ data_samps = db_sample %>%
   left_join(sierra_travel_times %>%
               select(site,
                      est_transport_time), by = "site") %>%
-  left_join(pop, by = "site") %>%
+  left_join(ramu_pop_status, by = "site") %>%
   mutate(population = ifelse(is.na(population), site, population))
 
 data_samps_micro_plus = data_samps %>%
@@ -129,6 +112,9 @@ data_sites = data_samps %>%
   group_by(site,
            site_name_alt,
            population,
+           site_bd_status,
+           site_interventions,
+           ribbitr_core,
            site_latitude,
            site_longitude,
            site_elevation_m,
