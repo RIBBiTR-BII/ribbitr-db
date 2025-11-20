@@ -1,0 +1,110 @@
+---
+title: "panama_site_history_santiago"
+output: html_document
+---
+
+## Setup
+```{r}
+# minimal packages for RIBBiTR DB data discovery
+librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, RIBBiTR-BII/ribbitrrr)
+
+# establish database connection
+dbcon = hopToDB("ribbitr")
+
+# survey tables
+db_visual = tbl(dbcon, Id("survey_data", "ves"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
+```
+
+# Build data query
+```{r}
+# visits of interest
+site_visits = db_visit %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(country == "panama",
+         date < "2022-01-01",
+         site %in% c("hotel_campestre",
+                     "rio_blanco",
+                     "rio_tigrero"))
+
+region_visits = db_visit %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(country == "panama",
+         date < "2022-01-01",
+         region %in% c("el_cope",
+                       "el_valle"),
+         !(site %in% c("mato_ahogado",
+                       "sora",
+                       "farallon",
+                       "juan_lana")))
+
+# captures
+capture_sites = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  inner_join(site_visits, by = "visit_id") %>%
+  rename(taxon = taxon_capture) %>%
+  mutate(count_capture = 1) %>%
+  filter(!is.na(taxon))
+
+capture_regions = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  inner_join(region_visits, by = "visit_id") %>%
+  rename(taxon = taxon_capture) %>%
+  mutate(count_capture = 1) %>%
+  filter(!is.na(taxon))
+
+# visual
+visual_sites = db_visual %>%
+  left_join(db_survey, by = "survey_id") %>%
+  inner_join(site_visits, by = "visit_id") %>%
+  rename(taxon = taxon_ves,
+         count_visual = count_ves) %>%
+  filter(!is.na(taxon))
+
+visual_regions = db_visual %>%
+  left_join(db_survey, by = "survey_id") %>%
+  inner_join(region_visits, by = "visit_id") %>%
+  rename(taxon = taxon_ves,
+         count_visual = count_ves) %>%
+  filter(!is.na(taxon))
+
+# combine and collect queries
+history_sites = union_all(capture_sites,
+                          visual_sites) %>%
+  mutate(year = year(date)) %>%
+  group_by(site, region, taxon) %>%
+  summarize(count_visual = sum(count_visual, na.rm = TRUE),
+            count_capture = sum(count_capture, na.rm = TRUE),
+            first_year = min(year, na.rm = TRUE),
+            last_year = max(year, na.rm = TRUE),
+            .groups = "drop") %>%
+  collect() %>%
+  arrange(site, taxon)
+
+history_regions = union_all(capture_regions,
+                            visual_regions) %>%
+  mutate(year = year(date)) %>%
+  group_by(region, taxon) %>%
+  summarize(count_visual = sum(count_visual, na.rm = TRUE),
+            count_capture = sum(count_capture, na.rm = TRUE),
+            first_year = min(year, na.rm = TRUE),
+            last_year = max(year, na.rm = TRUE),
+            .groups = "drop") %>%
+  collect() %>%
+  arrange(region, taxon)
+
+# export results
+write_csv(history_sites, here::here("staging", "panama_taxa_history_pre2022_sites.csv"))
+write_csv(history_regions, here::here("staging", "panama_taxa_history_pre2022_regions.csv"))
+
+```
