@@ -8,7 +8,7 @@ editor: source
 ## connections and pointers
 
 ```{r}
-librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr, DBI, parsedate, uuid, hms, readxl, RIBBiTR-BII/ribbitrrr)
 # librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 
 ## Connect to DB
@@ -68,9 +68,12 @@ raw_ves <- read_csv(here(wddir, "panama_field_3_0_individual_visual.csv"))
 raw_cmr <- read_csv(here(wddir, "panama_field_3_0_individual_cmr.csv"))
 
 # edna
-raw_edna <- read_csv(here(wddir, "panama_field_3_0_edna_samples.csv"))
-
 raw_hobo = read_csv(here(wddir, "panama_field_3_0_hobos_data.csv"))
+
+# edna
+raw_edna <- read_csv(here(wddir, "panama_field_3_0_edna_samples.csv"))
+raw_edna_2022 = read_xlsx(here(ddir, "edna_results", "metadata", "Panama_2022_2023_eDNA_Filtering_clean.xlsx"), sheet = "Panama '22 Filtering")
+raw_edna_2023 = read_xlsx(here(ddir, "edna_results", "metadata", "Panama_2022_2023_eDNA_Filtering_clean.xlsx"), sheet = "Panama '23 Filtering")
 
 
 # # non RIBBiTR
@@ -92,7 +95,7 @@ raw_tables = c(
 local_tz = "America/Panama"
 
 ```
-# 2 - Clean data
+ # 2 - Clean data
 
 Drop irrelevant & fix structural issues
 - clean column names
@@ -295,6 +298,36 @@ clean_ves = raw_ves%>%
   select(-any_of(to_drop)) %>%
   filter(!if_all(everything(), is.na))
 
+clean_edna_rz = bind_rows(raw_edna_2022 %>%
+                          rename(filter_size_um = `Filter size (um) RZ Lab`),
+                        raw_edna_2023) %>%
+  clean_names() %>%
+  rename(filter_size_um_rz = filter_size_um,
+         negative_control_rz = negative_control,
+         filter_type_rz = filter_type,
+         edna_processing_time_rz = edna_processing_time,
+         collection_location_rz = collection_location,
+         comments_lab = rz_lab_notes,
+         site_rz = site,
+         transect_rz = transect,
+         date_rz = date,
+         illumina_sample_name = edited_sample_id) %>%
+  mutate(id_e_dna_sample = gsub("edna_", "", id_e_dna_sample, ignore.case = TRUE),
+         id_e_dna_sample_edited = gsub("edna_", "", id_e_dna_sample_edited, ignore.case = TRUE),
+         collection_location_rz = tolower(collection_location_rz),
+         edna_collection_time = as_hms(edna_collection_time),
+         edna_processing_time_rz = as_hms(edna_processing_time_rz),
+         site_rz = coalesce(site_rz, site_other),
+         site_rz = tolower(gsub(" ", "_", site_rz)),
+         scrape_date = str_extract(id_e_dna_sample, "\\d{6}"),
+         scrape_date = as.Date(scrape_date, format = "%y%m%d"),
+         date_rz = coalesce(date_rz, scrape_date),
+         transect_rz = if_else(transect_rz == "NA", NA, transect_rz)) %>%
+  select(-region,
+         -site_other,
+         -season) %>%
+  filter(!is.na(illumina_sample_name))
+
 clean_edna = raw_edna %>%
   rename(edna_id = fulcrum_id,
          visit_fulcrum_id = fulcrum_parent_id,
@@ -322,9 +355,68 @@ clean_edna = raw_edna %>%
                               filter_size_um),
          filter_method = case_when(
            grepl("passive", comments_edna, ignore.case = TRUE) ~ "passive",
-           .default = "active")) %>%
+           .default = "active"),
+         collection_location = tolower(case_when(
+           negative_control ~ NA,
+           grepl("center", comments_edna, ignore.case = TRUE) ~ "center",
+           grepl("left side", comments_edna, ignore.case = TRUE) ~ "left",
+           grepl("right side", comments_edna, ignore.case = TRUE) ~ "right",
+           .default = NA)),
+         edna_sample_name = gsub("edna_", "", edna_sample_name, ignore.case = TRUE),
+         edna_sample_name = gsub("um", "", edna_sample_name, ignore.case = TRUE)) %>%
   select(-any_of(to_drop)) %>%
   filter(!if_all(everything(), is.na))
+
+clean_edna$filter_size_um[clean_edna$edna_id == "a71a0045-2ace-4008-98b3-e0406db83c74"] = 1.20
+clean_edna$filter_size_um[clean_edna$edna_id == "4e6ac25a-c92c-4e4f-9694-c0bb7f5e1ab1"] = 1.20
+clean_edna$filter_size_um[clean_edna$edna_id == "bfdbd95d-239f-4d45-a27d-b5d2f46bba3b"] = 1.20
+clean_edna$filter_size_um[clean_edna$edna_id == "b154ad1c-160a-4f6b-b181-307191ee7e14"] = 1.20
+clean_edna$filter_size_um[clean_edna$edna_id == "65da1e28-67fd-4208-b6c8-20ba699f6e8b"] = 1.20
+clean_edna$filter_size_um[clean_edna$edna_id == "6960f4ec-4482-4e87-bb60-5f0ad6aabecd"] = 1.20
+clean_edna$filter_size_um[clean_edna$edna_id == "42ddce7a-553a-463e-8ec5-26b859931fd7"] = 0.45
+
+clean_edna$edna_sample_name[clean_edna$edna_id == "c6cb14d5-f8a2-4aba-995e-5f4fb3ae1da9"] = "230810_D004 Negative Control"
+clean_edna$edna_sample_name[clean_edna$edna_id == "bc9035c7-b1a4-4300-b8fc-a53313b2ddee"] = "231110_002"
+
+
+combined_edna = clean_edna %>%
+  full_join(clean_edna_rz, by = c("edna_sample_name" = "id_e_dna_sample",
+                                  "collection_location" = "collection_location_rz",
+                                  "filter_size_um" = "filter_size_um_rz")) %>%
+  mutate(collection_time = coalesce(collection_time, edna_collection_time),
+         filter_start_time = coalesce(filter_start_time, edna_processing_time, edna_processing_time_rz),
+         filter_volume_ml = coalesce(filter_volume_ml, sample_volume_filtered_ml),
+         filter_method = coalesce(filter_method, active_passive),
+         negative_control = coalesce(negative_control, negative_control_rz),
+         edna_id = coalesce(edna_id, fulcrum_id),
+         edna_sample_name = coalesce(id_e_dna_sample_edited, edna_sample_name),
+         filter_type = coalesce(filter_type, filter_type_other, filter_type_rz),
+         edna_sample_name = gsub("(\\d{6}_)", "\\1eDNA_", edna_sample_name),
+         detection_type = "edna",
+         edna_lab = "rz_lab",
+         comments_edna = coalesce(comments_edna, edna_sample_info, notes_of_edna_sample)) %>%
+  select(edna_sample_name,
+         illumina_sample_name,
+         filter_size_um,
+         collection_location,
+         fulcrum_id,
+         everything(),
+         -edna_collection_time,
+         -edna_processing_time,
+         -edna_processing_time_rz,
+         -sample_volume_filtered_ml,
+         -active_passive,
+         -negative_control_rz,
+         -fulcrum_id,
+         -id_e_dna_sample_edited,
+         -edna_sample_info,
+         -notes_of_edna_sample,
+         -filter_type_other,
+         -filter_type_rz) %>%
+  arrange(edna_sample_name)
+
+combined_edna$visit_fulcrum_id[combined_edna$illumina_sample_name == "PAN_23_eDNA_102"] = "0d6a25da-e183-41fa-bf70-f7b8570176c8"
+combined_edna$visit_fulcrum_id[combined_edna$illumina_sample_name == "PAN_23_eDNA_103"] = "0d6a25da-e183-41fa-bf70-f7b8570176c8"
 
 # coordinate corrections
 clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "271fe5d3-ae5b-4c2e-bd1f-4d1f356dcc37"] = 545764
@@ -566,6 +658,16 @@ db_site = tbl(dbcon, Id("survey_data", "site"))
 ## unify visit
 
 ```{r}
+edna_visits = combined_edna %>%
+  rename(site = site_rz,
+         date = date_rz) %>%
+  select(site,
+         date) %>%
+  filter(!is.na(site),
+         !is.na(date)) %>%
+  distinct() %>%
+  mutate(edna = TRUE)
+
 unified_visit = clean_visit_info %>%
   filter(!is.na(date),
          !is.na(time_of_day),
@@ -578,7 +680,8 @@ unified_visit = clean_visit_info %>%
   group_by(site, date, time_of_day) %>%
   mutate(comments_visit = str_c(comments_visit, collapse = ", ")) %>%
   # slice_head(n = 1) %>%
-  ungroup()
+  ungroup() %>%
+  full_join(edna_visits, by = c("site", "date"))
 
 ```
 
@@ -601,9 +704,9 @@ gelled_visit = unified_visit %>%
 
 peace = get_dupes(gelled_visit, date, time_of_day, site_id)
 
-vids = gelled_visit %>%
-  filter(temp_visit_id %in% f_vids) %>%
-  pull(visit_id)
+# vids = gelled_visit %>%
+#   filter(temp_visit_id %in% f_vids) %>%
+#   pull(visit_id)
 ```
 
 ## Generate stats for log
@@ -804,9 +907,15 @@ db_env = tbl(dbcon, Id("survey_data", "environmental"))
 
 ### unify edna
 ```{r}
-unified_edna = clean_visit_info %>%
-  left_join(clean_survey_info, by = c("temp_visit_id" = "visit_fulcrum_id")) %>%
-  right_join(clean_edna, by = c("temp_visit_id" = "visit_fulcrum_id")) %>%
+unified_edna = combined_edna %>%
+  group_by(edna_sample_name, illumina_sample_name) %>%
+  slice_head(n = 1) %>%
+  ungroup() %>%
+  left_join(clean_visit_info, by = c("visit_fulcrum_id" = "temp_visit_id")) %>%
+  left_join(clean_survey_info, by = "visit_fulcrum_id") %>%
+  mutate(site = coalesce(site, site_rz),
+         date = coalesce(date, date_rz),
+         transect = coalesce(transect, transect_rz)) %>%
   left_join(db_site %>%
               select(tbl_keys("site", mdc)) %>%
               collect(),
@@ -842,6 +951,10 @@ gelled_edna = unified_edna %>%
                             UUIDfromName("5113bb6e-8cff-4a2d-9910-904403736cfb", uuid_name),
                             survey_id)) %>%
   ungroup() %>%
+  mutate(uuid_name = paste0(edna_sample_name, illumina_sample_name, survey_id),
+         edna_id = ifelse(is.na(edna_id),
+                          UUIDfromName("20e7b191-17c1-4137-86a0-6d180e1e38bf", uuid_name),
+                          edna_id)) %>%
   group_by(date) %>%
   mutate(has_negative_control = sum(negative_control) > 0,
          negative_control_group_id = if_else(has_negative_control,
@@ -1537,4 +1650,3 @@ db_sample = tbl(dbcon, Id("survey_data", "sample"))
 
 ```{r}
 dbDisconnect(dbcon)
-```
