@@ -1,0 +1,135 @@
+---
+title: "microbiome_samples_pat"
+output: html_document
+---
+
+## Setup
+```{r}
+# minimal packages for RIBBiTR DB data discovery
+librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, RIBBiTR-BII/ribbitrrr, here, janitor)
+
+# establish database connection
+dbcon = hopToDB("ribbitr")
+
+# survey tables
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
+# sample tables
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+
+wddir = here(Sys.getenv("data_dir"), "microbiome", "OneDrive_1_12-8-2025")
+
+txt_files = list.files(wddir)
+
+pad_number <- function(s, width = 5) {
+  nums = str_extract(s, "\\d+")
+  padded = sprintf("%0*d", width, as.integer(nums))
+  str_replace_all(s, "\\d+", padded)
+}
+
+# import and clean map files
+br_2022 = read_tsv(here(wddir, "2022_Brazil_map.txt"), show_col_types = FALSE) %>%
+  clean_names() %>%
+  mutate(sample_name = gsub("^BR", "BRMic", sample_id),
+         tryme = grepl("^BRMic", sample_id).
+         sample_name = if_else(, pad_number(sample_id, width = 3), sample_id)) %>%
+  select(sample_name, sample_id, everything())
+
+penn_2022 = read_tsv(here(wddir, "2022_Penn_map.txt"), show_col_types = FALSE) %>%
+  clean_names() %>%
+  rename(sample_name = rib_bi_trid,
+         barcode_plate_16s_dna = x16sdna_bc_plate,
+         barcode_plate_16s_rna = x16srna_bc_plate,
+         barcode_plate_its = its_bc_plate,
+         barcode_name_16s_dna = x16sdna_bc_id,
+         barcode_name_16s_rna = x16srna_bc_id,
+         barcode_name_its = its_bc_id,
+         barcode_sequence_16s_dna = barcode_sequence16s,
+         barcode_sequence_16s_rna = barcode_sequence16sr_rna,
+         date_its = its_seq_date,
+         date_16s = x16s_seq_date,
+         barcode_golay_its = golay_barcode_its
+         ) %>%
+  select(-sample_id)
+
+penn_2023 = read_tsv(here(wddir, "2023_Penn_map.txt"), show_col_types = FALSE) %>%
+  clean_names() %>%
+  rename(sample_name = rib_bi_trid,
+         primer_plate_16s = primer_plate16s,
+         barcode_name_16s = barcode_name16s,
+         barcode_sequence_16s = barcode_sequence16s,
+         barcode_golay_16s = golay_barcode,
+         barcode_golay_its = golay_barcode_its,
+         date_16s = date_seq16s,
+         date_its = date_seq_its,
+         linker_primer_sequence_16s = linker_primer_sequence) %>%
+  select(-sample_id)
+
+penn_2024 = read_tsv(here(wddir, "2024_Penn_map.txt"), show_col_types = FALSE) %>%
+  clean_names() %>%
+  mutate(sample_name = gsub("PLE2024BDH", "", ribbitr_id),
+         sample_name = gsub("PE", "Pe_", sample_name),
+         sample_name = gsub("(\\d+$)", str_pad("\\1", 4, pad = "0"), sample_name)) %>%
+  rename(primer_plate_well_number = no,
+         primer_plate_16s = x16s_primer_plate,
+         primer_plate_its = its_primer_plate,
+         date_16s = date_seq16s,
+         date_its = date_seq_its,
+         barcode_sequence_16s = barcode_sequence16s,
+         barcode_name_16s = bc_name16s,
+         barcode_name_its = bc_name_its,
+         primer_plate_well = well) %>%
+  select(-sample_id,
+         -ribbitr_id)
+
+woods_data = map_dfr(txt_files, ~ read_tsv(here(wddir, .x), show_col_types = FALSE) %>%
+                       clean_names(), .id = "filename") %>%
+  mutate(sample_id = coalesce(rib_bi_trid, ribbitr_id, sample_id))
+```
+
+# Build data query
+```{r}
+# all samples
+capture_all = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id")
+
+# pull out specific sample types, joining with desired results tables (where present)
+sample_mb = db_sample %>%
+  filter(sample_type == "microbiome") %>%
+  left_join(capture_all, by = "capture_id") %>%
+  select("sample_id", "sample_name", "sample_type", "capture_id", "sample_name_conflict", 
+         "negative_control_group_id", "negative_control",
+         "date",
+         "site",
+         "region",
+         "country"
+  ) %>%
+  filter(date >= "2022-01-01",
+         country == "brazil") %>%
+  collect() %>%
+  arrange(date)
+
+woods_full = sample_mb %>%
+  full_join(woods_data, by = c("sample_name" = "sample_id")) %>%
+  arrange(date.x)
+
+woods_inner = sample_mb %>%
+  inner_join(woods_data, by = c("sample_name" = "sample_id")) %>%
+  arrange(date.x)
+
+clean_joins = sample_mb %>%
+  inner_join(woods_data, by = c("sample_name" = "sample_id"))
+
+mismatch_join = woods_full %>%
+  anti_join(clean_joins, by = "sample_name") %>%
+  arrange(sample_name)
+```
