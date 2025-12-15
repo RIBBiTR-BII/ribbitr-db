@@ -76,6 +76,18 @@ bd_samples_results = bd_samples_by_year %>%
   mutate(bd_result_count = ifelse(is.na(bd_result_count), 0, bd_result_count),
          discrepancy = bd_sample_count - bd_result_count)
 
+region_last_capture_date = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  group_by(country, region) %>%
+  summarise(latest_capture = max(date, na.rm = TRUE),
+            .groups = "drop") %>%
+  collect()
+  
+
 # write_csv(bd_samples_results, here("staging", paste0("br_bd_samples_results_count_", today(), ".csv")))
 ```
 
