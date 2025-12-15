@@ -1517,3 +1517,14 @@ pa_edna = db_edna %>%
 db_edna = rows_delete(db_edna, pa_edna, by = "edna_id", unmatched = "ignore", in_place = TRUE)
 
 ```
+
+# drop edna by id for re-upload
+```{r}
+
+drop_ids = db_edna %>%
+  filter(edna_id %in% ednaid$edna_id) %>%
+  select(edna_id)
+
+rows_delete(db_edna, drop_ids, by = "edna_id", unmatched = "ignore", in_place = TRUE)
+
+```
