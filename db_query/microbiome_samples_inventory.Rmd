@@ -18,8 +18,6 @@ db_visit = tbl(dbcon, Id("survey_data", "visit"))
 db_site = tbl(dbcon, Id("survey_data", "site"))
 db_region = tbl(dbcon, Id("survey_data", "region"))
 db_country = tbl(dbcon, Id("survey_data", "country"))
-
-# sample tables
 db_sample = tbl(dbcon, Id("survey_data", "sample"))
 
 wddir = here(Sys.getenv("data_dir"), "microbiome", "OneDrive_1_12-8-2025")
@@ -31,65 +29,197 @@ pad_number <- function(s, width = 5) {
   padded = sprintf("%0*d", width, as.integer(nums))
   str_replace_all(s, "\\d+", padded)
 }
+```
 
 # import and clean map files
+```{r}
+## brasil
 br_2022 = read_tsv(here(wddir, "2022_Brazil_map.txt"), show_col_types = FALSE) %>%
   clean_names() %>%
   mutate(sample_name = gsub("^BR", "BRMic", sample_id),
-         tryme = grepl("^BRMic", sample_id).
-         sample_name = if_else(, pad_number(sample_id, width = 3), sample_id)) %>%
-  select(sample_name, sample_id, everything())
+         tryme = grepl("^BRMic", sample_name),
+         sample_name = if_else(tryme, pad_number(sample_name, width = 3), sample_name),
+         src = "brazil_2022") %>%
+  rename(barcode_plate_16s_dna = x16sdna_bc_plate,
+         barcode_plate_16s_rna = x16srna_bc_plate,
+         barcode_plate_its = its_bc_plate,
+         barcode_id_16s_dna = x16sdna_bc_id,
+         barcode_id_16s_rna = x16srna_bc_id,
+         barcode_id_its = its_bc_id,
+         barcode_sequence_16s_dna = x16sdna_bc,
+         barcode_sequence_16s_rna = barcode_sequence16s,
+         extraction_date_16s = x16s_seq_date,
+         extraction_date_its = its_seq_date
+         ) %>%
+  select(sample_name,
+         everything(),
+         -tryme,
+         -sample_id)
 
+br_2023 = read_tsv(here(wddir, "2023_Brazil_map.txt"), show_col_types = FALSE) %>%
+  clean_names() %>%
+  mutate(src = "brazil_2023") %>%
+  rename(sample_name = sample_id,
+         primer_plate_16s = primer_plate16s,
+         barcode_id_16s = x16s_bc_name,
+         barcode_id_its = its_bc_name,
+         barcode_sequence_16s = barcode_sequence16s,
+         linker_primer_sequence_16s = linker_primer_sequence,
+         barcode_golay_16s = golay_bc,
+         extraction_date_its = its_seq_date,
+         extraction_date_16s = x16s_seq_date) %>%
+  select(-pimer_plate_well16s,
+         -well2)
+
+br_2024 = read_tsv(here(wddir, "2024_BrazilFull_map.txt"), show_col_types = FALSE) %>%
+  clean_names() %>%
+  mutate(sample_name = gsub("^BrMic", "BR_", sample_id),
+         sample_name = gsub("(\\d{3}$)", "\\1_gs", sample_name),
+         src = "brazil_2024") %>%
+  rename(primer_plate_16s = x16s_primer_plate,
+         primer_plate_its = its_primer_plate,
+         extraction_date_16s = date_seq16s,
+         extraction_date_its = date_seq_its,
+         barcode_sequence_16s = barcode_sequence16s,
+         barcode_id_16s = bc_name16s,
+         barcode_id_its = bc_name_its) %>%
+  select(-sample_id,
+         -ribbitr_id,
+         -number)
+
+## panama
+pa_2022 = read_tsv(here(wddir, "2022_Pan_map.txt"), show_col_types = FALSE) %>%
+  clean_names() %>%
+  mutate(src = "panama_2022") %>%
+  rename(sample_name = ribbitr_id,
+         barcode_plate_16s_dna = x16sdna_bc_plate,
+         barcode_plate_16s_rna = x16srna_bc_plate,
+         barcode_plate_its = its_bc_plate,
+         barcode_id_16s_dna = x16sdna_bc_id,
+         barcode_id_16s_rna = x16sna_bc_id,
+         barcode_id_its = its_bc_id,
+         barcode_sequence_16s_dna = x16sdna_bc,
+         barcode_sequence_16s_rna = barcode_sequence16s,
+         extraction_date_16s = x16s_seq_date,
+         extraction_date_its = its_seq_date,
+         barcode_golay_its = golay_barcode_its) %>%
+  select(-sample_id,
+         -species,
+         -date,
+         -site,
+         -sub_site)
+
+pa_2023 = read_tsv(here(wddir, "2023_Pan_map.txt"), show_col_types = FALSE) %>%
+  clean_names() %>%
+  mutate(src = "panama_2023") %>%
+  rename(sample_name = rib_bi_trid,
+         well = plate_well,
+         primer_plate_16s = primer_plate16s,
+         barcode_id_16s = primer_name,
+         barcode_id_its = primer_name_its,
+         linker_primer_sequence_16s = linker_primer_sequence,
+         barcode_sequence_16s = barcode_sequence16s,
+         extraction_date_its = date_seq_its,
+         extraction_date_16s = date_seq16s) %>%
+  select(-sample_id)
+
+pa_2024 = read_tsv(here(wddir, "2024_Pan_map.txt"), show_col_types = FALSE) %>%
+  clean_names() %>%
+  mutate(src = "panama_2024") %>%
+  rename(sample_name = ribbitr_id,
+         primer_plate_16s = x16s_primer_plate,
+         primer_plate_its = its_primer_plate,
+         barcode_sequence_16s = barcode_sequence16s,
+         barcode_id_16s = bc_name16s,
+         barcode_id_its = bc_name_its,
+         extraction_date_its = date_seq_its,
+         extraction_date_16s = date_seq16s) %>%
+  select(-sample_id,
+         -order)
+
+## pennsylvania
 penn_2022 = read_tsv(here(wddir, "2022_Penn_map.txt"), show_col_types = FALSE) %>%
   clean_names() %>%
+  mutate(src = "pennsylvania_2022") %>%
   rename(sample_name = rib_bi_trid,
          barcode_plate_16s_dna = x16sdna_bc_plate,
          barcode_plate_16s_rna = x16srna_bc_plate,
          barcode_plate_its = its_bc_plate,
-         barcode_name_16s_dna = x16sdna_bc_id,
-         barcode_name_16s_rna = x16srna_bc_id,
-         barcode_name_its = its_bc_id,
+         barcode_id_16s_dna = x16sdna_bc_id,
+         barcode_id_16s_rna = x16srna_bc_id,
+         barcode_id_its = its_bc_id,
          barcode_sequence_16s_dna = barcode_sequence16s,
          barcode_sequence_16s_rna = barcode_sequence16sr_rna,
-         date_its = its_seq_date,
-         date_16s = x16s_seq_date,
-         barcode_golay_its = golay_barcode_its
-         ) %>%
+         extraction_date_its = its_seq_date,
+         extraction_date_16s = x16s_seq_date,
+         barcode_golay_its = golay_barcode_its) %>%
   select(-sample_id)
+
+
 
 penn_2023 = read_tsv(here(wddir, "2023_Penn_map.txt"), show_col_types = FALSE) %>%
   clean_names() %>%
+  mutate(src = "pennsylvania_2023") %>%
   rename(sample_name = rib_bi_trid,
          primer_plate_16s = primer_plate16s,
-         barcode_name_16s = barcode_name16s,
+         barcode_id_16s = barcode_name16s,
+         barcode_id_its = barcode_name_its,
          barcode_sequence_16s = barcode_sequence16s,
          barcode_golay_16s = golay_barcode,
          barcode_golay_its = golay_barcode_its,
-         date_16s = date_seq16s,
-         date_its = date_seq_its,
+         extraction_date_16s = date_seq16s,
+         extraction_date_its = date_seq_its,
          linker_primer_sequence_16s = linker_primer_sequence) %>%
-  select(-sample_id)
+  select(-sample_id,
+         -primer_plate_well,
+         -primer_plate_well_its)
 
 penn_2024 = read_tsv(here(wddir, "2024_Penn_map.txt"), show_col_types = FALSE) %>%
   clean_names() %>%
   mutate(sample_name = gsub("PLE2024BDH", "", ribbitr_id),
          sample_name = gsub("PE", "Pe_", sample_name),
-         sample_name = gsub("(\\d+$)", str_pad("\\1", 4, pad = "0"), sample_name)) %>%
-  rename(primer_plate_well_number = no,
-         primer_plate_16s = x16s_primer_plate,
+         sample_name = gsub("(\\d+$)", str_pad("\\1", 4, pad = "0"), sample_name),
+         src = "pennsylvania_2024") %>%
+  rename(primer_plate_16s = x16s_primer_plate,
          primer_plate_its = its_primer_plate,
-         date_16s = date_seq16s,
-         date_its = date_seq_its,
+         extraction_date_16s = date_seq16s,
+         extraction_date_its = date_seq_its,
          barcode_sequence_16s = barcode_sequence16s,
-         barcode_name_16s = bc_name16s,
-         barcode_name_its = bc_name_its,
-         primer_plate_well = well) %>%
+         barcode_id_16s = bc_name16s,
+         barcode_id_its = bc_name_its) %>%
   select(-sample_id,
-         -ribbitr_id)
+         -ribbitr_id,
+         -no)
 
-woods_data = map_dfr(txt_files, ~ read_tsv(here(wddir, .x), show_col_types = FALSE) %>%
-                       clean_names(), .id = "filename") %>%
-  mutate(sample_id = coalesce(rib_bi_trid, ribbitr_id, sample_id))
+peace_cols = compare_df_cols(br_2022,
+                             br_2023,
+                             br_2024,
+                             pa_2022,
+                             pa_2023,
+                             pa_2024,
+                             penn_2022,
+                             penn_2023,
+                             penn_2024)
+
+# line-by revisions
+penn_2022$sample_name[penn_2022$sample_name == "2022-05-18‚Äêadmin-rapi16"] = "2022-05-18-admin-rapi16"
+penn_2022$sample_name[penn_2022$sample_name == "2022-08-19-admin-rapi2"] = "2022-05-19-admin-rapi2"
+penn_2022$sample_name[penn_2022$sample_name == "2022-08-15-admin-rapi3"] = "2022-05-19-admin-rapi3"
+pa_2023$sample_name[pa_2023$sample_name == "220726_F004"] = "220627_F004"
+
+
+lab_data = bind_rows(br_2022,
+                       br_2023,
+                       br_2024,
+                       pa_2022,
+                       pa_2023,
+                       pa_2024,
+                       penn_2022,
+                       penn_2023,
+                       penn_2024)
+
+peace = get_dupes(lab_data, sample_name)
+
 ```
 
 # Build data query
@@ -108,28 +238,70 @@ sample_mb = db_sample %>%
   left_join(capture_all, by = "capture_id") %>%
   select("sample_id", "sample_name", "sample_type", "capture_id", "sample_name_conflict", 
          "negative_control_group_id", "negative_control",
+         "taxon_capture",
          "date",
          "site",
          "region",
          "country"
   ) %>%
   filter(date >= "2022-01-01",
-         country == "brazil") %>%
+         region == "pennsylvania" | country == "brazil" | country == "panama",
+         !grepl("^DrySwab\\d{5}", sample_name)) %>%
   collect() %>%
   arrange(date)
 
-woods_full = sample_mb %>%
-  full_join(woods_data, by = c("sample_name" = "sample_id")) %>%
-  arrange(date.x)
+```
 
-woods_inner = sample_mb %>%
-  inner_join(woods_data, by = c("sample_name" = "sample_id")) %>%
-  arrange(date.x)
+# join database and lab data
+```{r}
+lab_db_full = sample_mb %>%
+  full_join(lab_data, by = "sample_name") %>%
+  arrange(sample_name) %>%
+  rename(woodhams_src = src) %>%
+  mutate(year = year(date)) %>%
+  select(sample_name,
+         sample_id,
+         taxon_capture,
+         site,
+         date,
+         region,
+         country,
+         woodhams_src) %>%
+  mutate(status = case_when(
+    !is.na(sample_id) & !is.na(woodhams_src) ~ "aligned",
+    is.na(sample_id) & !is.na(woodhams_src) ~ "missing_in_db",
+    !is.na(sample_id) & is.na(woodhams_src) ~ "no_results",
+  ))
 
-clean_joins = sample_mb %>%
-  inner_join(woods_data, by = c("sample_name" = "sample_id"))
+brazil_lab_db = lab_db_full %>%
+  filter(country == "brazil" | grepl("brazil", woodhams_src))
 
-mismatch_join = woods_full %>%
-  anti_join(clean_joins, by = "sample_name") %>%
-  arrange(sample_name)
+panama_lab_db = lab_db_full %>%
+  filter(country == "panama" | grepl("panama", woodhams_src))
+
+pennsylvania_lab_db = lab_db_full %>%
+  filter(region == "pennsylvania" | grepl("pennsylvania", woodhams_src))
+
+leftovers = lab_db_full %>%
+  anti_join(brazil_lab_db, by = "sample_name") %>%
+  anti_join(panama_lab_db, by = "sample_name") %>%
+  anti_join(pennsylvania_lab_db, by = "sample_name")
+
+# stats
+summary_stats = lab_db_full %>%
+  mutate(system = case_when(
+    country == "brazil" | grepl("brazil", woodhams_src) ~ "brazil",
+    country == "panama" | grepl("panama", woodhams_src) ~ "panama",
+    region == "pennsylvania" | grepl("pennsylvania", woodhams_src) ~ "pennsylvania",
+    .default = NA
+  )) %>%
+  group_by(system) %>%
+  summarise(aligned_samples = sum(!is.na(sample_id) & !is.na(woodhams_src)),
+            missing_results = sum(!is.na(sample_id) & is.na(woodhams_src)),
+            missing_in_db = sum(is.na(sample_id) & !is.na(woodhams_src)))
+
+write_csv(brazil_lab_db, here("staging", paste0("microbiome_db_results_alignment_brazil_", today(), ".csv")))
+write_csv(panama_lab_db, here("staging", paste0("microbiome_db_results_alignment_panama_", today(), ".csv")))
+write_csv(pennsylvania_lab_db, here("staging", paste0("microbiome_db_results_alignment_pennsylvania_", today(), ".csv")))
+
 ```
