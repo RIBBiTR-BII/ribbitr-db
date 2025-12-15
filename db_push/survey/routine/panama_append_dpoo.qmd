@@ -299,8 +299,13 @@ clean_ves = raw_ves%>%
   filter(!if_all(everything(), is.na))
 
 clean_edna_rz = bind_rows(raw_edna_2022 %>%
-                          rename(filter_size_um = `Filter size (um) RZ Lab`),
-                        raw_edna_2023) %>%
+                          rename(filter_size_um = `Filter size (um) RZ Lab`) %>%
+                            mutate(illumina_sample_name = `Edited Sample ID`,
+                                   illumina_sample_name = gsub("_edna_", "-", illumina_sample_name, ignore.case = TRUE),
+                                   illumina_sample_name = gsub("PAN_", "eDNA_", illumina_sample_name, ignore.case = TRUE)),
+                        raw_edna_2023 %>%
+                            mutate(illumina_sample_name = `Edited Sample ID`,
+                                   illumina_sample_name = gsub("_edna_", "-", illumina_sample_name, ignore.case = TRUE))) %>%
   clean_names() %>%
   rename(filter_size_um_rz = filter_size_um,
          negative_control_rz = negative_control,
@@ -310,8 +315,7 @@ clean_edna_rz = bind_rows(raw_edna_2022 %>%
          comments_lab = rz_lab_notes,
          site_rz = site,
          transect_rz = transect,
-         date_rz = date,
-         illumina_sample_name = edited_sample_id) %>%
+         date_rz = date) %>%
   mutate(id_e_dna_sample = gsub("edna_", "", id_e_dna_sample, ignore.case = TRUE),
          id_e_dna_sample_edited = gsub("edna_", "", id_e_dna_sample_edited, ignore.case = TRUE),
          collection_location_rz = tolower(collection_location_rz),
@@ -322,7 +326,9 @@ clean_edna_rz = bind_rows(raw_edna_2022 %>%
          scrape_date = str_extract(id_e_dna_sample, "\\d{6}"),
          scrape_date = as.Date(scrape_date, format = "%y%m%d"),
          date_rz = coalesce(date_rz, scrape_date),
-         transect_rz = if_else(transect_rz == "NA", NA, transect_rz)) %>%
+         transect_rz = if_else(transect_rz == "NA", NA, transect_rz),
+         # illumina_sample_name = gsub("edna_", "", illumina_sample_name, ignore.case = TRUE)
+         ) %>%
   select(-region,
          -site_other,
          -season) %>%
@@ -415,8 +421,8 @@ combined_edna = clean_edna %>%
          -filter_type_rz) %>%
   arrange(edna_sample_name)
 
-combined_edna$visit_fulcrum_id[combined_edna$illumina_sample_name == "PAN_23_eDNA_102"] = "0d6a25da-e183-41fa-bf70-f7b8570176c8"
-combined_edna$visit_fulcrum_id[combined_edna$illumina_sample_name == "PAN_23_eDNA_103"] = "0d6a25da-e183-41fa-bf70-f7b8570176c8"
+combined_edna$visit_fulcrum_id[combined_edna$edna_sample_name == "231128_eDNA_004"] = "0d6a25da-e183-41fa-bf70-f7b8570176c8"
+combined_edna$visit_fulcrum_id[combined_edna$edna_sample_name == "231128_eDNA_005"] = "0d6a25da-e183-41fa-bf70-f7b8570176c8"
 
 # coordinate corrections
 clean_survey_info$environmental_utme[clean_survey_info$temp_survey_id == "271fe5d3-ae5b-4c2e-bd1f-4d1f356dcc37"] = 545764
@@ -995,6 +1001,9 @@ compare_edna = compare_df_cols(db_edna %>%
 tray = compare_for_staging(db_edna %>% collect(), subset_edna, "edna_id", return_all = TRUE, report = "edna")
 upsert_edna = bind_rows(tray$insert,
                         tray$update)
+
+ednaid = tray$duplicate %>%
+  select(edna_id)
 
 # anything to upsert?
 x_edna = (nrow(upsert_edna_survey) > 0) | (nrow(upsert_edna) > 0)
@@ -1650,3 +1659,4 @@ db_sample = tbl(dbcon, Id("survey_data", "sample"))
 
 ```{r}
 dbDisconnect(dbcon)
+```
