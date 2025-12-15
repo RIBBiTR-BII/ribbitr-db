@@ -468,7 +468,8 @@ clean_sample_obs = bind_rows(
            mucosome_id = mucusome_id,
            genetic_id = toe_clip_tube_id) %>%
     mutate(bd_swab_id = gsub("BDSwab", "BdSwab", bd_swab_id),
-           bd_swab_id_2 = microbiome_id),
+           bd_swab_id_2 = microbiome_id,
+           microbiome_swab_id_2 = if_else(grepl("BacSwab", bacterial_swab_id), bacterial_swab_id, NA)),
   raw_sample_obs) %>%
   clean_names() %>%
   rename(svl_mm = snout_vent_length,
@@ -679,6 +680,7 @@ clean_sample_obs$amp_id[clean_sample_obs$fulcrum_id == "15726e63-04ad-46fa-8f93-
 clean_sample_obs$antibody_id[clean_sample_obs$fulcrum_id == "15726e63-04ad-46fa-8f93-e7e5c5f3377a"] = "AntiBod00038"
 clean_sample_obs$amp_id_2[clean_sample_obs$fulcrum_id == "faa4a322-b353-4ae7-9066-a1f9d96e57da"] = "AMPBath00000"
 clean_sample_obs$bacterial_swab_id[clean_sample_obs$fulcrum_id == "6095d594-6932-4d76-8171-8f241c24e2e4"] = "BacSwab00282"
+clean_sample_obs$microbiome_swab_id_2[clean_sample_obs$fulcrum_id == "6095d594-6932-4d76-8171-8f241c24e2e4"] = "BacSwab00282"
 clean_sample_obs$crispr_id[clean_sample_obs$fulcrum_id == "6095d594-6932-4d76-8171-8f241c24e2e4"] = "CRSwab00209"
 clean_sample_obs$bd_swab_id[clean_sample_obs$fulcrum_id == "c83cb275-1261-4ed5-a84c-16db25ad0d8e"] = "BdSwab00203"
 clean_sample_obs$microbiome_swab_id[clean_sample_obs$fulcrum_id == "c228c10b-cba5-442a-b54c-4e6a33bff8b4"] = "Pe_16S00513"
@@ -1626,7 +1628,7 @@ sample_lookup_gen <- function(table, id_col, sample_cols, sample_type) {
 
 s1 = sample_lookup_gen(gelled_capture, "capture_id", c("bd_swab_id", "bd_swab_id_2"), "bd")
 s2 = sample_lookup_gen(gelled_capture, "capture_id", c("genetic_id"), "genetic")
-s3 = sample_lookup_gen(gelled_capture, "capture_id", c("microbiome_swab_id"), "microbiome")
+s3 = sample_lookup_gen(gelled_capture, "capture_id", c("microbiome_swab_id", "microbiome_swab_id_2"), "microbiome")
 s4 = sample_lookup_gen(gelled_capture, "capture_id", c("amp_id", "amp_id_2", "amp_id_3", "amp_id_4"), "amp")
 s5 = sample_lookup_gen(gelled_capture, "capture_id", c("mucosome_id"), "mucosome")
 s6 = sample_lookup_gen(gelled_capture, "capture_id", c("bacterial_swab_id"), "bacterial")
