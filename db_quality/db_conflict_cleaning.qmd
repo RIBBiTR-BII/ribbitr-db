@@ -1528,3 +1528,64 @@ drop_ids = db_edna %>%
 rows_delete(db_edna, drop_ids, by = "edna_id", unmatched = "ignore", in_place = TRUE)
 
 ```
+
+# life stage and sex fix brazil
+```{r}
+all_captures = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(grepl("juvenil|jovem", comments_capture, ignore.case = TRUE)) %>%
+  mutate(life_stage = if_else(grepl("juvenil|jovem", comments_capture, ignore.case = TRUE),
+                              "subadult",
+                              life_stage)) %>%
+    select(taxon_capture,
+         life_stage,
+         sex,
+         svl_mm,
+         body_mass_g,
+         comments_capture,
+         date,
+         site,
+         region) %>%
+  collect()
+
+update_captures = db_capture %>%
+  filter(grepl("juvenil|jovem", comments_capture, ignore.case = TRUE)) %>%
+  mutate(life_stage = if_else(grepl("juvenil|jovem", comments_capture, ignore.case = TRUE),
+                              "subadult",
+                              life_stage))
+
+db_capture = rows_update(db_capture, update_captures, by = "capture_id", unmatched = "ignore", in_place = TRUE)
+
+# correct sex
+all_captures = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(!(sex %in% c("female", "male"))) %>%
+  select(taxon_capture,
+         life_stage,
+         sex,
+         svl_mm,
+         body_mass_g,
+         comments_capture,
+         date,
+         site,
+         region) %>%
+  collect()
+
+update_captures = db_capture %>%
+  filter(!(sex %in% c("female", "male"))) %>%
+  mutate(sex = case_match(sex,
+                          "f" ~ "female",
+                          "m" ~ "male",
+                          .default = sex))
+
+db_capture = rows_update(db_capture, update_captures, by = "capture_id", unmatched = "ignore", in_place = TRUE)
+
+```
