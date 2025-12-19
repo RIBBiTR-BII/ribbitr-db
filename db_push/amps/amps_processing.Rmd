@@ -18,7 +18,7 @@ mdc = tbl(dbcon, Id("public", "all_columns")) %>%
 ## Point to local data directory
 ddir = Sys.getenv("data_dir")  # data directory
 # Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
-ri_wddir = here(ddir, "amps", "2025-05-16", "ribbitr")
+ri_wddir = here(ddir, "amps", "2025-12-19", "ribbitr")
 sr_wddir = here(ddir, "amps", "serdp")
 ```
 
@@ -35,6 +35,7 @@ db_gia = tbl(dbcon, Id("survey_data", "amp_gia"))
 # load files
 ```{r include=FALSE}
 # dput(list.files(path = here(wddir, "gia_data")))
+dput(list.files(path = here(ri_wddir, "panama")))
 
 # serdp
 # raw_intensity_serpd_rapi = read_csv(here(wddir, "serdp", "amp_rapi.csv"))
@@ -47,6 +48,9 @@ raw_peptide_br_2022 = read_csv(here(ri_wddir, "brazil", "BII Brazil 2022 peptide
 raw_maldi_br_2023 = read_csv(here(ri_wddir, "brazil", "Brazil 2023 MALDI peak list.csv"))
 raw_peptide_br_2023 = read_csv(here(ri_wddir, "brazil", "RIBBiTR_Brazil_totalpeptides2023_upload.csv"))
 
+raw_maldi_br_2024 = read_csv(here(ri_wddir, "brazil", "Brazil 2024 MALDI peak list.csv"))
+raw_peptide_br_2024 = read_csv(here(ri_wddir, "brazil", "Brazil_ampquant_2024.csv"))
+
 # panama
 raw_peptide_pa_2022_cpan = read_csv(here(ri_wddir, "panama", "BII Panama 2022 Cpan peptide quantity.csv"))
 raw_maldi_pa_2022_cpan = read_csv(here(ri_wddir, "panama", "BII Panama 2022 Cpan MALDI peak list.csv"))
@@ -57,6 +61,11 @@ raw_intensity_pa_2022_lwarz = read_csv(here(ri_wddir, "panama", "BII Panama 2022
 raw_peptide_pa_2023 = read_csv(here(ri_wddir, "panama", "Panama 2023 peptide quantities.csv"))
 raw_maldi_pa_2023 = read_csv(here(ri_wddir, "panama", "Panama MALDI 2023.csv"))
 raw_intensity_pa_2023_lwarz = read_csv(here(ri_wddir, "panama", "BII 2023 Lwarz amps intensity.csv"))
+
+raw_peptide_pa_2024 = read_csv(here(ri_wddir, "panama", "AMPquantity_panama_2024.csv"))
+raw_maldi_pa_2024 = read_csv(here(ri_wddir, "panama", "Panama 2023 2024 peak lists MALDI.csv"))
+raw_intensity_pa_2024_lwarz = read_csv(here(ri_wddir, "panama", "L warsz AMPs intensity2023_2024.csv"))
+
 
 # pennsylvania
 raw_peptide_pe_2022 = read_csv(here(ri_wddir, "pennsylvania", "PLE peptide quantity 2022 upload.csv"))
@@ -70,6 +79,8 @@ raw_maldi_pe_2023 = read_csv(here(ri_wddir, "pennsylvania", "PLE MALDI peak list
 raw_intensity_pe_2023_rpip = read_csv(here(ri_wddir, "pennsylvania", "2023_ PA R. pipiens amp ID intensity.csv"))
 raw_intensity_pe_2023_rcat = read_csv(here(ri_wddir, "pennsylvania", "2023_ PA R. catesbeiana amp ID intensity.csv"))
 raw_intensity_pe_2023_rcla = read_csv(here(ri_wddir, "pennsylvania","2023_ PA R. clamitans amp ID intensity.csv"))
+
+raw_peptide_pe_2024 = read_csv(here(ri_wddir, "pennsylvania","PLE_ampquant_22May2024.csv"))
 
 # sierra nevada
 raw_peptide_sn_2022 = read_csv(here(ri_wddir, "sierra nevada", "BII Sierra 2022 peptides.csv"))
@@ -96,7 +107,28 @@ raw_maldi_pe_2023$amp_id[raw_maldi_pe_2023$amp_id == "Pe_AMP00116_00119"] = "Pe_
 raw_maldi_pe_2023$amp_id_2[raw_maldi_pe_2023$amp_id == "Pe_AMP00157,_Pe_AMP00160"] = "Pe_AMP00160"
 raw_maldi_pe_2023$amp_id[raw_maldi_pe_2023$amp_id == "Pe_AMP00157,_Pe_AMP00160"] = "Pe_AMP00157"
 
+raw_peptide_br_2024$amp_id[raw_peptide_br_2024$amp_id == "Control Oct 10, 24"] = "BR_Control_10-Oct-24"
+raw_peptide_br_2024$amp_id[raw_peptide_br_2024$amp_id == "Control Oct 13, 24"] = "BR_Control_13-Oct-24"
+raw_peptide_br_2024$amp_id[raw_peptide_br_2024$amp_id == "Control Oct 16, 24"] = "BR_Control_16-Oct-24"
+raw_peptide_br_2024$amp_id[raw_peptide_br_2024$amp_id == "Control Nov 2, 2024"] = "BR_Control_02-Nov-24"
+raw_peptide_br_2024$amp_id[raw_peptide_br_2024$amp_id == "Neg control"] = "BR_Control_2024"
+raw_maldi_br_2024$amp_id[raw_maldi_br_2024$amp_id == "Neg_control"] = "BR_Control_2024"
+
 raw_intensity_pe_2023_rcla$amp_id[raw_intensity_pe_2023_rcla$amp_id == "Pe-AMP00154"] = "Pe_AMP00154"
+
+raw_gia_pe$Notes[raw_gia_pe["AMP_ID"] == "Pe_AMP00089" &
+                   raw_gia_pe["Date of GIA"] == "01/21/2024" &
+                   raw_gia_pe["Isolate Tested"] == "JEL197 (2023)"] = "500 mg/ml point seems wrong (plating error?)"
+raw_gia_pe$Notes[raw_gia_pe["AMP_ID"] == "Pe_AMP00041" &
+                   raw_gia_pe["Date of GIA"] == "10/30/2024" &
+                   raw_gia_pe["Isolate Tested"] == "JWR001"] = "MIC = concentration at which O.D. > Av Neg Crtl"
+raw_gia_pe$Notes[raw_gia_pe["AMP_ID"] == "Pe_AMP00079" &
+                   raw_gia_pe["Date of GIA"] == "01/21/2024" &
+                   raw_gia_pe["Isolate Tested"] == "JWR002"] = "MIC = concentration at which O.D. > Av Neg Crtl"
+raw_gia_pe$Notes[raw_gia_pe["AMP_ID"] == "Pe_AMP00093" &
+                   raw_gia_pe["Date of GIA"] == "01/21/2024" &
+                   raw_gia_pe["Isolate Tested"] == "JWR002"] = "MIC = concentration at which O.D. > Av Neg Crtl"
+
 ```
 
 # combine similar and clean
@@ -105,9 +137,12 @@ raw_intensity_pe_2023_rcla$amp_id[raw_intensity_pe_2023_rcla$amp_id == "Pe-AMP00
 clean_panama_controls = function(df) {
   df %>%
     mutate(old_amp_id = amp_id,
+           amp_id = gsub("veg/|veg_", "", amp_id, ignore.case = TRUE),
+           amp_id = gsub(" |-", "_", amp_id, ignore.case = TRUE),
            amp_id = gsub("nc", "negativecontrol", amp_id, ignore.case = TRUE),
            amp_id = gsub("neg$", "negativecontrol", amp_id, ignore.case = TRUE),
            amp_id = gsub("negative_control", "negativecontrol", amp_id, ignore.case = TRUE),
+           amp_id = gsub("neg_control", "negativecontrol", amp_id, ignore.case = TRUE),
            amp_id = gsub("negcon", "negativecontrol", amp_id, ignore.case = TRUE),
            amp_id = if_else(grepl("negative|control", amp_id, ignore.case = TRUE), tolower(amp_id), amp_id))
 }
@@ -116,7 +151,9 @@ clean_panama_controls = function(df) {
 clean_total = bind_rows(raw_peptide_br_2022 %>%
                           rename(amp_id = amp_id_1),
                         raw_peptide_br_2023,
-                        peace = raw_peptide_pa_2022_cpan %>%
+                        raw_peptide_br_2024 %>%
+                          rename("Total.peptides.ug" = "total amps (ug)"),
+                        raw_peptide_pa_2022_cpan %>%
                           rename(amp_id = Sample_ID,
                                  body_mass_g = Weight) %>%
                           clean_panama_controls(),
@@ -127,11 +164,26 @@ clean_total = bind_rows(raw_peptide_br_2022 %>%
                         raw_peptide_pa_2023 %>%
                           rename(amp_id = capt_swab_id) %>%
                           clean_panama_controls(),
+                        raw_peptide_pa_2024 %>%
+                          rename(amp_id = capt_swab_id) %>%
+                          clean_panama_controls(),
                         raw_peptide_pe_2022 %>%
                           rename(notes = BCA.notes),
                         raw_peptide_pe_2023 %>%
                           rename(notes = "Notes") %>%
                           mutate(notes = ifelse(!is.na(amp_id_2),
+                                                gsub(", NA", "", paste0(notes,
+                                                                        ". Pooled fractions from: ",
+                                                                        paste(amp_id,
+                                                                              amp_id_2,
+                                                                              amp_id_3,
+                                                                              amp_id_4,
+                                                                              sep = ", "))),
+                                                notes)),
+                        raw_peptide_pe_2024 %>%
+                          rename(notes = AMP_Notes) %>%
+                          mutate(Total.peptides.ug = as.numeric(Total.peptides.ug),
+                                 notes = ifelse(!is.na(amp_id_2),
                                                 gsub(", NA", "", paste0(notes,
                                                                         ". Pooled fractions from: ",
                                                                         paste(amp_id,
@@ -170,6 +222,8 @@ clean_peak = bind_rows(raw_maldi_br_2022 %>%
                          clean_names(),
                        raw_maldi_br_2023 %>%
                          clean_names(),
+                       raw_maldi_br_2024 %>%
+                         clean_names(),
                        raw_maldi_pa_2022_cpan %>%
                          rename(amp_id = Sample_ID) %>%
                          clean_names() %>%
@@ -179,6 +233,9 @@ clean_peak = bind_rows(raw_maldi_br_2022 %>%
                          clean_names %>%
                          clean_panama_controls(),
                        raw_maldi_pa_2023 %>%
+                         clean_names() %>%
+                         clean_panama_controls(),
+                       raw_maldi_pa_2024 %>%
                          clean_names() %>%
                          clean_panama_controls(),
                        raw_maldi_pe_2022 %>%
@@ -207,13 +264,16 @@ clean_peak = bind_rows(raw_maldi_br_2022 %>%
          resolution = res) %>%
   mutate(amp_lab = "rs_lab")
                             
-unified_intensity = bind_rows(peace = raw_intensity_pa_2022_lwarz %>%
+unified_intensity = bind_rows(raw_intensity_pa_2022_lwarz %>%
                                 clean_names() %>%
                                 rename(amp_id = sample_id) %>%
                                 clean_panama_controls(),
                               raw_intensity_pa_2023_lwarz %>%
                                 clean_names() %>%
                                 rename(species = species_capture),
+                              raw_intensity_pa_2024_lwarz %>%
+                                clean_names() %>%
+                                clean_panama_controls(),
                               raw_intensity_pe_2022_rcat %>%
                                 clean_names(),
                               raw_intensity_pe_2022_rpip %>%
@@ -358,7 +418,8 @@ clean_gia = bind_rows(raw_gia_pe %>%
                                     .default = bd_isolate_id),
          sample_name = if_else(grepl("^AMP\\d{5}$", sample_name),
                                gsub("AMP", "AMPBath", sample_name),
-                               sample_name)) %>%
+                               sample_name),
+         mic = if_else(mic == "`", NA, mic)) %>%
     select("sample_name",
          "date_gia",
          "bd_isolate_id",
@@ -559,8 +620,10 @@ compare_gia = compare_df_cols(db_gia %>%
 
 tray = compare_for_staging(db_gia %>% collect(), subset_gia, "result_id", return_all = TRUE, report = "amp_gia")
 upsert_gia = bind_rows(tray$insert,
-                         tray$update)
+                       tray$update)
 orphan_gia = tray$orphan
+
+peace = compare_updates(tray)
 
 ```
 
