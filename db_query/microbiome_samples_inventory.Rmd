@@ -5,7 +5,7 @@ output: html_document
 
 ## Setup
 ```{r}
-# minimal packages for RIBBiTR DB data discovery
+# minimal packages for RIBBiTR DB
 librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, RIBBiTR-BII/ribbitrrr, here, janitor)
 
 # establish database connection
@@ -20,10 +20,13 @@ db_region = tbl(dbcon, Id("survey_data", "region"))
 db_country = tbl(dbcon, Id("survey_data", "country"))
 db_sample = tbl(dbcon, Id("survey_data", "sample"))
 
+# point to data files
 wddir = here(Sys.getenv("data_dir"), "microbiome", "OneDrive_1_12-8-2025")
 
+# get file names
 txt_files = list.files(wddir)
 
+# function for zero-padding of sample names
 pad_number <- function(s, width = 5) {
   nums = str_extract(s, "\\d+")
   padded = sprintf("%0*d", width, as.integer(nums))
@@ -191,40 +194,48 @@ penn_2024 = read_tsv(here(wddir, "2024_Penn_map.txt"), show_col_types = FALSE) %
          -ribbitr_id,
          -no)
 
-peace_cols = compare_df_cols(br_2022,
-                             br_2023,
-                             br_2024,
-                             pa_2022,
-                             pa_2023,
-                             pa_2024,
-                             penn_2022,
-                             penn_2023,
-                             penn_2024)
-
 # line-by revisions
 penn_2022$sample_name[penn_2022$sample_name == "2022-05-18‚Äêadmin-rapi16"] = "2022-05-18-admin-rapi16"
 penn_2022$sample_name[penn_2022$sample_name == "2022-08-19-admin-rapi2"] = "2022-05-19-admin-rapi2"
 penn_2022$sample_name[penn_2022$sample_name == "2022-08-15-admin-rapi3"] = "2022-05-19-admin-rapi3"
 pa_2023$sample_name[pa_2023$sample_name == "220726_F004"] = "220627_F004"
 
+# compare columns across all source files
+clean_column_compare = compare_df_cols(br_2022,
+                                       br_2023,
+                                       br_2024,
+                                       pa_2022,
+                                       pa_2023,
+                                       pa_2024,
+                                       penn_2022,
+                                       penn_2023,
+                                       penn_2024)
 
+# write to file
+# write_csv(clean_column_compare, here("staging", paste0("microbiome_map_column_compare_", today(), ".csv")))
+
+# bind all source files
 lab_data = bind_rows(br_2022,
-                       br_2023,
-                       br_2024,
-                       pa_2022,
-                       pa_2023,
-                       pa_2024,
-                       penn_2022,
-                       penn_2023,
-                       penn_2024)
+                     br_2023,
+                     br_2024,
+                     pa_2022,
+                     pa_2023,
+                     pa_2024,
+                     penn_2022,
+                     penn_2023,
+                     penn_2024)
 
-peace = get_dupes(lab_data, sample_name)
+# pull final column names
+all_cols = colnames(lab_data)
+
+# identify duplicate sample names
+all_dupes = get_dupes(lab_data, sample_name)
 
 ```
 
-# Build data query
+# Query RIBBiTR database
 ```{r}
-# all samples
+# all captures
 capture_all = db_capture %>%
   left_join(db_survey, by = "survey_id") %>%
   left_join(db_visit, by = "visit_id") %>%
@@ -232,7 +243,7 @@ capture_all = db_capture %>%
   left_join(db_region, by = "region_id") %>%
   left_join(db_country, by = "country_id")
 
-# pull out specific sample types, joining with desired results tables (where present)
+# all microbiome samples aligned with a capture
 sample_mb = db_sample %>%
   filter(sample_type == "microbiome") %>%
   left_join(capture_all, by = "capture_id") %>%
@@ -252,8 +263,9 @@ sample_mb = db_sample %>%
 
 ```
 
-# join database and lab data
+# join database and map data
 ```{r}
+# full join
 lab_db_full = sample_mb %>%
   full_join(lab_data, by = "sample_name") %>%
   arrange(sample_name) %>%
@@ -273,15 +285,19 @@ lab_db_full = sample_mb %>%
     !is.na(sample_id) & is.na(woodhams_src) ~ "no_results",
   ))
 
+# brazil subset
 brazil_lab_db = lab_db_full %>%
   filter(country == "brazil" | grepl("brazil", woodhams_src))
 
+# panama subset
 panama_lab_db = lab_db_full %>%
   filter(country == "panama" | grepl("panama", woodhams_src))
 
+# pennsylvania subset
 pennsylvania_lab_db = lab_db_full %>%
   filter(region == "pennsylvania" | grepl("pennsylvania", woodhams_src))
 
+# antijoin check (should be empty)
 leftovers = lab_db_full %>%
   anti_join(brazil_lab_db, by = "sample_name") %>%
   anti_join(panama_lab_db, by = "sample_name") %>%
@@ -300,6 +316,7 @@ summary_stats = lab_db_full %>%
             missing_results = sum(!is.na(sample_id) & is.na(woodhams_src)),
             missing_in_db = sum(is.na(sample_id) & !is.na(woodhams_src)))
 
+# write subsets to file
 write_csv(brazil_lab_db, here("staging", paste0("microbiome_db_results_alignment_brazil_", today(), ".csv")))
 write_csv(panama_lab_db, here("staging", paste0("microbiome_db_results_alignment_panama_", today(), ".csv")))
 write_csv(pennsylvania_lab_db, here("staging", paste0("microbiome_db_results_alignment_pennsylvania_", today(), ".csv")))
