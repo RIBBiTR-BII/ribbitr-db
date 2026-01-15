@@ -1,0 +1,101 @@
+---
+title: "amps_bd_env_emily"
+output: html_document
+---
+
+#setup
+```{r}
+librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, RIBBiTR-BII/ribbitrrr)
+
+# establish database connection
+dbcon <- hopToDB("ribbitr")
+
+# load table metadata
+mdt <- tbl(dbcon, Id("public", "all_tables")) %>%
+filter(table_schema == "survey_data") %>%
+collect()
+
+# load column metadata
+mdc <- tbl(dbcon, Id("public", "all_columns")) %>%
+filter(table_schema == "survey_data") %>%
+collect()
+
+# pointers for all tables of interest
+# format var_name = tbl(dbcon, Id(schema_name, table_name))
+db_bdqpcr = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_env = tbl(dbcon, Id("survey_data", "environmental"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+db_amp_quant = tbl(dbcon, Id("survey_data", "amp_total"))
+db_maldi = tbl(dbcon, Id("survey_data", "amp_maldi_peak"))
+```
+
+```{r}
+# join with survey and visit tables,
+db_env_visit = db_env %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  group_by(visit_id) %>% # aggregate to a single value per visit
+  summarise(env_n = n(),
+            air_temp_c_mean = mean(air_temp_c, na.rm = TRUE),
+            water_temp_c_mean = mean(water_temp_c, na.rm = TRUE))
+
+db_bdsamp = db_bdqpcr %>%
+  left_join(db_sample, by = "sample_id") %>%
+  group_by(capture_id) %>%
+  slice_sample(n = 1) %>%
+  rename(result_id_bd = result_id,
+         sample_id_bd = sample_id)
+
+db_ampquant_country = db_amp_quant %>%
+  inner_join(db_sample, by = "sample_id") %>%
+  inner_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  rename(result_id_amp = result_id,
+         sample_id_amp = sample_id)
+
+
+amps_env = db_ampquant_country %>%
+  left_join(db_env_visit, by = "visit_id") %>%
+  left_join(db_bdsamp, by="capture_id")
+
+results_out = amps_env %>%
+  mutate(bd_sampled = !is.na(sample_id_bd)) %>%
+  select(total_peptides_ug,
+         sample_name_amp,
+         result_id_bd,
+         bd_sampled,
+         bd_detected,
+         bd_its1_copies_per_swab,
+         capture_id,
+         env_n,
+         air_temp_c_mean,
+         water_temp_c_mean,
+         date,
+         site,
+         region,
+         country) %>%
+  collect() %>%
+  arrange(country,
+          region,
+          date)
+
+results_penn = results_out %>%
+  filter(region == "pennsylvania")
+
+results_panama = results_out %>%
+  filter(country == "panama")
+
+results_brazil = results_out %>%
+  filter(country == "brazil")
+
+```
