@@ -1,0 +1,109 @@
+---
+title: "microbiome_samples_pat"
+output: html_document
+---
+
+## Setup
+```{r}
+# minimal packages for RIBBiTR DB data discovery
+librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, RIBBiTR-BII/ribbitrrr)
+
+# establish database connection
+dbcon = hopToDB("ribbitr")
+
+# survey table pointers
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
+# sample table pointers
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+db_microbiome = tbl(dbcon, Id("survey_data", "microbiome_sequencing"))
+db_bdqpcr = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+```
+
+# Build data query
+```{r}
+# all microbiome sequence data with capture data where aligned (lazy table object)
+mb_capture = db_microbiome %>%
+  left_join(db_sample, by = "sample_id") %>%
+  left_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id")
+
+# preview columns
+colnames(mb_capture)
+
+# collect data for columns of interest
+mb_capture_data = mb_capture %>%
+  select(sequencing_id,           ## unique ID
+         sample_name,             ## this is the sample-id used internally
+         sample_name_sequencing,  ## this is the verbatim sample-id found in the manifest files
+         gene,                    ## 16S or ITS?
+         extraction_date,
+         fastq_forward,           ## forward read fastq file name
+         fastq_reverse,           ## forward read fastq file name
+         negative_control,
+         negative_control_group_id,
+         capture_id,
+         taxon_capture,
+         svl_mm,
+         body_mass_g,
+         life_stage,
+         sex,
+         capture_animal_state,
+         body_temp_c,
+         site,
+         site_latitude,
+         site_longitude,
+         site_elevation_m,
+         region,
+         country
+         ) %>%
+  collect()
+
+# separate data into aligned and misaligned samples
+
+## aligned with a sample
+mb_capture_aligned = mb_capture_data %>%
+  filter(!is.na(capture_id) | negative_control)
+
+## misaligned samples (currently does not line up in database)
+mb_capture_misaligned = mb_capture_data %>%
+  anti_join(mb_capture_aligned, by = "sequencing_id")
+
+write_csv(mb_capture_aligned, here("staging", paste0("microbiome_capture_aligned_", today(), ".csv")))
+```
+
+# example aligning with Bd results
+```{r}
+# Bd results (up to capture)
+bd_capture = db_bdqpcr %>%
+  inner_join(db_sample %>%
+               select(sample_id, capture_id), by = "sample_id") %>%
+  filter(!is.na(capture_id)) %>%
+  group_by(capture_id) %>%
+  slice_sample(n = 1)  ## some Bd samples were collected or run in replicate, select 1 random replicate per sample for simplicity
+
+# join with microbiome results
+mb_bd_capture = mb_capture %>%
+  left_join(bd_capture, by = "capture_id")
+
+# preview columns
+colnames(mb_bd_capture)
+
+# pull columns of interest
+mb_bd_capture_data = mb_bd_capture %>%
+  select(sample_name_microbiome,
+         sample_name_sequencing,
+         bd_detected,
+         bd_its1_copies_per_swab) %>%
+  distinct() %>%  ## drop duplicate rows across genes, for a simple lookup
+  collect()
+```
