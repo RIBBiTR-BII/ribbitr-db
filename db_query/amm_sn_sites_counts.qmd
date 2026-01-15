@@ -77,7 +77,7 @@ data_samps = db_sample %>%
   left_join(sierra_travel_times %>%
               select(site,
                      est_transport_time), by = "site") %>%
-  left_join(ramu_pop_status, by = "site") %>%
+  left_join(site_status, by = "site") %>%
   mutate(population = ifelse(is.na(population), site, population))
 
 data_samps_micro_plus = data_samps %>%
@@ -135,7 +135,7 @@ write_csv(data_sites, here("staging", paste0("skin_def_sn_site_summary_", today(
 
 data_summary = data_samps %>%
   mutate(year = year(date)) %>%
-  left_join(pop, by = "site") %>%
+  left_join(site_status, by = "site") %>%
   filter(taxon_capture %in% c("rana_muscosa", "rana_sierrae"),
          life_stage %in% c("adult", "subadult")) %>%
   summarise(years = paste(sort(unique(year)), collapse = ","),

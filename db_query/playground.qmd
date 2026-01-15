@@ -360,3 +360,61 @@ sn_edna = db_edna %>%
   filter(region == "california") %>%
   collect()
 ```
+
+# all AMP sites
+```{r}
+bd_sites = db_bd %>%
+  inner_join(db_sample, by = "sample_id") %>%
+  inner_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(sample_type == "bd") %>%
+  group_by(site, region, country) %>%
+  summarize(first_swab = min(date),
+            last_swab = max(date),
+            .groups = "drop") %>%
+  collect() %>%
+  arrange(site)
+
+amp_sites = db_sample %>%
+  inner_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(sample_type == "amp") %>%
+  select(site, region, country) %>%
+  distinct() %>%
+  collect() %>%
+  arrange(site)
+
+microbiome_sites = db_sample %>%
+  inner_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(sample_type == "microbiome") %>%
+  select(site, region, country) %>%
+  distinct() %>%
+  collect() %>%
+  arrange(site)
+
+mucosome_sites = db_sample %>%
+  inner_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(sample_type == "mucosome") %>%
+  select(site, region, country) %>%
+  distinct() %>%
+  collect() %>%
+  arrange(site)
+```
