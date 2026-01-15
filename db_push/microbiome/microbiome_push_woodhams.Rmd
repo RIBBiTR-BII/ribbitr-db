@@ -1,0 +1,434 @@
+---
+title: "microbiome_push_woodhams"
+output: html_document
+---
+
+## Setup
+```{r}
+# minimal packages for RIBBiTR DB
+librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, RIBBiTR-BII/ribbitrrr, here, janitor, vroom, uuid)
+
+# establish database connection
+dbcon = hopToDB("wibbitr")
+
+# survey tables
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+db_mb =  tbl(dbcon, Id("survey_data", "microbiome_sequencing"))
+
+# point to data files
+wddir = here(Sys.getenv("data_dir"), "microbiome", "ribbitr_microbiome_github_2026-01-14")
+
+# get file names
+txt_files = list.files(wddir, recursive = TRUE)
+
+# function for zero-padding of sample names
+pad_number <- function(s, width = 5) { 
+  nums = str_extract(s, "\\d+")
+  padded = sprintf("%0*d", width, as.integer(nums))
+  str_replace_all(s, "\\d+", padded)
+}
+```
+
+# import and clean map files
+```{r}
+## brasil
+br_2022 = read_tsv(here(wddir, "maps", "2022_Brazil_map.txt"), show_col_types = FALSE) %>%
+  clean_names() %>% 
+  rename(barcode_plate_16s_dna = x16sdna_bc_plate,
+         barcode_plate_16s_rna = x16srna_bc_plate,
+         barcode_plate_its = its_bc_plate,
+         barcode_id_16s_dna = x16sdna_bc_id,
+         barcode_id_16s_rna = x16srna_bc_id,
+         barcode_id_its = its_bc_id,
+         barcode_sequence_16s_dna = x16sdna_bc,
+         barcode_sequence_16s_rna = barcode_sequence16s,
+         extraction_date_16s = x16s_seq_date,
+         extraction_date_its = its_seq_date
+         ) %>%
+  mutate(sample_name_raw = sample_id,
+         sample_name = gsub("^BR", "BRMic", sample_id),
+         tryme = grepl("^BRMic", sample_name),
+         sample_name = if_else(tryme, pad_number(sample_name, width = 3), sample_name),
+         src = "brazil_2022") %>%
+  select(sample_name,
+         everything(),
+         -tryme,
+         -sample_id)
+
+warning("Hard-coded dates for 2023 samples (Brazil, Panama & Pennsylvania). Has the Woodhams team updates these?")
+
+br_2023 = read_tsv(here(wddir, "maps", "2023_Brazil_map.txt"), show_col_types = FALSE) %>%
+  clean_names() %>%
+  rename(sample_name = sample_id,
+         primer_plate_16s = primer_plate16s,
+         barcode_id_16s = x16s_bc_name,
+         barcode_id_its = its_bc_name,
+         barcode_sequence_16s = barcode_sequence16s,
+         linker_primer_sequence_16s = linker_primer_sequence,
+         barcode_golay_16s = golay_bc,
+         extraction_date_its = its_seq_date,
+         extraction_date_16s = x16s_seq_date
+         ) %>%
+  mutate(src = "brazil_2023",
+         sample_name_raw = sample_name,
+         extraction_date_its = "06/01/23",
+         extraction_date_16s = "06/01/23") %>%
+  select(-pimer_plate_well16s,
+         -well2)
+
+br_2024 = read_tsv(here(wddir, "maps", "2024_BrazilFull_map.txt"), show_col_types = FALSE) %>%
+  clean_names() %>%
+  rename(primer_plate_16s = x16s_primer_plate,
+         primer_plate_its = its_primer_plate,
+         extraction_date_16s = date_seq16s,
+         extraction_date_its = date_seq_its,
+         barcode_sequence_16s = barcode_sequence16s,
+         barcode_id_16s = bc_name16s,
+         barcode_id_its = bc_name_its) %>%
+  mutate(sample_name_raw = sample_id,
+         sample_name = gsub("^BrMic", "BR_", sample_id),
+         sample_name = gsub("(\\d{3}$)", "\\1_gs", sample_name),
+         src = "brazil_2024") %>%
+  select(-sample_id,
+         -ribbitr_id,
+         -number)
+
+## panama
+pa_2022 = read_tsv(here(wddir, "maps", "2022_Pan_map.txt"), show_col_types = FALSE) %>%
+  clean_names() %>% 
+  rename(sample_name = ribbitr_id,
+         barcode_plate_16s_dna = x16sdna_bc_plate,
+         barcode_plate_16s_rna = x16srna_bc_plate,
+         barcode_plate_its = its_bc_plate,
+         barcode_id_16s_dna = x16sdna_bc_id,
+         barcode_id_16s_rna = x16sna_bc_id,
+         barcode_id_its = its_bc_id,
+         barcode_sequence_16s_dna = x16sdna_bc,
+         barcode_sequence_16s_rna = barcode_sequence16s,
+         extraction_date_16s = x16s_seq_date,
+         extraction_date_its = its_seq_date,
+         barcode_golay_its = golay_barcode_its) %>%
+  mutate(src = "panama_2022",
+         sample_name_raw = sample_name) %>%
+  select(-sample_id,
+         -species,
+         -date,
+         -site,
+         -sub_site)
+
+pa_2023 = read_tsv(here(wddir, "maps", "2023_Pan_map.txt"), show_col_types = FALSE) %>%
+  clean_names() %>% 
+  rename(sample_name = rib_bi_trid,
+         well = plate_well,
+         primer_plate_16s = primer_plate16s,
+         barcode_id_16s = primer_name,
+         barcode_id_its = primer_name_its,
+         linker_primer_sequence_16s = linker_primer_sequence,
+         barcode_sequence_16s = barcode_sequence16s,
+         extraction_date_its = date_seq_its,
+         extraction_date_16s = date_seq16s) %>%
+  mutate(src = "panama_2023",
+         sample_name_raw = sample_name,
+         extraction_date_its = "06/01/23",
+         extraction_date_16s = "06/01/23") %>%
+
+  select(-sample_id)
+
+pa_2024 = read_tsv(here(wddir, "maps", "2024_Pan_map.txt"), show_col_types = FALSE) %>%
+  clean_names() %>%
+  rename(sample_name = ribbitr_id,
+         primer_plate_16s = x16s_primer_plate,
+         primer_plate_its = its_primer_plate,
+         barcode_sequence_16s = barcode_sequence16s,
+         barcode_id_16s = bc_name16s,
+         barcode_id_its = bc_name_its,
+         extraction_date_its = date_seq_its,
+         extraction_date_16s = date_seq16s) %>%
+  mutate(src = "panama_2024",
+         sample_name_raw = sample_name) %>%
+  select(-sample_id,
+         -order)
+
+## pennsylvania
+penn_2022 = read_tsv(here(wddir, "maps", "2022_Penn_map.txt"), show_col_types = FALSE) %>%
+  clean_names() %>%
+  rename(sample_name = rib_bi_trid,
+         barcode_plate_16s_dna = x16sdna_bc_plate,
+         barcode_plate_16s_rna = x16srna_bc_plate,
+         barcode_plate_its = its_bc_plate,
+         barcode_id_16s_dna = x16sdna_bc_id,
+         barcode_id_16s_rna = x16srna_bc_id,
+         barcode_id_its = its_bc_id,
+         barcode_sequence_16s_dna = barcode_sequence16s,
+         barcode_sequence_16s_rna = barcode_sequence16sr_rna,
+         extraction_date_its = its_seq_date,
+         extraction_date_16s = x16s_seq_date,
+         barcode_golay_its = golay_barcode_its) %>%
+  mutate(src = "pennsylvania_2022",
+         sample_name_raw = sample_name) %>%
+  select(-sample_id)
+
+penn_2023 = read_tsv(here(wddir, "maps", "2023_Penn_map.txt"), show_col_types = FALSE) %>%
+  clean_names() %>%
+  rename(sample_name = rib_bi_trid,
+         primer_plate_16s = primer_plate16s,
+         barcode_id_16s = barcode_name16s,
+         barcode_id_its = barcode_name_its,
+         barcode_sequence_16s = barcode_sequence16s,
+         barcode_golay_16s = golay_barcode,
+         barcode_golay_its = golay_barcode_its,
+         extraction_date_16s = date_seq16s,
+         extraction_date_its = date_seq_its,
+         linker_primer_sequence_16s = linker_primer_sequence) %>%
+  mutate(src = "pennsylvania_2023",
+         sample_name_raw = sample_name,
+         extraction_date_its = "06/01/23",
+         extraction_date_16s = "06/01/23") %>%
+
+  select(-sample_id,
+         -primer_plate_well,
+         -primer_plate_well_its)
+
+penn_2024 = read_tsv(here(wddir, "maps", "2024_Penn_map.txt"), show_col_types = FALSE) %>%
+  clean_names() %>%
+  rename(primer_plate_16s = x16s_primer_plate,
+         primer_plate_its = its_primer_plate,
+         extraction_date_16s = date_seq16s,
+         extraction_date_its = date_seq_its,
+         barcode_sequence_16s = barcode_sequence16s,
+         barcode_id_16s = bc_name16s,
+         barcode_id_its = bc_name_its) %>%
+  mutate(sample_name_raw = ribbitr_id,
+         sample_name = gsub("PLE2024BDH", "", ribbitr_id),
+         sample_name = gsub("PE", "Pe_", sample_name),
+         sample_name = gsub("(\\d+$)", str_pad("\\1", 4, pad = "0"), sample_name),
+         src = "pennsylvania_2024") %>%
+  select(-sample_id,
+         -ribbitr_id,
+         -no)
+
+# line-by revisions
+penn_2022$sample_name[penn_2022$sample_name == "2022-05-18‚Äêadmin-rapi16"] = "2022-05-18-admin-rapi16"
+penn_2022$sample_name[penn_2022$sample_name == "2022-08-19-admin-rapi2"] = "2022-05-19-admin-rapi2"
+penn_2022$sample_name[penn_2022$sample_name == "2022-08-15-admin-rapi3"] = "2022-05-19-admin-rapi3"
+penn_2022$sample_name[penn_2022$barcode_id_its == "kabir_ITS2rcbc104"] = "BacSwab00277a"
+penn_2022$sample_name_raw[penn_2022$barcode_id_its == "kabir_ITS2rcbc104"] = "BacSwab00277a"
+pa_2023$sample_name[pa_2023$sample_name == "220726_F004"] = "220627_F004"
+
+# compare columns across all source files
+clean_column_compare = compare_df_cols(br_2022,
+                                       br_2023,
+                                       br_2024,
+                                       pa_2022,
+                                       pa_2023,
+                                       pa_2024,
+                                       penn_2022,
+                                       penn_2023,
+                                       penn_2024)
+
+# write to file
+# write_csv(clean_column_compare, here("staging", paste0("microbiome_map_column_compare_", today(), ".csv")))
+
+# bind all source files
+map_clean = bind_rows(br_2022,
+                        br_2023,
+                        br_2024,
+                        pa_2022,
+                        pa_2023,
+                        pa_2024,
+                        penn_2022,
+                        penn_2023,
+                        penn_2024) %>%
+  rename(src_map = src,
+         sample_name_microbiome = sample_name) %>%
+  mutate(barcode_id_16s = coalesce(barcode_id_16s_dna, barcode_id_16s),
+         barcode_sequence_16s = coalesce(barcode_sequence_16s_dna, barcode_sequence_16s),
+         sample_name_sequencing = gsub("_|-", "", sample_name_raw),
+         sample_name_sequencing = if_else(src_map == "panama_2024", paste0("R", sample_name_sequencing), sample_name_sequencing)) %>%
+  select(sample_name_microbiome,
+         sample_name_sequencing,
+         extraction_date_16s,
+         extraction_date_its,
+         src_map) %>%
+  pivot_longer(cols = c(extraction_date_its,
+                        extraction_date_16s),
+               values_to = "extraction_date") %>%
+  mutate(gene = case_match(name,
+                           "extraction_date_16s" ~ "16S",
+                           "extraction_date_its" ~ "ITS",
+                           .default = NA),
+         extraction_date = mdy(extraction_date),
+         extraction_kit = "IBI gMax kit",
+         extraction_lab = "woodhams_lab",
+         master_mix = "Azura RedMix",
+         pcr_purification_kit = "SeqalPrep kit",
+         sequencing_platform = "Illumina MiSeq",
+         sequencing_center = "UMass Boston",
+         sequencing_kit = "300-cycle V2 kit") %>%
+  select(-name)
+
+# line-by revisions
+map_clean$sample_name_sequencing[map_clean$sample_name_sequencing == "BRMicCont12023"] = "BR_Mic_Cont1_2023"
+map_clean$sample_name_sequencing[map_clean$sample_name_sequencing == "BRMicCont22023"] = "BR_Mic_Cont2_2023"
+
+# pull final column names
+ma_cols = sort(colnames(map_clean))
+
+# identify duplicate sample names
+map_dupes = get_dupes(map_clean, sample_name_microbiome, gene)
+
+```
+
+# import and align manifest files
+```{r}
+
+manifest_files = list.files(here(wddir, "manifests"))
+manifest_file_paths = here(wddir, "manifests", manifest_files)
+
+manifest_clean = vroom(manifest_file_paths, id = "src_manifest") %>%
+  rename(sample_name_manifest = `sample-id`) %>%
+  mutate(src_manifest = gsub(here(wddir, "manifests/"), "", src_manifest),
+         gene = case_when(
+           grepl("16s", src_manifest) ~ "16S",
+           grepl("its", src_manifest) ~ "ITS",
+           .default = NA
+         ),
+         nucleic_acid_type = "dna") %>%
+  pivot_wider(id_cols = c("src_manifest",
+                          "sample_name_manifest",
+                          "gene",
+                          "nucleic_acid_type"),
+              names_from = "direction",
+              names_prefix = "fastq_",
+              values_from = "filename") %>%
+  mutate(
+    primer_forward = case_when(
+      nucleic_acid_type == "dna" & gene == "16S" ~ "GTGYCAGCMGCCGCGGTAA",
+      nucleic_acid_type == "dna" & gene == "ITS" ~ "CTTGGTCATTTAGAGGAAGTAA",
+      .default = NA
+    ),
+    primer_reverse = case_when(
+      nucleic_acid_type == "dna" & gene == "16S" ~ "GGACTACNVGGGTWTCTAAT",
+      nucleic_acid_type == "dna" & gene == "ITS" ~ "GCTGCGTTCTTCATCGATGC",
+      .default = NA
+    ),
+    src_map = case_when(
+      grepl("br22", src_manifest) ~ "brazil_2022",
+      grepl("br23", src_manifest) ~ "brazil_2023",
+      grepl("br24", src_manifest) ~ "brazil_2024",
+      grepl("pa22", src_manifest) ~ "panama_2022",
+      grepl("pa23", src_manifest) ~ "panama_2023",
+      grepl("pa24", src_manifest) ~ "panama_2024",
+      grepl("pe22", src_manifest) ~ "pennsylvania_2022",
+      grepl("pe23", src_manifest) ~ "pennsylvania_2023",
+      grepl("pe24", src_manifest) ~ "pennsylvania_2024",
+      .default = NA
+  ))
+
+
+manifest_cols = colnames(manifest_clean)
+manifest_dupes = get_dupes(manifest_clean, "sample_name_manifest", "gene")
+
+```
+
+# join manifest & maps
+```{r}
+# align map & manifest
+micro_united = map_clean %>%
+  full_join(manifest_clean, by = c("sample_name_sequencing" = "sample_name_manifest", "gene", "src_map")) %>%
+  arrange(sample_name_sequencing)
+
+micro_maligned = micro_united %>%
+  filter(is.na(src_map) | is.na(src_manifest)) %>%
+  arrange(sample_name_sequencing)
+
+micro_dupes = get_dupes(micro_united, sample_name_sequencing, gene, extraction_date)
+
+```
+
+# join database and map data
+```{r}
+# pull sample data
+microbiome_sample = db_sample %>%
+  filter(sample_type == "microbiome") %>%
+  collect()
+
+microbiome_sequencing = db_mb %>%
+              select(sequencing_id, sample_name_microbiome, gene, extraction_date) %>%
+              collect()
+
+micro_gelled = micro_united %>%
+  mutate(sample_name = sample_name_microbiome) %>%
+  left_join(microbiome_sample, by = c("sample_name_microbiome" = "sample_name")) %>%
+  left_join(microbiome_sequencing, by = c("sample_name_microbiome", "gene", "extraction_date")) %>%
+  mutate(sample_type = "microbiome",
+         sample_id = ifelse(is.na(sample_id), UUIDfromName("1208e62f-d3a1-462c-984f-0bf1f43f5837", paste0(sample_name_microbiome, sample_type)), sample_id),
+         uuid_name = paste0(sample_name_microbiome, gene, extraction_date),
+         sequencing_id =  ifelse(is.na(sequencing_id), UUIDfromName("01f485db-7866-48e7-812a-853f3b0219a7", uuid_name), sequencing_id))
+
+```
+
+
+# subset
+```{r}
+# sample subset
+subset_sample = micro_gelled %>%
+  select(any_of(colnames(db_sample))) %>%
+  distinct() %>%
+  filter(!is.na(sample_id))
+
+compare_sample = compare_df_cols(db_sample %>%
+                                   filter(FALSE) %>%
+                                   collect(), subset_sample)
+
+tray = compare_for_staging(db_sample %>% collect(), subset_sample, "sample_id", return_all = TRUE, report = "sample")
+
+upsert_sample = bind_rows(tray$insert,
+                          tray$update)
+# total
+subset_microbiome = micro_gelled %>%
+  select(any_of(colnames(db_mb))) %>%
+  distinct() %>%
+  filter(!is.na(sequencing_id))
+
+compare_microbiome = compare_df_cols(db_mb %>%
+                                       filter(FALSE) %>%
+                                       collect(), subset_microbiome)
+
+tray = compare_for_staging(db_mb %>% collect(), subset_microbiome, "sequencing_id", return_all = TRUE, report = "microbiome")
+
+upsert_microbiome = bind_rows(tray$insert,
+                              tray$update)
+
+```
+
+# commit transaction
+```{r}
+dbBegin(dbcon)
+  
+  tryCatch(
+    {
+      # all samples
+      db_sample = db_rows_upsert(dbcon, db_sample, upsert_sample, by="sample_id")
+    
+      # microbiome
+      db_mb = db_rows_upsert(dbcon, db_mb, upsert_microbiome, by="sequencing_id")
+      
+      # Commit the transaction if successful
+      dbCommit(dbcon)
+      print("Transaction successful!")
+      
+    }, error = function(e) {
+      # Rollback in case of error
+      dbRollback(dbcon)
+      message("Transaction failed: ", e$message)
+    })
+
+
+```
