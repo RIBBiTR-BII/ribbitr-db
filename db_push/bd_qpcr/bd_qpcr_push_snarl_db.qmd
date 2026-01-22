@@ -123,7 +123,9 @@ clean_km = raw_km %>%
   mutate(plate_name = paste0(as.character(plate_id), "_km"),
          std_type = "plasmid",
          target = "ITS",
-         replicate = 1) %>%
+         replicate = 1,
+         start_quant = if_else(is.na(start_quant), 0, start_quant),
+         bd_load = if_else(is.na(bd_load), 0, bd_load)) %>%
   # some KM results are in the UCSB database, some are not. Default to database, drop those from this dataset.
   anti_join(filtered_results %>%
               select(sample_id) %>%
@@ -159,11 +161,11 @@ clean_results = filtered_results %>%
          template_dna_volume_uL = 5,
          extract_volume_uL = 40,
          extraction_kit = "prepman",
-         detected = case_match(target_quant,
+         bd_detected = case_match(target_quant,
                                0 ~ FALSE,
                                NA ~ NA,
                                .default = TRUE),
-         replicate_detected = ifelse(detected, "p", "n"),
+         replicate_detected = ifelse(bd_detected, "p", "n"),
          qpcr_plate_run = 1,
          qpcr_date = as.Date(date_start),
          sample_type = "bd",
