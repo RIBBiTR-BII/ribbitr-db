@@ -22,15 +22,14 @@ mdc = tbl(dbcon, Id("public", "all_columns")) %>%
 ## Point to local data directory
 ddir = Sys.getenv("data_dir")  # data directory
 # Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
-# wddir = here(ddir, "fulcrum", 'panama', '2024-11-18', "panama_field_3_0") # working data directory
-wddir = here(ddir, "panama", "fulcrum", "2025-09-23", "panama_field_3_0") # working data directory
+wddir = here(ddir, "panama", "fulcrum", "2026-01-30", "panama_field_3_0") # working data directory
 
 # pull relevant chain tables from DB
 db_sample = tbl(dbcon, Id("survey_data", "sample"))
 
 db_aural = tbl(dbcon, Id("survey_data", "aural"))
 db_capture = tbl(dbcon, Id("survey_data", "capture"))
-db_edna = tbl(dbcon, Id("survey_data", "edna"))
+db_edna = tbl(dbcon, Id("survey_data", "edna_collection"))
 db_env = tbl(dbcon, Id("survey_data", "environmental"))
 db_ves = tbl(dbcon, Id("survey_data", "ves"))
 
@@ -95,7 +94,8 @@ raw_tables = c(
 local_tz = "America/Panama"
 
 ```
- # 2 - Clean data
+
+# 2 - Clean data
 
 Drop irrelevant & fix structural issues
 - clean column names
@@ -214,7 +214,6 @@ clean_cmr = raw_cmr %>%
   ribbitr_clean_taxa(taxon_cmr) %>%
   select(-any_of(to_drop))
   
-
 # bind capture and target rows
 clean_capture = raw_capture %>%
   rename_with(~ gsub("^cap_", "", .), starts_with("cap_")) %>%
@@ -230,7 +229,7 @@ clean_capture = raw_capture %>%
          microhabitat_type = microhab,
          microhab_moredetail = microhab_other,
          substrate_temp_c = substemp_c,
-         capture_trx_loc = transectm_m,
+         capture_transect_m = transectm_m,
          photo_id = photoid,
          time_of_capture = time,
          local_cmr_id = pit_tag_id_number_if_it_was_placed,
@@ -251,12 +250,18 @@ clean_capture = raw_capture %>%
          taxon_capture = gsub("_sp.", "", taxon_capture),
          taxon_capture = gsub("\\.", "", taxon_capture),
          taxon_capture = gsub("_potential_new_sp", "", taxon_capture),
-         capture_trx_loc = as.character(capture_trx_loc),
+         capture_transect_m = as.character(capture_transect_m),
+         capture_transect_m = if_else(is.na(capture_transect_m) &
+                                        grepl("off", comments_capture, ignore.case = TRUE),
+                                      "off transect",
+                                      capture_transect_m),
          capture_animal_state = case_when(
            dead == "no" ~ "alive",
            dead == "yes" ~ "dead",
+           grepl("dead", comments_capture, ignore.case = TRUE) ~ "dead",
            TRUE ~ NA),
-         sex = ifelse(sex %in% c("unknown", "unkonwn"), NA, sex)) %>%
+         sex = ifelse(sex %in% c("unknown", "unkonwn"), NA, sex),
+         ) %>%
   ribbitr_clean_taxa(taxon_capture, comments_capture) %>%
   select(-any_of(to_drop),
          -c(bd_swab,
@@ -1613,27 +1618,27 @@ if (x_capture) {
   
   tryCatch(
     {
-      db_cmr = db_rows_update(dbcon, db_cmr, upsert_cmr, by="cmr_id")
+      db_cmr = db_rows_upsert(dbcon, db_cmr, upsert_cmr, by="cmr_id", silent_null = FALSE)
       # temp_cmr = stage_to_temp(dbcon, db_cmr, upsert_cmr)
       # pointer = tbl(dbcon, temp_cmr)
       # rows_upsert(db_cmr, pointer, by="cmr_id", in_place=TRUE)
       
-      db_survey = db_rows_update(dbcon, db_survey, upsert_capture_survey, by="survey_id")
+      db_survey = db_rows_upsert(dbcon, db_survey, upsert_capture_survey, by="survey_id", silent_null = FALSE)
       # temp_capture_survey = stage_to_temp(dbcon, db_survey, upsert_capture_survey)
       # pointer = tbl(dbcon, temp_capture_survey)
       # rows_upsert(db_survey, pointer, by="survey_id", in_place=TRUE)
 
-      db_taxa = db_rows_update(dbcon, db_taxa, insert_capture_taxa, by="taxon_id")
+      db_taxa = db_rows_insert(dbcon, db_taxa, insert_capture_taxa, by="taxon_id", silent_null = FALSE)
       # temp_capture_taxa = stage_to_temp(dbcon, db_taxa, insert_capture_taxa)
       # pointer = tbl(dbcon, temp_capture_taxa)
       # rows_insert(db_taxa, pointer, by="taxon_id", in_place=TRUE, conflict = "ignore")
       
-      db_capture = db_rows_update(dbcon, db_capture, upsert_capture, by="capture_id")
+      db_capture = db_rows_upsert(dbcon, db_capture, upsert_capture, by="capture_id", silent_null = FALSE)
       # temp_capture = stage_to_temp(dbcon, db_capture, upsert_capture)
       # pointer = tbl(dbcon, temp_capture)
       # rows_upsert(db_capture, pointer, by="capture_id", in_place=TRUE)
       
-      db_sample = db_rows_update(dbcon, db_sample, upsert_sample_nc, by="sample_id")
+      db_sample = db_rows_upsert(dbcon, db_sample, upsert_sample, by="sample_id", silent_null = FALSE)
       # temp_sample = stage_to_temp(dbcon, db_sample, upsert_sample)
       # pointer = tbl(dbcon, temp_sample)
       # rows_upsert(db_sample, pointer, by="sample_id", in_place=TRUE)
@@ -1656,6 +1661,70 @@ db_survey = tbl(dbcon, Id("survey_data", "survey"))
 db_capture = tbl(dbcon, Id("survey_data", "capture"))
 db_sample = tbl(dbcon, Id("survey_data", "sample"))
 ```
+# empty surveys
+```{r}
+data_surveys = db_survey %>%
+  full_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(country == "panama") %>%
+  collect()
+
+
+peace = get_dupes(data_surveys, visit_id, site, transect, date, time_of_day, comments_visit, detection_type)
+
+pa_surveys_wide = data_surveys %>%
+  pivot_wider(id_cols = c("visit_id", "site", "transect", "date", "time_of_day", "comments_visit"),
+              names_from = "detection_type",
+              values_from = "survey_id",
+              values_fill = NA,
+              values_fn = first) %>%
+  rowwise() %>%
+  mutate(acv_survey = any(!is.na(aural),
+                          !is.na(capture),
+                          !is.na(visual))) %>%
+  ungroup()
+
+create_aural = pa_surveys_wide %>%
+  filter(acv_survey & is.na(aural),
+         date <= "2021-01-01") %>%
+  mutate(temp_survey_id = coalesce(capture, visual)) %>%
+  select(temp_survey_id) %>%
+  left_join(data_surveys, by = c("temp_survey_id" = "survey_id")) %>%
+  mutate(detection_type = "aural",
+         uuid_name = paste0(visit_id, transect, detection_type, start_time),
+         survey_id = UUIDfromName("f7b367fb-bbb6-40a8-85db-07d2760e7b95", uuid_name))
+
+create_capture = pa_surveys_wide %>%
+  filter(acv_survey & is.na(capture),
+         date <= "2021-01-01") %>%
+  mutate(temp_survey_id = coalesce(visual, aural)) %>%
+  select(temp_survey_id) %>%
+  left_join(data_surveys, by = c("temp_survey_id" = "survey_id")) %>%
+  mutate(detection_type = "capture",
+         uuid_name = paste0(visit_id, transect, detection_type, start_time),
+         survey_id = UUIDfromName("f7b367fb-bbb6-40a8-85db-07d2760e7b95", uuid_name))
+
+create_visual = pa_surveys_wide %>%
+  filter(acv_survey & is.na(visual),
+         date <= "2021-01-01") %>%
+  mutate(temp_survey_id = coalesce(capture, aural)) %>%
+  select(temp_survey_id) %>%
+  left_join(data_surveys, by = c("temp_survey_id" = "survey_id")) %>%
+  mutate(detection_type = "visual",
+         uuid_name = paste0(visit_id, transect, detection_type, start_time),
+         survey_id = UUIDfromName("f7b367fb-bbb6-40a8-85db-07d2760e7b95", uuid_name))
+
+create_survey = bind_rows(create_aural,
+                          create_capture,
+                          create_visual) %>%
+  select(all_of(colnames(db_survey)))
+
+rows_insert(db_survey, create_survey, by = "survey_id", conflict = "ignore", in_place = TRUE, copy = TRUE)
+
+```
+
 
 ```{r}
 dbDisconnect(dbcon)
