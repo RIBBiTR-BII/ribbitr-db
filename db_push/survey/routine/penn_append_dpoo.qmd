@@ -25,7 +25,7 @@ ddir = Sys.getenv("data_dir")  # data directory
 
 # Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
 wddir_2022 = here(ddir, "pennsylvania", "fulcrum", "Fulcrum_Data_2022")
-wddir = here(ddir, "pennsylvania", "fulcrum", '2025-10-23') # working data directory
+wddir = here(ddir, "pennsylvania", "fulcrum", '2026-01-30') # working data directory
 
 ```
 
@@ -56,7 +56,7 @@ db_sample = tbl(dbcon, Id("survey_data", "sample"))
 
 db_aural = tbl(dbcon, Id("survey_data", "aural"))
 db_capture = tbl(dbcon, Id("survey_data", "capture"))
-db_edna = tbl(dbcon, Id("survey_data", "edna"))
+db_edna = tbl(dbcon, Id("survey_data", "edna_collection"))
 db_env = tbl(dbcon, Id("survey_data", "environmental"))
 db_ves = tbl(dbcon, Id("survey_data", "ves"))
 
