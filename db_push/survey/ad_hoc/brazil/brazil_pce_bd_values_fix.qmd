@@ -1,0 +1,624 @@
+---
+title: "brazil_legacy_fix"
+format: html
+---
+
+## Setup
+
+```{r}
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, rio, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr, plotly)
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+## Connect to DB
+dbcon <- hopToDB("wibbitr")
+
+## Point to local data directory
+ddir = Sys.getenv("data_dir")  # data directory
+# Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
+wddir = here(ddir, "brazil") # working data directory
+
+```
+
+## db pointers
+```{r}
+mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
+  collect()
+
+db_aural = tbl(dbcon, Id("survey_data", "aural"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_ves = tbl(dbcon, Id("survey_data", "ves"))
+db_env = tbl(dbcon, Id("survey_data", "environmental"))
+
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
+db_cmr = tbl(dbcon, Id("survey_data", "cmr"))
+db_lab = tbl(dbcon, Id("survey_data", "lab"))
+db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
+
+```
+
+## load csv
+```{r}
+# raw_ls_area <- read_csv(here(wddir, "legacy", "area_gps_landscapes_brazil_for_cob.csv"))
+raw_ls <- read_csv(here(wddir, "legacy", "raw_data_landscapes_brazil_for_cob.csv"))
+raw_sv <- read_csv(here(wddir, "legacy", "TS_Santa_Virginia_PCE_Legacy_Data_For_Cob_utm23s.csv"))
+# raw_sv_area <- read_csv(here(wddir, "legacy", "clean_sv_sites_latlon.csv"))
+# 
+# raw_cct = import_list(here(wddir, "legacy", "climate_ct.xlsx"))
+# raw_cct = raw_cct$Sheet1
+
+```
+
+# align bd samples
+```{r}
+# SV
+
+sv_clean = raw_sv %>%
+  mutate(sample_name_bd = paste0("pce_", id)) %>%
+  select(sample_name_bd,
+         Bd_presence,
+         Bd_load_swab)
+
+bd_data_sv = db_bd %>%
+  filter(sample_name_bd %in% sv_clean$sample_name_bd) %>%
+  collect()
+
+bd_sv = bd_data_sv %>%
+  full_join(sv_clean, by = "sample_name_bd") %>%
+  mutate(quant_cycle = NA,
+         target_quant = Bd_load_swab,
+         bd_detected = target_quant > 0,
+         extract_volume_uL = 5,
+         template_dna_volume_uL = 5,
+         qpcr_dilution_factor = 1,
+         target_quant_per_swab = target_quant * qpcr_dilution_factor * extract_volume_uL / template_dna_volume_uL,
+         its1_copies_per_standard_unit = case_match(standard_target_type,
+                                                    "ITS1" ~ 1,
+                                                    "zoospore" ~ 60,
+                                                    .default = NA),
+         bd_its1_copies_per_swab = target_quant_per_swab * its1_copies_per_standard_unit)
+
+# LS
+ls_clean = raw_ls %>%
+  clean_names() %>%
+  mutate(sample_name_bd = paste0("brls_", str_pad(sample_id, 3, pad = "0")))
+
+bd_data_ls = db_bd %>%
+  filter(sample_name_bd %in% ls_clean$sample_name_bd) %>%
+  collect()
+
+bd_ls = ls_clean %>%
+  select(sample_name_bd,
+         plate,
+         well,
+         quantity_1,
+         quantity_2) %>%
+  left_join(bd_data_ls %>%
+              select(sample_name_bd,
+                     sample_id,
+                     result_id), by = c("sample_name_bd")) %>%
+  pivot_longer(cols = c("quantity_1", "quantity_2"),
+               names_to = "reps",
+               values_to = "quantity") %>%
+  mutate(replicates = "duplicate",
+         replicate_id = case_match(reps,
+                                   "quantity_1" ~ 1,
+                                   "quantity_2" ~ 2,
+                                   .default = NA),
+         result_id = if_else(replicate_id == 1, result_id, UUIDfromName("099634bb-4c89-4021-8fd6-f127ac6a1180", paste0("Bd", sample_name_bd, "_2"))),
+         singular_sample_results = FALSE,
+         quant_cycle = NA,
+         target_quant = quantity,
+         bd_detected = (quantity > 0),
+         total_qpcr_volume_uL = NA,
+         qpcr_dilution_factor = 1,
+         template_dna_volume_uL = 4,
+         extract_volume_uL = 4,
+         swab_type = "mw113",
+         standard_target_type = "ITS1",
+         standard = "plasmid-pisces",
+         master_mix  = "taqman",
+         extraction_plate_name = NA,
+         extraction_date = NA,
+         extraction_kit = "ibi_spin_column_blood_tissue_kit",
+         extraction_lab = "becker_lab",
+         qpcr_plate_name = paste0("BrLandscapes_", str_pad(plate, 3, pad = "0")),
+         qpcr_well = as.character(well + replicate_id - 1),
+         qpcr_date = NA,
+         qpcr_machine = "quantstudio_3",
+         qpcr_lab = "becker_lab",
+         comments_qpcr = NA,
+         target_quant_per_swab = target_quant * qpcr_dilution_factor * extract_volume_uL / template_dna_volume_uL,
+         its1_copies_per_standard_unit = case_match(standard_target_type,
+                                                    "ITS1" ~ 1,
+                                                    "zoospore" ~ 60,
+                                                    .default = NA),
+         bd_its1_copies_per_swab = target_quant_per_swab * its1_copies_per_standard_unit)
+
+bd_brleg = bind_rows(bd_sv,
+                     bd_ls)
+
+```
+# subset
+```{r}
+subset_bd = bd_brleg %>%
+  select(all_of(colnames(db_bd))) %>%
+  distinct()
+
+tray = compare_for_staging(db_bd %>% collect(), subset_bd, "result_id", report = "bd")
+upsert_bd = bind_rows(tray$insert,
+                       tray$update)
+
+
+```
+
+# update
+```{r}
+# update all landscape
+dbBegin(dbcon)
+
+tryCatch(
+  {
+    db_bd = db_rows_upsert(dbcon, db_bd, upsert_bd, by="result_id")
+    
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful!")
+    
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
+
+```
+
+### trash
+
+# clean & stats
+```{r}
+clean_ls = raw_ls %>%
+  clean_names() %>%
+  mutate(date = ifelse(date == "27/09/2018", "9/27/2018", date),
+         date = mdy(date),
+         sample_id = as.character(sample_id))
+
+clean_ls_area = raw_ls_area %>%
+  clean_names()
+
+clean_sv = raw_sv %>%
+  clean_names() %>%
+  mutate(date = mdy(date),
+         utm_zone = "23S",
+         id = as.character(id))
+
+clean_cct = raw_cct %>%
+  clean_names() %>%
+  rename_with(~ paste0("cct_", .)) %>%
+  mutate(sample_name = gsub("RM ", "", cct_id))
+
+```
+
+## point to existing data
+
+```{r}
+br_legacy = db_capture %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(country == "brazil")
+
+br_qpcr = db_bd %>%
+  inner_join(db_sample, by = "sample_id") %>%
+  right_join(br_legacy, by = "capture_id") %>%
+  collect()
+
+br_legacy_data = br_legacy %>%
+  collect()
+
+```
+
+# align landscape data
+```{r}
+ls_sites = clean_ls_area %>%
+  # group_by(area_amostral) %>%
+  # summarise(utm_easting = round(mean(utm_easting)),
+  #           utm_northing = (mean(utm_northing)),
+  #           utm_zone = first(utm_zone)) %>%
+  mutate(geographic_area_descriptive = area_amostral,
+         site_prefix = case_match(area_amostral,
+                           "Bananal" ~ "bananal",
+                           "Cotia" ~ "cotia",
+                           "P.E. Intervales" ~ "intervales",
+                           "PESM - Sta Virgínia" ~ "sta_virgínia",
+                           "Pilar do Sul" ~ "pilar",
+                           "Ribeirão Branco" ~ "rb",
+                           "Serra do Japi" ~ "japi",
+                           "São Luís do Paraitinga" ~ "slp"),
+         site = paste0(site_prefix, "_", tolower(ponto_amostral)),
+         utm_zone = gsub("[$[:upper:]?]", "", utm_zone))
+
+data_landscape = br_qpcr %>%
+  filter(grepl('^RM', sample_name_bd)) %>%
+  mutate(sample_name_bd = gsub("RM", "", sample_name_bd)) %>%
+  left_join(clean_ls %>%
+              rename_with(~ paste0("csv_", .)), by = c("sample_name_bd" = "csv_sample_id")) %>%
+  left_join(ls_sites %>%
+              rename_with(~ paste0("ls_", .)), by = c("site" = "ls_site")) %>%
+  mutate(project_id = "landscapes",
+         life_stage = case_when(
+           grepl('jovem', comments_capture) | grepl("juvenil", comments_capture) ~ "juvenile",
+           TRUE ~ "adult"),
+         sample_name_bd = paste0("brls_", sample_name_bd),
+         sample_name = sample_name_bd,
+         qpcr_plate_name = paste0("BraLandscapes_", csv_plate),
+         qpcr_well = csv_well,
+         site_utme = ls_utm_easting,
+         site_utmn = ls_utm_northing,
+         site_utm_zone = as.integer(ls_utm_zone),
+         microhabitat_type = case_match(csv_microclimate_of_capture_location,
+                                        "Lago" ~ "lake",
+                                        "Fragmento" ~ "forest",
+                                        "Bordo" ~ "forest_edge",
+                                        .default = NA_character_),
+         region = case_match(ls_area_amostral,
+                           "Bananal" ~ "bananal",
+                           "Cotia" ~ "cotia",
+                           "P.E. Intervales" ~ "intervales",
+                           "PESM - Sta Virgínia" ~ "santa_virginia",
+                           "Pilar do Sul" ~ "pilar_sul",
+                           "Ribeirão Branco" ~ "ribeirao_branco",
+                           "Serra do Japi" ~ "serra_japi",
+                           "São Luís do Paraitinga" ~ "sao_luis_paraitinga"),
+         time_zone = "America/Sao_Paulo",
+         country_id = "7c5335f2-e037-49f9-9437-9e32758ef951", )
+
+
+```
+
+```{r}
+# create new regions, update sites
+subset_sr = data_landscape %>%
+  select(any_of(colnames(db_site)),
+         any_of(colnames(db_region))) %>%
+  distinct() %>%
+  select(-region_id) %>%
+  left_join(db_region %>%
+              select(region,
+                     region_id) %>%
+              collect(), by = "region") %>%
+  group_by(region) %>%
+  mutate(region_id = ifelse(is.na(region_id), UUIDgenerate(), region_id)) %>%
+  ungroup()
+
+subset_region = subset_sr %>%
+  select(all_of(colnames(db_region))) %>%
+  distinct()
+
+tray = compare_for_staging(db_region %>% collect(), subset_region, "region_id", report = "region")
+insert_region = tray$insert
+
+subset_site = subset_sr %>%
+  select(all_of(colnames(db_site))) %>%
+  distinct()
+
+tray = compare_for_staging(db_site %>% collect(), subset_site, "site_id", report = "site")
+update_site = tray$update
+peace = compare_updates(tray)
+
+subset_visit = data_landscape %>%
+  select(all_of(colnames(db_visit))) %>%
+  distinct()
+
+tray = compare_for_staging(db_visit %>% collect(), subset_visit, "visit_id", report = "visit")
+update_visit = tray$update
+peace = compare_updates(tray)
+
+subset_survey = data_landscape %>%
+  select(all_of(colnames(db_survey))) %>%
+  distinct()
+
+tray = compare_for_staging(db_survey %>% collect(), subset_survey, "survey_id", report = "survey")
+
+subset_capture = data_landscape %>%
+  select(all_of(colnames(db_capture))) %>%
+  distinct()
+
+tray = compare_for_staging(db_capture %>% collect(), subset_capture, "capture_id", report = "capture")
+update_capture = tray$update
+peace = compare_updates(tray)
+
+subset_sample = data_landscape %>%
+  select(all_of(colnames(db_sample))) %>%
+  distinct()
+
+tray = compare_for_staging(db_sample %>% collect(), subset_sample, "sample_id", report = "sample")
+update_sample = tray$update
+peace = compare_updates(tray)
+
+subset_bd = data_landscape %>%
+  select(all_of(colnames(db_bd))) %>%
+  distinct()
+
+tray = compare_for_staging(db_bd %>% collect(), subset_bd, "result_id", report = "bd")
+update_bd = tray$update
+peace = compare_updates(tray)
+
+```
+
+```{r}
+# update all landscape
+dbBegin(dbcon)
+
+tryCatch(
+  {
+    temp_region = stage_to_temp(dbcon, db_region, insert_region)
+    pointer = tbl(dbcon, temp_region)
+    rows_insert(db_region, pointer, by="region_id", in_place=TRUE, conflict = "ignore")
+    
+    temp_site = stage_to_temp(dbcon, db_site, update_site)
+    pointer = tbl(dbcon, temp_site)
+    rows_update(db_site, pointer, by="site_id", in_place=TRUE, unmatched = "ignore")
+    
+    temp_visit = stage_to_temp(dbcon, db_visit, update_visit)
+    pointer = tbl(dbcon, temp_visit)
+    rows_update(db_visit, pointer, by="visit_id", in_place=TRUE, unmatched = "ignore")
+    
+    temp_capture = stage_to_temp(dbcon, db_capture, update_capture)
+    pointer = tbl(dbcon, temp_capture)
+    rows_update(db_capture, pointer, by="capture_id", in_place=TRUE, unmatched = "ignore")
+    
+    temp_sample = stage_to_temp(dbcon, db_sample, update_sample)
+    pointer = tbl(dbcon, temp_sample)
+    rows_update(db_sample, pointer, by="sample_id", in_place=TRUE, unmatched = "ignore")
+    
+    temp_bd = stage_to_temp(dbcon, db_bd, update_bd)
+    pointer = tbl(dbcon, temp_bd)
+    rows_update(db_bd, pointer, by="result_id", in_place=TRUE, unmatched = "ignore")
+    
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful!")
+    
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
+
+
+rm(insert_region,
+   update_site,
+   update_visit,
+   update_capture,
+   update_sample,
+   update_bd)
+
+```
+
+# drop bd_qpcr_result duplicates
+```{r}
+db_sv_qpcr = br_qpcr %>%
+  filter(!grepl('^RM', sample_name_bd),
+         date %in% unique(clean_sv$date)) %>%
+  select(all_of(colnames(db_bd)),
+         all_of(colnames(db_sample)))
+
+peace = get_dupes(db_sv_qpcr, sample_name_bd)
+
+drop_id = c(
+  "c24db5e0-fe7e-497c-a023-4de4a972c754",
+  "b768da4b-9bff-420a-a972-904590e50557",
+  "d7ae6b9c-65df-4576-874e-fe08020e8fa1",
+  "771050a7-a0b4-41a8-896c-b30a1f9cba9e",
+  "5faa1a2d-6adc-4b13-8413-4c8a4e23fbb7",
+  "c3788401-d48d-41a6-93f5-37d6de4de8f5",
+  "c3122532-985b-426e-b824-da5cd07d9f12",
+  "ee8bc02a-c932-42f0-83d0-ddd1d762ab4e",
+  "e5af19bc-8361-40ca-8601-60bdf00114d5",
+  "05db9b05-b59d-4e05-80a9-1f0335184637",
+  "c25b92cb-4f18-4700-8f09-0bf39b0d0c5c",
+  "a466804c-290b-4546-91b6-532e8d5d6941"
+)
+
+result_drop = db_bd %>%
+  filter(result_id %in% drop_id) %>%
+  select(result_id) %>%
+  collect()
+
+
+# dbBegin(dbcon)
+#
+# tryCatch(
+#   {
+#     
+#     db_bd = db_bd %>%
+#       rows_delete(result_drop, by="result_id", unmatched = "ignore", in_place=TRUE, copy=TRUE)
+#     
+#     # Commit the transaction if successful
+#     dbCommit(dbcon)
+#     print("Transaction successful!")
+#     
+#   }, error = function(e) {
+#     # Rollback in case of error
+#     dbRollback(dbcon)
+#     message("Transaction failed: ", e$message)
+#   })
+
+
+
+```
+
+# align Santa Virginia
+```{r}
+sv_sites = clean_sv %>%
+  group_by(transect_id, transect_type) %>%
+  summarise(utm_easting = round(median(easting)),
+            utm_northing = round(median(northing)),
+            utm_zone = gsub("[$[:upper:]?]", "", first(utm_zone)))
+
+write_csv(sv_sites, here(wddir, "clean_sv_sites.csv"))
+
+sv_sites_clean = raw_sv_area
+
+data_sv = br_qpcr %>%
+  filter(!grepl('^RM', sample_name_bd),
+         date %in% unique(clean_sv$date)) %>%
+  full_join(clean_sv %>%
+              rename_with(~ paste0("csv_", .)), by = c("sample_name_bd" = "csv_id")) %>%
+  left_join(sv_sites_clean %>%
+              rename_with(~ paste0("sv_", .)), by = c("csv_transect_id" = "sv_transect_id")) %>%
+  left_join(clean_cct, by = "sample_name") %>%
+  mutate(project_id = "pce_santa_virginia",
+         region = "santa_virginia",
+         old_site = site,
+         site = paste0(gsub(" ", "_", tolower(csv_transect_id)), "_", tolower(csv_transect_type)),
+         site = case_match(site,
+                           "extra_poça_temporária_water" ~ "poca_temporaria",
+                           "extra_trilha_olho_dagua_land" ~ "trilha_olho_dagua",
+                           "lago_angelim_water" ~ "lago_angelim",
+                           "lago_anta_water" ~ "lago_anta",
+                           "lago_minutal_water" ~ "lago_minutal",
+                           "lago_sede_water" ~ "lago_sede",
+                           .default = site),
+         site_id = case_match(site,
+                              "s10_land" ~ UUIDgenerate(),
+                              "s10_water" ~ UUIDgenerate(),
+                              .default = site_id),
+         time_zone = "America/Sao_Paulo",
+         country_id = "7c5335f2-e037-49f9-9437-9e32758ef951", 
+         transect = tolower(csv_transect_type),
+         sample_name_bd = paste0("pce_", sample_name_bd),
+         sex = case_match(csv_sex,
+                          'M' ~ "male",
+                          c("F","FO") ~ "female",
+                          c("U", "J") ~ NA),
+         life_stage = case_match(csv_sex,
+                                 "J" ~ "juvenile",
+                                 .default = "adult"),
+         capture_animal_state = case_match(csv_dead,
+                                           "Y" ~ "dead",
+                                           NA ~ NA,
+                                           .default = "alive"),
+         site_utme = sv_utm_easting,
+         site_utmn = sv_utm_northing,
+         site_utm_zone = sv_utm_zone,
+         site_latitude = sv_latitude,
+         site_longitude = sv_longitude,
+         detected = ifelse(is.na(csv_bd_load_swab), NA, detected),
+         replicate_detected = ifelse(is.na(csv_bd_load_swab), NA, replicate_detected),
+         average_ct = ifelse(is.na(csv_bd_load_swab), NA, average_ct),
+         average_target_quant = ifelse(is.na(csv_bd_load_swab), NA, average_target_quant),
+         target_quant_per_swab = ifelse(is.na(csv_bd_load_swab), NA, target_quant_per_swab),
+         average_its1_copies_per_swab = ifelse(is.na(csv_bd_load_swab), NA, average_its1_copies_per_swab),
+         comments_qpcr = ifelse(is.na(csv_bd_load_swab), paste(na.omit(comments_qpcr, "positive results dropped due to possible cross-contamination upon collection")), comments_qpcr))
+
+```
+
+```{r}
+subset_site = data_sv %>%
+  select(all_of(colnames(db_site))) %>%
+  distinct()
+  
+
+tray = compare_for_staging(db_site %>% collect(), subset_site, "site_id", report = "site")
+upsert_site = bind_rows(tray$insert,
+                        tray$update)
+
+subset_visit = data_sv %>%
+  select(all_of(colnames(db_visit))) %>%
+  distinct()
+
+tray = compare_for_staging(db_visit %>% collect(), subset_visit, "visit_id", report = "visit")
+peace = compare_updates(tray)
+update_visit = tray$update
+
+subset_survey = data_sv %>%
+  select(all_of(colnames(db_survey))) %>%
+  distinct()
+
+tray = compare_for_staging(db_survey %>% collect(), subset_survey, "survey_id", report = "survey")
+peace = compare_updates(tray)
+update_survey = tray$update
+
+
+subset_capture = data_sv %>%
+  select(all_of(colnames(db_capture))) %>%
+  distinct()
+
+tray = compare_for_staging(db_capture %>% collect(), subset_capture, "capture_id", report = "capture")
+peace = compare_updates(tray)
+update_capture = tray$update
+
+subset_sample = data_sv %>%
+  select(all_of(colnames(db_sample))) %>%
+  distinct()
+
+tray = compare_for_staging(db_sample %>% collect(), subset_sample, "sample_id", report = "sample")
+
+subset_bd = data_sv %>%
+  select(all_of(colnames(db_bd))) %>%
+  distinct()
+
+tray = compare_for_staging(db_bd %>% collect(), subset_bd, "result_id", report = "bd")
+peace = compare_updates(tray)
+update_bd = tray$update
+
+
+```
+
+# commit changes
+```{r}
+# update all landscape
+dbBegin(dbcon)
+
+tryCatch(
+  {
+    temp_site = stage_to_temp(dbcon, db_site, upsert_site)
+    pointer = tbl(dbcon, temp_site)
+    rows_upsert(db_site, pointer, by="site_id", in_place=TRUE)
+    
+    temp_visit = stage_to_temp(dbcon, db_visit, update_visit)
+    pointer = tbl(dbcon, temp_visit)
+    rows_update(db_visit, pointer, by="visit_id", in_place=TRUE, unmatched = "ignore")
+    
+    temp_survey = stage_to_temp(dbcon, db_survey, update_survey)
+    pointer = tbl(dbcon, temp_survey)
+    rows_update(db_survey, pointer, by="survey_id", in_place=TRUE, unmatched = "ignore")
+    
+    temp_capture = stage_to_temp(dbcon, db_capture, update_capture)
+    pointer = tbl(dbcon, temp_capture)
+    rows_update(db_capture, pointer, by="capture_id", in_place=TRUE, unmatched = "ignore")
+    
+    temp_bd = stage_to_temp(dbcon, db_bd, update_bd)
+    pointer = tbl(dbcon, temp_bd)
+    rows_update(db_bd, pointer, by="result_id", in_place=TRUE, unmatched = "ignore")
+    
+    # Commit the transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful!")
+    
+  }, error = function(e) {
+    # Rollback in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
+
+
+rm(upsert_site,
+   update_visit,
+   update_survey,
+   update_capture,
+   update_sample,
+   update_bd)
+
+```
