@@ -19,7 +19,7 @@ mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
 # pull relevant chain tables from DB
 db_aural = tbl(dbcon, Id("survey_data", "aural"))
 db_capture = tbl(dbcon, Id("survey_data", "capture"))
-db_edna = tbl(dbcon, Id("survey_data", "edna"))
+db_edna = tbl(dbcon, Id("survey_data", "edna_collection"))
 db_env = tbl(dbcon, Id("survey_data", "environmental"))
 db_ves = tbl(dbcon, Id("survey_data", "ves"))
 
@@ -1588,4 +1588,145 @@ update_captures = db_capture %>%
 
 db_capture = rows_update(db_capture, update_captures, by = "capture_id", unmatched = "ignore", in_place = TRUE)
 
+```
+
+# bd results with NA results
+```{r}
+bd_na = db_bd %>%
+  left_join(db_sample, by = "sample_id") %>%
+  left_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(is.na(bd_detected) | is.na(bd_its1_copies_per_swab)) %>%
+  select(bd_detected,
+         bd_its1_copies_per_swab,
+         qpcr_plate_name,
+         qpcr_date,
+         sample_id,
+         negative_control,
+         capture_id,
+         taxon_capture,
+         date,
+         site,
+         region,
+         country) %>%
+  collect() %>%
+  arrange(qpcr_plate_name,
+          qpcr_date)
+
+bd_na_plates = bd_na %>%
+  group_by(qpcr_plate_name) %>%
+  count()
+
+bd_not_na = db_bd %>%
+  left_join(db_sample, by = "sample_id") %>%
+  left_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(!(is.na(bd_detected) | is.na(bd_its1_copies_per_swab))) %>%
+  select(bd_detected,
+         bd_its1_copies_per_swab,
+         qpcr_plate_name,
+         qpcr_date,
+         sample_id,
+         negative_control,
+         capture_id,
+         taxon_capture,
+         date,
+         site,
+         region,
+         country) %>%
+  collect() %>%
+  arrange(qpcr_plate_name,
+          qpcr_date)
+
+# BRBD and pce samples are showing the smae results, yikes!
+
+brbd_pce = db_bd %>%
+  left_join(db_sample, by = "sample_id") %>%
+  left_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(grepl("^BRBD|^pce", sample_name)) %>%
+  select(all_of(colnames(db_bd)),
+         negative_control,
+         capture_id,
+         taxon_capture,
+         date,
+         site,
+         region,
+         country) %>%
+  collect()
+
+brbd_pce_alike = brbd_pce %>%
+  mutate(sample_number = as.numeric(gsub("pce_", "", gsub("BRBD ", "", sample_name_bd)))) %>%
+  select(sample_number,
+         target_quant,
+         everything()) %>%
+  get_dupes(sample_number)
+
+# unaligned Bd
+orphans = db_bd %>%
+  left_join(db_sample, by = "sample_id") %>%
+  left_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(is.na(capture_id)) %>%
+  select(all_of(colnames(db_bd)),
+         negative_control) %>%
+  collect()
+
+```
+
+# visits with no surveys
+```{r}
+vs = db_survey %>%
+  full_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  select(survey_id,
+         detection_type,
+         transect,
+         comments_survey,
+         visit_id,
+         date,
+         time_of_day,
+         site,
+         comments_visit,
+         region,
+         country) %>%
+  collect()
+
+vs_nos = vs %>%
+  filter(is.na(survey_id)) %>%
+  select(country,
+         region,
+         date,
+         everything()) %>%
+  arrange(country,
+          region,
+          date)
+
+```
+
+# wipe Brazil edna collection
+```{r}
+edna_drop_br = db_edna %>%
+  filter(survey_id %in% sids) %>%
+  collect()
+
+db_edna = rows_delete(db_edna, edna_drop_br, by = "edna_id", unmatched = "ignore", in_place = TRUE)
 ```
