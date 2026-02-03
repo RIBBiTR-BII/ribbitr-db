@@ -996,10 +996,10 @@ unified_results = raw_focal_2025 %>%
          replicate_id = 1,
          cycle_quant = NA,
          target_quant = bd_load,
-         total_qpcr_volume_uL = NA,  # 25 uL?
+         total_qpcr_volume_uL = 25,
          qpcr_dilution_factor = 1,
-         template_dna_volume_uL = NA,
-         extract_volume_uL = NA,
+         template_dna_volume_uL = 5,
+         extract_volume_uL = 200,
          target_quant_per_swab = target_quant * qpcr_dilution_factor * extract_volume_uL / template_dna_volume_uL,
          its1_copies_per_standard_unit = 1,
          bd_its1_copies_per_swab = target_quant_per_swab * its1_copies_per_standard_unit,
@@ -1019,6 +1019,10 @@ unified_results = raw_focal_2025 %>%
          comments_qpcr = NA,
          singular_sample_results = TRUE,
          sample_type = "bd")
+
+meow = unified_results %>%
+  mutate(rat_1 = target_quant_per_swab / target_quant,
+         rat_2 = bd_its1_copies_per_swab / target_quant)
 
 ```
 
