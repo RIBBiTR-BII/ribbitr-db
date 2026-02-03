@@ -43,10 +43,7 @@ q_bd_capture = db_sample %>%
   left_join(db_taxa, by = c("taxon_capture" = "taxon_id")) %>%
   inner_join(db_bdqpcr, by = "sample_id") %>%
   filter(region == "boraceia") %>%
-  select(result_id,
-         sample_id,
-         capture_id,
-         sample_name_bd,
+  select(sample_name_bd,
          bd_detected,
          target_quant,
          bd_its1_copies_per_swab,
@@ -57,7 +54,10 @@ q_bd_capture = db_sample %>%
          itis_species,
          date,
          transect,
-         site)
+         site,
+         result_id,
+         sample_id,
+         capture_id)
   
 d_bd_capture = q_bd_capture %>%
   collect() %>%
