@@ -16,7 +16,7 @@ dbcon <- hopToDB("wibbitr")
 ## Point to local data directory
 ddir = Sys.getenv("data_dir")  # data directory
 # Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
-wddir = here(ddir, "bd_qpcr_results", "ribbitr_data_2025-09-02", "ribbitr_data") # working data directory
+wddir = here(ddir, "bd_qpcr_results", "ribbitr_data_2026-02-03", "ribbitr_data") # working data directory
 
 ```
 
@@ -35,7 +35,7 @@ db_sample = tbl(dbcon, Id("survey_data", "sample"))
 
 ```{r}
 #| include: false
-# list.files(here(wddir, "Panama2024"))
+list.files(here(wddir, "Brazil2024/Individual_Plate_results"))
 
 # brasil
 ## 2022
@@ -50,6 +50,19 @@ raw_br_2023_04 = import_list(here(wddir, "Brazil2023", "RIBBiTR_BrazilSwabs2023_
 raw_br_2023_05 = import_list(here(wddir, "Brazil2023", "RIBBiTR_BrazilSwabs2023_03142024_plate5_Results.xlsx"))
 raw_br_2023_06 = import_list(here(wddir, "Brazil2023", "RIBBiTR_BrazilSwabs2023_03262024_plate6_Results.xlsx"))
 raw_br_2023_07 = import_list(here(wddir, "Brazil2023", "RIBBiTR_BrazilSwabs2023_04122024_plate7_results.xlsx"))
+## 2024
+# raw_br_2024_01 = import_list(here(wddir, "Brazil2024", "RIBBiTR_BrazilSwabs2024_CompiledResults_01132026.xlsx"))[["Results"]]
+raw_br_2024_01 = import_list(here(wddir, "Brazil2024", "Individual_Plate_results", "RIBBiTR_BrazilSwabs2024_08132025_plate1_results.xlsx"))
+raw_br_2024_02 = import_list(here(wddir, "Brazil2024", "Individual_Plate_results", "RIBBiTR_BrazilSwabs2024_08212025_plate2_results.xlsx"))
+raw_br_2024_03 = import_list(here(wddir, "Brazil2024", "Individual_Plate_results", "RIBBiTR_BrazilSwabs2024_09032025_plate3_results.xlsx"))
+raw_br_2024_04 = import_list(here(wddir, "Brazil2024", "Individual_Plate_results", "RIBBiTR_BrazilSwabs2024_09192025_plate4_results.xlsx"))
+raw_br_2024_05 = import_list(here(wddir, "Brazil2024", "Individual_Plate_results", "RIBBiTR_BrazilSwabs2024_09222025_plate5_results.xlsx"))
+raw_br_2024_06 = import_list(here(wddir, "Brazil2024", "Individual_Plate_results", "RIBBiTR_BrazilSwabs2024_09222025_plate6_results.xlsx"))
+raw_br_2024_07 = import_list(here(wddir, "Brazil2024", "Individual_Plate_results", "RIBBiTR_BrazilSwabs2024_12032025_plate7_rerun_results.xlsx"))
+raw_br_2024_08 = import_list(here(wddir, "Brazil2024", "Individual_Plate_results", "RIBBiTR_BrazilSwabs2024_11252025_plate8_results.xlsx"))
+raw_br_2024_10 = import_list(here(wddir, "Brazil2024", "Individual_Plate_results", "RIBBiTR_BrazilSwabs2024_01072026_plate10_results.xlsx"))
+raw_br_2024_11 = import_list(here(wddir, "Brazil2024", "Individual_Plate_results", "RIBBiTR_BrazilSwabs2024_01082026_plate11_results.xlsx"))
+raw_br_2024_12 = import_list(here(wddir, "Brazil2024", "Individual_Plate_results", "RIBBiTR_BrazilSwabs2024_01122026_SingleTube_results.xlsx"))
 
 # panama
 ## 2022
@@ -102,6 +115,11 @@ raw_pe_2024_02 = import_list(here(wddir, "Penn2024", "RIBBiTR_PennSwabs2024_0205
 raw_pe_2024_03 = import_list(here(wddir, "Penn2024", "RIBBiTR_PennSwabs2024_02102025_Plate3_Results.xlsx"))
 raw_pe_2024_04 = import_list(here(wddir, "Penn2024", "RIBBiTR_PennSwabs2024_02112025_Plate4_Results.xlsx"))
 raw_pe_2024_05 = import_list(here(wddir, "Penn2024", "RIBBiTR_PennSwabs2024_02272025_Plate5_Rerun_results.xlsx"))
+## 2025
+raw_pe_2025_01 = import_list(here(wddir, "Penn2025", "RIBBiTR_PennSwabs2025_11032025_Plate1_rerun2_results.xlsx"))
+raw_pe_2025_02 = import_list(here(wddir, "Penn2025", "RIBBiTR_PennSwabs2025_11112025_Plate2_results.xlsx"))
+raw_pe_2025_03 = import_list(here(wddir, "Penn2025", "RIBBiTR_PennSwabs2025_11132025_Plate3_results.xlsx"))
+raw_pe_2025_04 = import_list(here(wddir, "Penn2025", "RIBBiTR_PennSwabs2025_11252025_Plate4_results.xlsx"))
 
 tz_local = "America/New_York"
 
@@ -152,12 +170,37 @@ clean_br_2022_01 = scrape_qpcr_xls(raw_br_2022_01)
 clean_br_2022_03 = scrape_qpcr_xls(raw_br_2022_03)
 clean_br_2022_04 = scrape_qpcr_xls(raw_br_2022_04)
 
-clean_br_2023_01 = scrape_qpcr_xls(raw_br_2023_01)
+clean_br_2023_01 = scrape_qpcr_xls(raw_br_2023_01) %>%
+  mutate(bd_pos_neg = case_when(
+           bd_ct_mean > 0 ~ "Positive",
+           is.na(bd_ct_mean) ~ "Negative",
+           .default = NA
+         ))
 clean_br_2023_02 = scrape_qpcr_xls(raw_br_2023_02)
-clean_br_2023_03 = scrape_qpcr_xls(raw_br_2023_03)
-clean_br_2023_04 = scrape_qpcr_xls(raw_br_2023_04)
-clean_br_2023_05 = scrape_qpcr_xls(raw_br_2023_05)
-clean_br_2023_06 = scrape_qpcr_xls(raw_br_2023_06)
+clean_br_2023_03 = scrape_qpcr_xls(raw_br_2023_03) %>%
+  mutate(bd_pos_neg = case_when(
+           bd_ct_mean > 0 ~ "Positive",
+           is.na(bd_ct_mean) ~ "Negative",
+           .default = NA
+         ))
+clean_br_2023_04 = scrape_qpcr_xls(raw_br_2023_04) %>%
+  mutate(bd_pos_neg = case_when(
+           bd_ct_mean > 0 ~ "Positive",
+           is.na(bd_ct_mean) ~ "Negative",
+           .default = NA
+         ))
+clean_br_2023_05 = scrape_qpcr_xls(raw_br_2023_05) %>%
+  mutate(bd_pos_neg = case_when(
+           bd_ct_mean > 0 ~ "Positive",
+           is.na(bd_ct_mean) ~ "Negative",
+           .default = NA
+         ))
+clean_br_2023_06 = scrape_qpcr_xls(raw_br_2023_06) %>%
+  mutate(bd_pos_neg = case_when(
+           bd_ct_mean > 0 ~ "Positive",
+           is.na(bd_ct_mean) ~ "Negative",
+           .default = NA
+         ))
 clean_br_2023_07 = scrape_qpcr_xls(raw_br_2023_07)
 
 # rename BR PCE samples with "pce_" prefix
@@ -172,6 +215,32 @@ clean_br_2023_all = bind_rows(clean_br_2023_01,
          sample_name = ifelse(grepl("^[0-9]{3}$", sample_name),
                               paste0("BRBD ", sample_name),
                               sample_name))
+
+clean_br_2024_01 = scrape_qpcr_xls(raw_br_2024_01)
+clean_br_2024_02 = scrape_qpcr_xls(raw_br_2024_02)
+clean_br_2024_03 = scrape_qpcr_xls(raw_br_2024_03)
+clean_br_2024_04 = scrape_qpcr_xls(raw_br_2024_04)
+clean_br_2024_05 = scrape_qpcr_xls(raw_br_2024_05)
+clean_br_2024_06 = scrape_qpcr_xls(raw_br_2024_06) %>%
+  rename(q_pcr_well = well,
+         q_pcr_well_position = well_position)
+clean_br_2024_07 = scrape_qpcr_xls(raw_br_2024_07)
+clean_br_2024_08 = scrape_qpcr_xls(raw_br_2024_08)
+clean_br_2024_10 = scrape_qpcr_xls(raw_br_2024_10)
+clean_br_2024_11 = scrape_qpcr_xls(raw_br_2024_11)
+clean_br_2024_12 = scrape_qpcr_xls(raw_br_2024_12)
+
+clean_br_2024_all = bind_rows(clean_br_2024_01,
+                              clean_br_2024_02,
+                              clean_br_2024_03,
+                              clean_br_2024_04,
+                              clean_br_2024_05,
+                              clean_br_2024_06,
+                              clean_br_2024_07,
+                              clean_br_2024_08,
+                              clean_br_2024_10,
+                              clean_br_2024_11,
+                              clean_br_2024_12)
 
 clean_pa_2022_01 = scrape_qpcr_xls(raw_pa_2022_01)
 clean_pa_2022_02 = scrape_qpcr_xls(raw_pa_2022_02)
@@ -208,18 +277,33 @@ clean_pa_2024_05 = scrape_qpcr_xls(raw_pa_2024_05)
 clean_pa_2024_06 = scrape_qpcr_xls(raw_pa_2024_06)
 
 clean_pe_2022_01 = scrape_qpcr_xls(raw_pe_2022_01) %>%
-  mutate(sample_name = gsub("DRY0", "DrySwab0", sample_name))
+  mutate(sample_name = gsub("DRY0", "DrySwab0", sample_name),
+         bd_pos_neg = case_when(
+           bd_ct_mean > 0 ~ "Positive",
+           is.na(bd_ct_mean) ~ "Negative",
+           .default = NA
+         ))
 clean_pe_2022_02 = scrape_qpcr_xls(raw_pe_2022_02) %>%
   mutate(bd_quantity_mean = as.numeric(bd_quantity_mean),
          sample_name = gsub("BDSwab", "BdSwab", sample_name))
 
 clean_pe_2023_01 = scrape_qpcr_xls(raw_pe_2023_01) %>%
   rename(bd_ct_mean = ct_mean,
-         bd_quantity_mean = quantity_mean) 
+         bd_quantity_mean = quantity_mean)  %>%
+  mutate(bd_pos_neg = case_when(
+           bd_ct_mean > 0 ~ "Positive",
+           is.na(bd_ct_mean) ~ "Negative",
+           .default = NA
+         ))
 clean_pe_2023_02 = scrape_qpcr_xls(raw_pe_2023_02) %>%
   rename(bd_ct_mean = ct_mean,
          bd_quantity_mean = quantity_mean) %>%
-  mutate(bd_quantity_mean = as.numeric(bd_quantity_mean))
+  mutate(bd_quantity_mean = as.numeric(bd_quantity_mean),
+         bd_pos_neg = case_when(
+           bd_ct_mean > 0 ~ "Positive",
+           is.na(bd_ct_mean) ~ "Negative",
+           .default = NA
+         ))
 clean_pe_2023_03 = scrape_qpcr_xls(raw_pe_2023_03) %>%
   mutate(qpcr_date = as.Date("2023-08-18"))
 
@@ -239,6 +323,11 @@ clean_pe_2024_03 = scrape_qpcr_xls(raw_pe_2024_03)
 clean_pe_2024_04 = scrape_qpcr_xls(raw_pe_2024_04)
 clean_pe_2024_05 = scrape_qpcr_xls(raw_pe_2024_05)
 
+clean_pe_2025_01 = scrape_qpcr_xls(raw_pe_2025_01)
+clean_pe_2025_02 = scrape_qpcr_xls(raw_pe_2025_02)
+clean_pe_2025_03 = scrape_qpcr_xls(raw_pe_2025_03)
+clean_pe_2025_04 = scrape_qpcr_xls(raw_pe_2025_04)
+
 # clean up sample names with forbidden characters
 clean_pe_2022_02$bd_quantity_mean[clean_pe_2022_02$sample_name == "2022-05-18-admin-rapi18"] = 11603.6640625
 clean_pe_2022_02$bd_quantity_mean[clean_pe_2022_02$sample_name == "2022-05-18‚Äêadmin-rapi16"] = 11241.6748046875
@@ -250,7 +339,7 @@ bind_results = bind_rows(clean_br_2022_01,
                          clean_br_2022_03,
                          clean_br_2022_04,
                          clean_br_2023_all,
-                         clean_pa_2022_01,
+                         clean_br_2024_all,
                          clean_pa_2022_02,
                          clean_pa_2022_03,
                          clean_pa_2022_04,
@@ -286,7 +375,11 @@ bind_results = bind_rows(clean_br_2022_01,
                          clean_pe_2024_02,
                          clean_pe_2024_03,
                          clean_pe_2024_04,
-                         clean_pe_2024_05)
+                         clean_pe_2024_05,
+                         clean_pe_2025_01,
+                         clean_pe_2025_02,
+                         clean_pe_2025_03,
+                         clean_pe_2025_04)
 
 clean_results = bind_results %>%
   rename(cycle_quant = bd_ct_mean,
@@ -295,10 +388,12 @@ clean_results = bind_results %>%
          qpcr_well = well,
          comments_qpcr = comments) %>%
   mutate(sample_type = "bd",
-         detected = case_when(bd_pos_neg == "Positive" ~ 1,
-                              bd_pos_neg == "Negative" ~ 0,
-                              TRUE ~ NA_real_),
-         target_quant = ifelse(is.na(target_quant) & detected == 0,
+         bd_detected = case_when(bd_pos_neg %in% c("Positive", "pos") ~ 1,
+                                 target_quant > 0 ~ 1,
+                                 bd_pos_neg %in% c("Negative", "neg") ~ 0,
+                                 target_quant == 0 ~ 0,
+                                 TRUE ~ NA_real_),
+         target_quant = ifelse(is.na(target_quant) & bd_detected == 0,
                                0,
                                target_quant),
          qpcr_well = as.character(qpcr_well),
@@ -401,6 +496,15 @@ qc_results = clean_results %>%
        qpcr_well == "5")
   )
 
+bd_na = clean_results %>%
+  filter(is.na(bd_its1_copies_per_swab) | is.na(bd_detected)) %>%
+  select(bd_detected,
+         bd_its1_copies_per_swab,
+         qpcr_plate_name,
+         everything()) %>%
+  arrange(qpcr_plate_name)
+
+if(nrow(bd_na) > 0) warning("NA values found in `bd_detected` and/or `bd_its1_copies_per_swab`")
 
 violations_unique = get_dupes(qc_results, sample_name)
 
