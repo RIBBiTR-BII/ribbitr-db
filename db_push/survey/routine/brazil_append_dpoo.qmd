@@ -37,7 +37,7 @@ db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
 
 db_aural = tbl(dbcon, Id("survey_data", "aural"))
 db_capture = tbl(dbcon, Id("survey_data", "capture"))
-db_edna = tbl(dbcon, Id("survey_data", "edna"))
+db_edna = tbl(dbcon, Id("survey_data", "edna_collection"))
 db_env = tbl(dbcon, Id("survey_data", "environmental"))
 db_ves = tbl(dbcon, Id("survey_data", "ves"))
 
@@ -58,23 +58,24 @@ db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
 #| include: false
 # list.files(path = here(wddir))
 
-in_focal = import_list(here(wddir, '2025-01-27', "RIBBiTR_Brazil_FocalSp_2024.xlsx"))
+in_focal = import_list(here(wddir, '2025-01-27', "RIBBiTR_Brazil_FocalSp_2024.xlsx"), na = c("", "NA"))
 raw_focal_2022 = in_focal[["2022"]]
 raw_focal_2023 = in_focal[["2023"]]
 raw_focal_2024 = in_focal[["2024"]]
+raw_focal_2025 = import(here(wddir, "2026-01-27", "Ribbtr_2025_lks.xlsx"), na = c("", "NA"))
 
-in_nonfocal = import_list(here(wddir, '2025-01-27', "RIBBiTR_Brazil_Non focal species_2024.xlsx"))
+in_nonfocal = import_list(here(wddir, '2025-01-27', "RIBBiTR_Brazil_Non focal species_2024.xlsx"), na = c("", "NA"))
 raw_nonfocal_2023 = in_nonfocal[["2023"]]
 raw_nonfocal_2024 = in_nonfocal[["2024"]]
 
-in_edna = import_list(here(wddir, '2025-01-27', "RIBBiTR_Brazil_eDNA_2024.xlsx"))
+in_edna = import_list(here(wddir, '2025-01-27', "RIBBiTR_Brazil_eDNA_2024.xlsx"), na = c("", "NA"))
 raw_edna_2022 = in_edna[["2022"]]
 raw_edna_2023 = in_edna[["2023"]]
 raw_edna_2024 = in_edna[["2024"]]
 
 # # non RIBBiTR
-raw_tissue = import_list(here(wddir, '2025-01-27', "Boraceia_species tissues_2024.xlsx"))[["Sheet1"]]
-raw_loggers = read_csv(here(wddir, '2025-01-27', "RIBBiTR_Brazil_Dataloggers_2024_clean.csv"))
+raw_tissue = import_list(here(wddir, '2025-01-27', "Boraceia_species tissues_2024.xlsx"), na = c("", "NA"))[["Sheet1"]]
+raw_loggers = read_csv(here(wddir, '2025-01-27', "RIBBiTR_Brazil_Dataloggers_2024_clean.csv"), na = c("", "NA"))
 
 # legacy data
 raw_ls_area <- read_csv(here(wddir, "legacy", "area_gps_landscapes_brazil_for_cob.csv"))
@@ -93,6 +94,11 @@ local_tz = "America/Sao_Paulo"
 # 2 - Clean data
 
 ```{r}
+focal_cols = compare_df_cols(raw_focal_2022,
+                             raw_focal_2023,
+                             raw_focal_2024,
+                             raw_focal_2025)
+
 clean_focal = bind_rows(raw_focal_2022 %>%
                           clean_names() %>%
                           rename(date = date_ymd,
@@ -112,17 +118,22 @@ clean_focal = bind_rows(raw_focal_2022 %>%
                         raw_focal_2024 %>%
                           clean_names() %>%
                           mutate(elevation_m = as.numeric(elevation_m),
-                                 date = ymd(date))) %>%
+                                 date = ymd(date)),
+                        peace = raw_focal_2025 %>%
+                          clean_names() %>%
+                          mutate(latitude = as.numeric(gsub("°", "", latitude)),
+                                 longitude = as.numeric(gsub("°", "", longitude)))) %>%
   rename(species = species_capture,
          time = capture_time,
          genetic_id = toe_clip_tube_id) %>%
-  mutate(time = as.hms(as.numeric(time)*24*60*60),
+  mutate(time = as.hms(format(time, "%H:%M:%S")),
          date = ymd(date),
          tissue = ifelse(genetic_id != "NA", "toe", NA_character_),
          is_duplicate = FALSE,
          uuid_name_capture = paste0(date, transect_id, time, species, snout_vent_length_mm, body_mass_g, bd_swab_tube_id),
          capture_id = UUIDfromName("e3c835a4-4c8d-491c-9970-011aba853686", uuid_name_capture),
-         project_id = "ribbitr")
+         project_id = "ribbitr",
+         src = "focal")
 
 clean_nonfocal = bind_rows(raw_nonfocal_2023 %>%
                              clean_names() %>%
@@ -138,7 +149,8 @@ clean_nonfocal = bind_rows(raw_nonfocal_2023 %>%
          is_duplicate = FALSE,
          uuid_name_capture = paste0(date, transect_id, time, species, bd_swab_tube_id),
          capture_id = UUIDfromName("e3c835a4-4c8d-491c-9970-011aba853686", uuid_name_capture),
-         project_id = "ribbitr") %>%
+         project_id = "ribbitr",
+         src = "nonfocal") %>%
   select(-correct_swab_id)
 
 clean_tissue = raw_tissue %>%
@@ -152,7 +164,7 @@ clean_tissue = raw_tissue %>%
   mutate(date = as.Date(date),
          latitude = as.numeric(latitude),
          longitude = as.numeric(longitude),
-         time = as.hms(as.numeric(time)*24*60*60),
+         time = as.hms(format(time, "%H:%M:%S")),
          uuid_name_capture = paste0(date, transect_id, time, species, snout_vent_length_mm, body_mass_g),
          capture_id = UUIDfromName("e3c835a4-4c8d-491c-9970-011aba853686", uuid_name_capture),
          project_id = "ribbitr") %>%
@@ -164,7 +176,8 @@ clean_tissue = raw_tissue %>%
          bacterial_swab_tube_id = ifelse(bacterial_swab_tube_id == "NA", NA_character_, bacterial_swab_tube_id),
          mic_swab_tube_id = ifelse(mic_swab_tube_id == "NA", NA_character_, mic_swab_tube_id)) %>%
   ungroup() %>%
-  mutate(is_duplicate = is.na(bd_swab_tube_id))
+  mutate(is_duplicate = is.na(bd_swab_tube_id),
+         src = "tissue")
 
 clean_ls = raw_ls %>%
   clean_names() %>%
@@ -197,7 +210,8 @@ clean_ls = raw_ls %>%
          capture_id = UUIDfromName("e3c835a4-4c8d-491c-9970-011aba853686", uuid_name_capture),
          latitude = latitude / 1e6,
          longitude = longitude / 1e6,
-         is_duplicate = FALSE)
+         is_duplicate = FALSE,
+         src = "landscapes")
 
 clean_sv = raw_sv %>%
   clean_names() %>%
@@ -229,7 +243,8 @@ clean_sv = raw_sv %>%
                                            .default = "alive"),
          uuid_name_capture = paste0(project_id, date, id),
          capture_id = UUIDfromName("e3c835a4-4c8d-491c-9970-011aba853686", uuid_name_capture),
-         is_duplicate = FALSE)
+         is_duplicate = FALSE,
+         src = "santavirginia")
 
 compare_captures = compare_df_cols(
   clean_focal,
@@ -305,7 +320,7 @@ clean_capture = bind_rows(clean_focal,
          capture_latitude = ifelse(capture_latitude == -23.35632 & capture_longitude == -45.88978, -23.65632, capture_latitude),
          transect = transect_type,
          observer_capture = gsub("_", ",", observer_capture),
-         observer_capture = ifelse(observer_capture == "NA", NA_character_, observer_capture),
+         observer_capture = ifelse(observer_capture == "", NA_character_, observer_capture),
          body_temp_c = round(as.numeric(body_temp_c), digits = 1),
          substrate_temp_c = round(as.numeric(substrate_temp_c), digits = 1),
          wind_speed_m_s = as.numeric(wind_speed_mph) * 0.44704,
@@ -322,18 +337,15 @@ compare_edna_raw = compare_df_cols(
 
 clean_edna = bind_rows(raw_edna_2022 %>%
                          clean_names() %>%
-                         rename(country = location) %>%
-                         mutate(collect_time = as_hms(as.numeric(collect_time)*24*60*60)),
+                         rename(country = location),
                        raw_edna_2023 %>%
                          clean_names() %>%
                          rename(wind_speed_m_s = wind_speed_ms,
-                                air_pressure_in_hg = pressure) %>%
-                         mutate(collect_time = as_hms(as.numeric(collect_time)*24*60*60)),
+                                air_pressure_in_hg = pressure),
                        raw_edna_2024 %>%
                          clean_names() %>%
                          rename(air_pressure_in_hg = bar) %>%
-                         mutate(collect_time = as_hms(collect_time),
-                                control = as.logical(control),
+                         mutate(control = as.logical(control),
                                 edna_volume_ml = as.numeric(edna_volume_ml))) %>%
   rename(edna_latitude = latitude,
          edna_longitude = longitude,
@@ -345,11 +357,12 @@ clean_edna = bind_rows(raw_edna_2022 %>%
          collection_time = collect_time,
          negative_control = control) %>%
   unite("comments_edna", c("comments_based_renatos_spreadsheet", "notes"), sep = "; ", na.rm = TRUE) %>%
-  mutate(detection_type = "edna",
+  mutate(collection_time = as.hms(format(collection_time, "%H:%M:%S")),
+         detection_type = "edna",
          new_transect_id = ifelse(new_transect_id == "NA", NA_character_, new_transect_id),
          transect_id = ifelse(transect_id == "NA", NA_character_, transect_id),
-         edna_latitude = round(as.numeric(ifelse(edna_latitude == "NA", NA, edna_latitude)), digits = 6),
-         edna_longitude = round(as.numeric(ifelse(edna_longitude == "NA", NA, edna_longitude)), digits = 6),
+         edna_latitude = round(as.numeric(ifelse(edna_latitude == "NA", NA, edna_latitude)), digits = 5),
+         edna_longitude = round(as.numeric(ifelse(edna_longitude == "NA", NA, edna_longitude)), digits = 5),
          edna_elevation_m = as.numeric(edna_elevation_m),
          date = as.Date(date),
          filter_date = date,
@@ -367,6 +380,7 @@ clean_edna = bind_rows(raw_edna_2022 %>%
          time_of_day = case_when(collection_time >= as_hms("08:00:00") & collection_time < as_hms("20:00:00") ~ "day",
                                  collection_time < as_hms("08:00:00") | collection_time >= as_hms("20:00:00") ~ "night",
                                  .default = NA_character_),
+         filter_method = tolower(filter_method),
          project_id = "ribbitr",
          visit_lab = "becker_lab")
 ```
@@ -377,7 +391,8 @@ clean_edna = bind_rows(raw_edna_2022 %>%
 unified_visit = bind_rows(clean_edna,
                           clean_capture) %>%
   filter(!is.na(date),
-         !is.na(site)) %>%
+         !is.na(site),
+         !is.na(transect)) %>%
   select(date,
          time_of_day,
          campaign,
@@ -480,7 +495,8 @@ unified_env = bind_rows(clean_edna %>%
          observers_survey,
          any_of(colnames(db_env))) %>%
   distinct() %>%
-  mutate(detection_type = "environmental") %>%
+  mutate(detection_type = "environmental",
+         detection_subtype = NA) %>%
   left_join(db_site %>%
               select(tbl_keys("site", mdc)) %>%
               collect(),
@@ -536,7 +552,8 @@ gelled_env = unified_env %>%
   mutate(uuid_name_env = paste0(survey_id, start_time, wind_speed_m_s, air_temp_c, water_temp_c, p_h, relative_humidity_percent),
          environmental_id = UUIDfromName("f2fdbf80-0197-4821-b125-d589424e19c8", uuid_name_env),
          water_time = as_hms(ifelse(!is.na(water_temp_c) | !is.na(p_h), start_time, NA)),
-         air_time = as_hms(ifelse(!is.na(wind_speed_m_s) | !is.na(air_temp_c) | !is.na(relative_humidity_percent), start_time, NA))) %>%
+         air_time = as_hms(ifelse(!is.na(wind_speed_m_s) | !is.na(air_temp_c) | !is.na(relative_humidity_percent), start_time, NA)),
+         observers_survey = if_else(observers_survey == "", NA, observers_survey)) %>%
   filter(!(is.na(water_temp_c) & is.na(p_h) & is.na(wind_speed_m_s) & is.na(air_temp_c) & is.na(relative_humidity_percent)))
 
 ```
@@ -556,10 +573,10 @@ compare_env_survey = compare_df_cols(db_survey %>%
                                   filter(FALSE) %>%
                                   collect(), subset_env_survey)
 
-peace = get_dupes(subset_env_survey, "transect", "detection_type", "visit_id", "start_time")
-
 tray = compare_for_staging(db_survey %>% collect(), subset_env_survey, "survey_id", return_all = TRUE, report = "env_survey")
+
 peace = compare_updates(tray)
+
 upsert_env_survey = bind_rows(tray$insert,
                              tray$update)
 # env
@@ -576,8 +593,6 @@ compare_env = compare_df_cols(db_env %>%
 tray = compare_for_staging(db_env %>% collect(), subset_env, "environmental_id", return_all = TRUE, report = "env")
 upsert_env = bind_rows(tray$insert,
                         tray$update)
-
-peace = compare_updates(tray)
 
 # anything to upsert?
 x_env = (nrow(upsert_env_survey) > 0) | (nrow(upsert_env) > 0)
@@ -678,7 +693,7 @@ gelled_edna = unified_edna %>%
                             UUIDfromName("c02ab86e-9e5a-4ac2-a1a6-bfa6c32ab614", uuid_name),
                             survey_id)) %>%
   ungroup() %>%
-  mutate(uuid_name = paste0(survey_id, edna_sample_name, edna_latitude, collection_time, filter_method, filter_start_time),
+  mutate(uuid_name = paste0(survey_id, edna_sample_name, collection_time, filter_method, filter_start_time),
          edna_id = UUIDfromName("e4d345d4-6433-40d2-9997-1b4ee8b1a627", uuid_name)) %>%
   group_by(date) %>%
   mutate(has_negative_control = sum(negative_control) > 0,
@@ -686,6 +701,7 @@ gelled_edna = unified_edna %>%
                                              UUIDfromName("42e537a1-5992-45d3-9eed-0f4920625be0", paste0("edna", date)),
                                              NA)) %>%
   ungroup()
+
 ```
 
 
@@ -705,6 +721,7 @@ compare_edna_survey = compare_df_cols(db_survey %>%
 tray = compare_for_staging(db_survey %>% collect(), subset_edna_survey, "survey_id", return_all = TRUE, report = "edna_survey")
 upsert_edna_survey = bind_rows(tray$insert,
                                tray$update)
+
 # edna
 subset_edna = gelled_edna %>%
   select(any_of(colnames(db_edna))) %>%
@@ -715,8 +732,6 @@ subset_edna = gelled_edna %>%
 compare_edna = compare_df_cols(db_edna %>%
                                   filter(FALSE) %>%
                                   collect(), subset_edna)
-
-peace = get_dupes(subset_edna, edna_id)
 
 tray = compare_for_staging(db_edna %>% collect(), subset_edna, "edna_id", return_all = TRUE, report = "edna")
 upsert_edna = bind_rows(tray$insert,
@@ -736,13 +751,15 @@ if (x_edna) {
   
   tryCatch(
     {
-      temp_edna_survey = stage_to_temp(dbcon, db_survey, upsert_edna_survey)
-      pointer = tbl(dbcon, temp_edna_survey)
-      rows_upsert(db_survey, pointer, by="survey_id", in_place=TRUE)
+      db_survey = db_rows_upsert(dbcon, db_survey, upsert_edna_survey, by="survey_id")
+      # temp_edna_survey = stage_to_temp(dbcon, db_survey, upsert_edna_survey)
+      # pointer = tbl(dbcon, temp_edna_survey)
+      # rows_upsert(db_survey, pointer, by="survey_id", in_place=TRUE)
       
-      temp_edna = stage_to_temp(dbcon, db_edna, upsert_edna)
-      pointer = tbl(dbcon, temp_edna)
-      rows_upsert(db_edna, pointer, by="edna_id", in_place=TRUE)
+      db_edna = db_rows_upsert(dbcon, db_edna, upsert_edna, by="edna_id")
+      # temp_edna = stage_to_temp(dbcon, db_edna, upsert_edna)
+      # pointer = tbl(dbcon, temp_edna)
+      # rows_upsert(db_edna, pointer, by="edna_id", in_place=TRUE)
       
       # Commit the transaction if successful
       dbCommit(dbcon)
@@ -755,9 +772,6 @@ if (x_edna) {
     })
 }
 
-# refresh
-db_survey = tbl(dbcon, Id("survey_data", "survey"))
-db_edna = tbl(dbcon, Id("survey_data", "edna"))
 ```
 
 # Capture
@@ -911,9 +925,9 @@ compare_sample = compare_df_cols(db_sample %>%
 tray = compare_for_staging(db_sample %>% collect(), subset_sample, "sample_id", report = "sample")
 upsert_sample = bind_rows(tray$insert,
                           tray$update)
-
-# constrained_sample = upsert_sample %>%
-#   resolve_sample_conflicts(db_sample)
+# 
+peace = compare_updates(tray)
+hope = peace[[1]]
 
 if (nrow(tray$update) > 0) {
   warning("Sample updates may indicate duplicate capture_ids. Investigation recommended.")
@@ -931,21 +945,25 @@ dbBegin(dbcon)
 
 tryCatch(
   {
-    temp_taxa = stage_to_temp(dbcon, db_taxa, insert_capture_taxa)
-    pointer = tbl(dbcon, temp_taxa)
-    rows_insert(db_taxa, pointer, by="taxon_id", in_place=TRUE, conflict = "ignore")
+    db_taxa = db_rows_insert(dbcon, db_taxa, insert_capture_taxa, by="taxon_id")
+    # temp_taxa = stage_to_temp(dbcon, db_taxa, insert_capture_taxa)
+    # pointer = tbl(dbcon, temp_taxa)
+    # rows_insert(db_taxa, pointer, by="taxon_id", in_place=TRUE, conflict = "ignore")
     
-    temp_capture_survey = stage_to_temp(dbcon, db_survey, upsert_capture_survey)
-    pointer = tbl(dbcon, temp_capture_survey)
-    rows_upsert(db_survey, pointer, by="survey_id", in_place=TRUE)
+    db_survey = db_rows_upsert(dbcon, db_survey, upsert_capture_survey, by="survey_id")
+    # temp_capture_survey = stage_to_temp(dbcon, db_survey, upsert_capture_survey)
+    # pointer = tbl(dbcon, temp_capture_survey)
+    # rows_upsert(db_survey, pointer, by="survey_id", in_place=TRUE)
     
-    temp_capture = stage_to_temp(dbcon, db_capture, upsert_capture)
-    pointer = tbl(dbcon, temp_capture)
-    rows_upsert(db_capture, pointer, by="capture_id", in_place=TRUE)
+    db_capture = db_rows_upsert(dbcon, db_capture, upsert_capture, by="capture_id")
+    # temp_capture = stage_to_temp(dbcon, db_capture, upsert_capture)
+    # pointer = tbl(dbcon, temp_capture)
+    # rows_upsert(db_capture, pointer, by="capture_id", in_place=TRUE)
     
-    temp_sample = stage_to_temp(dbcon, db_sample, upsert_sample)
-    pointer = tbl(dbcon, temp_sample)
-    rows_upsert(db_sample, pointer, by="sample_id", in_place=TRUE)
+    db_sample = db_rows_upsert(dbcon, db_sample, upsert_sample, by="sample_id")
+    # temp_sample = stage_to_temp(dbcon, db_sample, upsert_sample)
+    # pointer = tbl(dbcon, temp_sample)
+    # rows_upsert(db_sample, pointer, by="sample_id", in_place=TRUE)
     
     # Commit the transaction if successful
     dbCommit(dbcon)
@@ -960,7 +978,132 @@ tryCatch(
 
 ```
 
+# Bd qPCR results
 
+## unify
+```{r}
+unified_results = raw_focal_2025 %>%
+  clean_names() %>%
+  select(bd_swab_tube_id,
+         date,
+         bd_status,
+         bd_load,
+         bd_load_log) %>%
+  filter(!is.na(bd_status)) %>%
+  rename(sample_name = bd_swab_tube_id) %>%
+  mutate(bd_detected = (bd_status == 1),
+         replicates = "singlet",
+         replicate_id = 1,
+         cycle_quant = NA,
+         target_quant = bd_load,
+         total_qpcr_volume_uL = NA,  # 25 uL?
+         qpcr_dilution_factor = 1,
+         template_dna_volume_uL = NA,
+         extract_volume_uL = NA,
+         target_quant_per_swab = target_quant * qpcr_dilution_factor * extract_volume_uL / template_dna_volume_uL,
+         its1_copies_per_standard_unit = 1,
+         bd_its1_copies_per_swab = target_quant_per_swab * its1_copies_per_standard_unit,
+         swab_type = "mw113",
+         standard_target_type = "ITS1",
+         standard = "plasmid-pisces",
+         master_mix = "taqman",
+         extraction_plate_name = NA,
+         extraction_date = NA,
+         extraction_kit = "qiagen_powersoil",
+         extraction_lab = "becker_lab",
+         qpcr_plate_name = "becker_ribbitr_2025",
+         qpcr_well = as.character(row_number()),
+         qpcr_date = NA,
+         qpcr_machine = "quantstudio_3",
+         qpcr_lab = "becker_lab",
+         comments_qpcr = NA,
+         singular_sample_results = TRUE,
+         sample_type = "bd")
+
+```
+
+## gelled
+```{r}
+# align data with ids where already exist, otherwise create new ids
+gelled_results = unified_results %>%
+  left_join(db_sample %>% collect(), by = c("sample_name", "sample_type")) %>%
+  group_by(sample_name, sample_type) %>%
+  mutate(uuid_name = paste0(sample_name, sample_type),
+         sample_id = ifelse(is.na(sample_id), UUIDfromName("1208e62f-d3a1-462c-984f-0bf1f43f5837", uuid_name), sample_id)) %>%
+  ungroup() %>%
+  mutate(sample_name_bd = sample_name) %>%
+  left_join(db_bd %>% 
+              select(sample_name_bd,
+                     qpcr_plate_name,
+                     qpcr_well,
+                     result_id) %>%
+              collect(), by = c("sample_name_bd",
+                                "qpcr_plate_name",
+                                "qpcr_well")) %>%
+  group_by(sample_name_bd,
+           qpcr_plate_name,
+           qpcr_well) %>%
+  mutate(uuid_name = paste0(sample_name_bd, qpcr_well, qpcr_plate_name),
+         result_id = ifelse(is.na(result_id), UUIDfromName("d41b1f58-5576-49b6-a303-0bddcc94a0f2", uuid_name), result_id)) %>%
+  ungroup()
+
+```
+
+## subset data
+```{r}
+# break wide table into corresponding database tables
+subset_bd_samples = gelled_results %>%
+  select(any_of(colnames(db_sample))) %>%
+  distinct() %>%
+  filter(!is.na(sample_id))
+
+compare_bd_samples = compare_df_cols(db_sample %>%
+                                  filter(FALSE) %>%
+                                  collect(), subset_bd_samples)
+
+# compare sample_id
+tray = compare_for_staging(db_sample %>% collect(), subset_bd_samples, "sample_id", return_all = TRUE, report = "sample")
+final_bd_samples = bind_rows(tray$insert,
+                             tray$update)
+
+subset_bd = gelled_results %>%
+  select(any_of(colnames(db_bd))) %>%
+  distinct() %>%
+  filter(!is.na(sample_id))
+
+compare_bd = compare_df_cols(db_bd %>%
+                               filter(FALSE) %>%
+                               collect(), subset_bd)
+
+tray = compare_for_staging(db_bd %>% collect(), subset_bd, "result_id", return_all = TRUE, report = "bd")
+final_bd = bind_rows(tray$insert,
+                       tray$update)
+```
+
+## commit
+```{r}
+
+# start transaction
+dbBegin(dbcon)
+
+tryCatch(
+  {
+    # upsert to sample table
+    db_sample = db_rows_upsert(dbcon, db_sample, final_bd_samples, by="sample_id")
+    # upseret to bd table
+    db_bd = db_rows_upsert(dbcon, db_bd, final_bd, by="result_id")
+    
+    # Commit transaction if successful
+    dbCommit(dbcon)
+    print("Transaction successful!")
+    
+  }, error = function(e) {
+    # Rollback transaction in case of error
+    dbRollback(dbcon)
+    message("Transaction failed: ", e$message)
+  })
+
+```
 
 ```{r}
 dbDisconnect(dbcon)
