@@ -1,0 +1,75 @@
+---
+title: "database query"
+format: html
+editor: source
+---
+
+# setup
+```{r}
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, RIBBiTR-BII/ribbitrrr, here)
+
+# connect to database
+dbcon = hopToDB("ribbitr")
+
+# load column metadata for survey_data (data exploration). Use to see what columns exist.
+mdc = tbl(dbcon, Id("public", "all_columns")) %>%
+  filter(table_schema == "survey_data") %>%
+  collect()
+
+# pointers for tables of interest
+db_bdqpcr = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
+```
+
+# build query
+```{r}
+# inner join capture and bd samples
+# left join supporting tables
+q_bd_capture = db_sample %>%
+  inner_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  left_join(db_taxa, by = c("taxon_capture" = "taxon_id")) %>%
+  inner_join(db_bdqpcr, by = "sample_id") %>%
+  filter(region == "boraceia") %>%
+  select(result_id,
+         sample_id,
+         capture_id,
+         sample_name_bd,
+         bd_detected,
+         target_quant,
+         bd_its1_copies_per_swab,
+         taxon_capture,
+         itis_rank,
+         itis_family,
+         itis_genus,
+         itis_species,
+         date,
+         transect,
+         site)
+  
+d_bd_capture = q_bd_capture %>%
+  collect() %>%
+  arrange(date,
+          site,
+          transect)
+  
+# fetch column metadata
+col_md = get_query_metadata(dbcon, q_bd_capture)
+
+# write
+write_csv(d_bd_capture, here("staging", paste0("boraceia_bd_capture_query_", today(), ".csv")))
+write_csv(col_md, here("staging", paste0("boraceia_bd_capture_query_", today(), "_metadata.csv")))
+
+```
