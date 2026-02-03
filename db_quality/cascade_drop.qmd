@@ -19,6 +19,7 @@ mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
 # pull relevant chain tables from 
 db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
 db_mucosome = tbl(dbcon, Id("survey_data", "mucosome_gia"))
+db_microbiome = tbl(dbcon, Id("survey_data", "microbiome_sequencing"))
 db_amp_total = tbl(dbcon, Id("survey_data", "amp_total"))
 db_amp_peak = tbl(dbcon, Id("survey_data", "amp_maldi_peak"))
 db_amp_intensity = tbl(dbcon, Id("survey_data", "amp_maldi_intensity"))
@@ -389,6 +390,10 @@ drop_sample_all = db_sample %>%
   select(all_of(colnames(db_sample))) %>%
   filter(!is.na(sample_id))
 
+peace = drop_sample_all %>%
+  select(sample_type) %>%
+  distinct()
+
 # associated capture samples with bd results
 bd_samples = db_bd %>%
   select(sample_id) %>%
@@ -398,6 +403,13 @@ bd_samples = db_bd %>%
 
 # associated capture samples with mucosome results
 mucosome_samples = db_mucosome %>%
+  select(sample_id) %>%
+  distinct() %>%
+  inner_join(drop_sample_all, by = "sample_id") %>%
+  filter(!is.na(sample_id))
+
+# associated capture samples with microbiome results
+microbiome_samples = db_microbiome %>%
   select(sample_id) %>%
   distinct() %>%
   inner_join(drop_sample_all, by = "sample_id") %>%
@@ -427,12 +439,17 @@ update_sample_musosome = drop_sample_all %>%
   inner_join(mucosome_samples %>% select(sample_id), by = "sample_id") %>%
   collect()
 
+update_sample_microbiome = drop_sample_all %>%
+  inner_join(microbiome_samples %>% select(sample_id), by = "sample_id") %>%
+  collect()
+
 update_sample_amp = drop_sample_all %>%
   inner_join(amp_samples %>% select(sample_id), by = "sample_id") %>%
   collect()
 
 update_sample = bind_rows(update_sample_bd,
                           update_sample_musosome,
+                          update_sample_microbiome,
                           update_sample_amp) %>%
   mutate(capture_id = NA)
 
@@ -443,6 +460,7 @@ cat("sample_update:", count, "\n")
 drop_sample = drop_sample_all %>%
   anti_join(bd_samples, by = "sample_id") %>%
   anti_join(mucosome_samples, by = "sample_id") %>%
+  anti_join(microbiome_samples, by = "sample_id") %>%
   anti_join(amp_samples, by = "sample_id")
 
 count = as.character(drop_sample %>% count() %>% pull())
