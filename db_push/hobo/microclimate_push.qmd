@@ -16,7 +16,7 @@ dbcon = hopToDB("wibbitr")
 ## Point to local data directory
 ddir = Sys.getenv("data_dir")  # data directory
 # Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
-wddir = here(ddir, "microclimate", "hobo_data_combined", '2025-10-03') # working data directory
+wddir = here(ddir, "microclimate", "hobo_data_combined", '2026-02-04') # working data directory
 ```
 
 # DB pointers
@@ -32,17 +32,18 @@ db_ts_dp = tbl(dbcon, Id("microclimate_data", "ts_dew_point"))
 
 # import and manipulate each file for consistency
 ```{r}
-
-deployment_file = here(ddir, "microclimate", "hobo_logger_deployment", 'HOBO logger deployment data_2025-10-03.xlsx')
+# import deployment data
+deployment_file = here(ddir, "microclimate", "hobo_logger_deployment", 'HOBO logger deployment data_2026-02-04.xlsx')
 sheetnames = c("Pennsylvania",
                "Panama",
                "Brazil",
                "Sierra Nevada")
 deployment = lapply(sheetnames, read_excel, path = deployment_file)  # eek, what to do with this!
 
-# List all CSV files in the directory
+# List all hob combined CSV files in the directory
 csv_files = list.files(path = wddir, pattern = "*.csv", full.names = TRUE)
 
+# importing function
 files_to_tibble_list = function(file_list) {
   tibble_list = lapply(file_list, function(file) {
     # Read the CSV file with vroom
@@ -59,16 +60,20 @@ files_to_tibble_list = function(file_list) {
   return(tibble_list)
 }
 
+#import
 ts_raw_ls = files_to_tibble_list(csv_files)
 
+# check column names across files
 raw_compare = compare_df_cols(ts_raw_ls)
 
+# check date formats across files
 raw_date_preview = lapply(ts_raw_ls, function(df) {
   df %>%
     slice_head(n = 48) %>%
     pull(DateTime)
 })
 
+# check time zones across files
 raw_time_zones = lapply(ts_raw_ls, function(df) {
   df %>%
     select(TimeZone) %>%
@@ -76,18 +81,21 @@ raw_time_zones = lapply(ts_raw_ls, function(df) {
     pull(TimeZone)
 })
 
+# bring into one data frame
 ts_raw = bind_rows(ts_raw_ls)
 
 ```
 
 ```{r}
 
+# parse datetime
 ts_joined = ts_raw %>%
   clean_names() %>%
   rename(date_time_raw = date_time) %>%
   filter(!is.na(date_time_raw)) %>%
   mutate(date_time_parsed = parse_date_time(date_time_raw, c("ymd HMS", "ymd", "mdy HM")))
 
+# parse timezone
 tzs = ts_joined %>%
   select(time_zone) %>%
   distinct() %>%
@@ -100,6 +108,7 @@ tzs = ts_joined %>%
                                .default = NA
   ))
 
+# convert to UTC
 ts_clean_dates = ts_joined %>%
   left_join(tzs, by = "time_zone") %>%
   group_split(time_zone) %>%
@@ -109,10 +118,7 @@ ts_clean_dates = ts_joined %>%
          -tz_clean,
          -date_time_local)
 
-rab = ts_clean_dates %>%
-  filter(hobo_name == "Rabbit_sun_100cm",
-         timestamp_utc >= "2024-08-06")
-
+# parse logger metadata
 ts_clean = ts_clean_dates %>%
   rename(site_hobo = site,
          microhabitat = location,
@@ -150,9 +156,12 @@ ts_clean = ts_clean_dates %>%
                             "temperature" ~ "degrees_celsius_c",
                             "dew_point" ~ "degrees_celsius_c",
                             "illuminance" ~ "lux_lx",
-                            "relative_humidity" ~ "percent_saturation"))
+                            "relative_humidity" ~ "percent_saturation")) %>%
+  group_by(src) %>%
+  mutate(src_start = min(timestamp_utc)) %>%
+  ungroup()
   
-
+# checks
 colnames(ts_clean)
 
 sites = ts_clean %>%
@@ -166,6 +175,7 @@ unique(ts_clean$height_cm)
 
 ## gel
 ```{r}
+# create UUIDs & align with existing data
 sensor_gelled = ts_clean %>%
   select(site_microclimate,
          microhabitat,
@@ -192,21 +202,60 @@ ts_gelled = ts_clean %>%
          timestamp_utc,
          value,
          sensor_type,
-         src)
+         src,
+         src_start)
 
+# check all data have sensors
 peace = ts_gelled %>%
   filter(is.na(sensor_id))
 
-# hope = get_dupes(ts_gelled, sensor_id, sensor_type, timestamp_utc)
+# check for timeseries overlap
+dupes_pre = get_dupes(ts_gelled, sensor_id, sensor_type, timestamp_utc)
 
-# check for dupes
-dupes_pre = get_dupes(ts_gelled, sensor_id, timestamp_utc)
+dupes_paired = dupes_pre %>%
+  arrange(src_start) %>%
+  group_by(sensor_id, sensor_type, timestamp_utc) %>%
+  summarize(src_n = n(),
+            src_f = first(src),
+            src_start_f = first(src_start),
+            src_l = last(src),
+            src_start_l = last(src_start),
+            .groups = "drop")
 
-# drop dupes (could be more careful about this...)
-ts_distinct = ts_gelled %>%
+pair_check = dupes_paired %>%
+  filter(src_f == src_l) %>%
+  rename(src = src_f) %>%
+  select(sensor_id,
+         timestamp_utc,
+         src) %>%
+  distinct()
+
+# keep later duplicates, drop newer
+drop_between_file_pairs_oldest = dupes_paired %>%
+  select(sensor_id,
+         sensor_type,
+         timestamp_utc,
+         src_f) %>%
+  rename(src = src_f)
+
+add_within_file_pairs_resolved = ts_gelled %>%
+  inner_join(pair_check, by = c("sensor_id", "timestamp_utc", "src")) %>%
+  arrange(sensor_id, timestamp_utc, src) %>%
   group_by(sensor_id, timestamp_utc) %>%
   slice_head(n = 1) %>%
   ungroup()
+
+ts_distinct = ts_gelled %>%
+  anti_join(drop_between_file_pairs_oldest, by = c("sensor_id", "sensor_type", "timestamp_utc", "src")) %>%
+  bind_rows(add_within_file_pairs_resolved)
+# # check for dupes
+# dupes_pre = get_dupes(ts_gelled, sensor_id, timestamp_utc)
+# 
+# # drop dupes (could be more careful about this...)
+# ts_distinct = ts_gelled %>%
+#   group_by(sensor_id, timestamp_utc) %>%
+#   slice_head(n = 1) %>%
+#   ungroup()
 
 dupes_post = get_dupes(ts_distinct, sensor_id, timestamp_utc)
 
@@ -214,28 +263,32 @@ dupes_post = get_dupes(ts_distinct, sensor_id, timestamp_utc)
 temp_distinct = ts_distinct %>%
   filter(sensor_type == "temperature") %>%
   select(-sensor_type,
-         -src) %>%
+         -src,
+         -src_start) %>%
   rename(temperature_c = value)
 
 # rh
 rh_distinct = ts_distinct %>%
   filter(sensor_type == "relative_humidity") %>%
   select(-sensor_type,
-         -src) %>%
+         -src,
+         -src_start) %>%
   rename(relative_humidity_percent = value)
 
 # dp
 dp_distinct = ts_distinct %>%
   filter(sensor_type == "dew_point") %>%
   select(-sensor_type,
-         -src) %>%
+         -src,
+         -src_start) %>%
   rename(dew_point_c = value)
 
 # ill
 ill_distinct = ts_distinct %>%
   filter(sensor_type == "illuminance") %>%
   select(-sensor_type,
-         -src) %>%
+         -src,
+         -src_start) %>%
   rename(illuminance_lux = value)
 
 ```
