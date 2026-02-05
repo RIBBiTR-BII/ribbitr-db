@@ -529,7 +529,7 @@ qc_results = qc_results_a %>%
 #                    extraction_well,
 #                    qpcr_plate_name,
 #                    qpcr_date,
-#                    qpcr_well), here("staging", "bd_qpcr_duplicates.csv"))
+#                    qpcr_well), here("staging", paste0("bd_qpcr_duplicates_", today(), ".csv")))
 
 ```
 
