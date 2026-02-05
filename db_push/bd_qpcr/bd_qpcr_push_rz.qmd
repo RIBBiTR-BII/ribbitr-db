@@ -439,7 +439,7 @@ clean_results = bind_results %>%
 
 # checks
 ```{r}
-qc_results = clean_results %>%
+qc_results_a = clean_results %>%
   mutate(
     sample_name = case_when(
       sample_name == "221120_J001" & 
@@ -508,7 +508,28 @@ if(nrow(bd_na) > 0) warning("NA values found in `bd_detected` and/or `bd_its1_co
 
 violations_unique = get_dupes(qc_results, sample_name)
 
-# write_csv(violations_unique, here("staging", "bd_qpcr_duplicates.csv"))
+violations_drop = violations_unique %>%
+  group_by(sample_name) %>%
+  slice_min(qpcr_date) %>%
+  ungroup()
+
+warning(paste0("Dropping ", nrow(violations_drop), " Bd results due to duplicate entries (keeping latest)."))
+
+# drop offending duplicates
+qc_results = qc_results_a %>%
+  anti_join(violations_drop, by = c("sample_name", "qpcr_plate_name", "qpcr_well"))
+
+# write_csv(violations_unique %>%
+#             select(sample_name,
+#                    bd_pos_neg,
+#                    cycle_quant,
+#                    target_quant,
+#                    extraction_plate_name,
+#                    extraction_date,
+#                    extraction_well,
+#                    qpcr_plate_name,
+#                    qpcr_date,
+#                    qpcr_well), here("staging", "bd_qpcr_duplicates.csv"))
 
 ```
 
