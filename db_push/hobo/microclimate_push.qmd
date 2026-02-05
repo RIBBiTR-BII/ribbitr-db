@@ -7,7 +7,7 @@ editor: source
 ## Setup
 
 ```{r}
-librarian::shelf(tidyverse, vroom, here, janitor, dataPreparation, lubridate, stringr, RPostgres, DBI, uuid, hms, RIBBiTR-BII/ribbitrrr, readxl, ggplot2, plotly)
+librarian::shelf(tidyverse, vroom, here, janitor, dataPreparation, lubridate, stringr, RPostgres, DBI, uuid, hms, RIBBiTR-BII/ribbitrrr, readxl, ggplot2, plotly, scales)
 # librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 
 ## Connect to DB
@@ -22,6 +22,9 @@ wddir = here(ddir, "microclimate", "hobo_data_combined", '2026-02-04') # working
 # DB pointers
 ```{r}
 db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
 db_logger = tbl(dbcon, Id("microclimate_data", "logger"))
 db_sensor = tbl(dbcon, Id("microclimate_data", "sensor"))
 db_ts_temp = tbl(dbcon, Id("microclimate_data", "ts_temperature"))
@@ -222,6 +225,29 @@ dupes_paired = dupes_pre %>%
             src_start_l = last(src_start),
             .groups = "drop")
 
+dupes_summary = dupes_paired %>%
+  group_by(sensor_id,
+           src_f,
+           src_l) %>%
+  summarize(n_values = n(),
+            start_overlap_timestamp_utc = min(timestamp_utc),
+            end_overlap_timestamp_utc = max(timestamp_utc),
+            .groups = "drop") %>%
+  mutate(overlap_duration_minutes = interval(start = start_overlap_timestamp_utc, end = end_overlap_timestamp_utc) %/% dminutes(1)) %>%
+  left_join(sensor_gelled, by = "sensor_id") %>%
+  arrange(src_f,
+          start_overlap_timestamp_utc,
+          site_microclimate) %>%
+  rename(src_file_1 = src_f,
+         src_file_2 = src_l) %>%
+  select(-sensor_id,
+         -site_id,
+         -logger_id,
+         -site_code_alt,
+         -units)
+
+# write.csv(dupes_summary, here("staging", paste0("microclimate_overlap_report_", today(), ".csv")))
+
 pair_check = dupes_paired %>%
   filter(src_f == src_l) %>%
   rename(src = src_f) %>%
@@ -248,6 +274,7 @@ add_within_file_pairs_resolved = ts_gelled %>%
 ts_distinct = ts_gelled %>%
   anti_join(drop_between_file_pairs_oldest, by = c("sensor_id", "sensor_type", "timestamp_utc", "src")) %>%
   bind_rows(add_within_file_pairs_resolved)
+
 # # check for dupes
 # dupes_pre = get_dupes(ts_gelled, sensor_id, timestamp_utc)
 # 
@@ -259,42 +286,140 @@ ts_distinct = ts_gelled %>%
 
 dupes_post = get_dupes(ts_distinct, sensor_id, timestamp_utc)
 
+# split into sensor types
+
 # temp
 temp_distinct = ts_distinct %>%
   filter(sensor_type == "temperature") %>%
-  select(-sensor_type,
-         -src,
-         -src_start) %>%
   rename(temperature_c = value)
 
 # rh
 rh_distinct = ts_distinct %>%
   filter(sensor_type == "relative_humidity") %>%
-  select(-sensor_type,
-         -src,
-         -src_start) %>%
   rename(relative_humidity_percent = value)
 
 # dp
 dp_distinct = ts_distinct %>%
   filter(sensor_type == "dew_point") %>%
-  select(-sensor_type,
-         -src,
-         -src_start) %>%
   rename(dew_point_c = value)
 
 # ill
 ill_distinct = ts_distinct %>%
   filter(sensor_type == "illuminance") %>%
-  select(-sensor_type,
-         -src,
-         -src_start) %>%
   rename(illuminance_lux = value)
+
+```
+
+## visual checks
+```{r}
+#| fig-width: 10
+#| fig-height: 8
+
+# plot illuminance with hour of day
+site_lookup =  db_site %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  select(site_id,
+         site,
+         region,
+         country,
+         time_zone) %>%
+  collect()
+  
+ill_vis = ill_distinct %>%
+  left_join(sensor_gelled, by = "sensor_id") %>%
+  left_join(site_lookup, by = "site_id") %>%
+  mutate(time_utc = as_hms(timestamp_utc),
+         year = year(timestamp_utc))
+
+# brazil
+ill_vis_br = ill_vis %>%
+  filter(country == "brazil") %>%
+  mutate(time_local = as_hms(with_tz(force_tz(timestamp_utc, tzone = "UTC"), tzone = "America/Sao_Paulo")))
+
+p_ill_br = ggplot(ill_vis_br, aes(x = time_local, y = illuminance_lux, color = src)) +
+  geom_point(alpha = 1) +
+  facet_wrap("site_microclimate") +
+  theme_minimal() +
+  scale_y_log10() +
+  labs(title = "Brazil Illuminance",
+       x = "Local Time",
+       y = "Illuminance (lux)") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  scale_x_time(breaks = as_hms(c("04:00:00", "08:00:00", "12:00:00", "16:00:00", "20:00:00")),
+                   labels = c("04:00", "08:00", "12:00", "16:00", "20:00"))
+
+# panama
+ill_vis_pa = ill_vis %>%
+  filter(country == "panama") %>%
+  mutate(time_local = as_hms(with_tz(force_tz(timestamp_utc, tzone = "UTC"), tzone = "America/Panama")))
+
+p_ill_pa = ggplot(ill_vis_pa, aes(x = time_local, y = illuminance_lux, color = src)) +
+  geom_point(alpha = 0.1) +
+  facet_wrap("site_microclimate") +
+  theme_minimal() +
+  scale_y_log10() +
+  labs(title = "Panama Illuminance",
+       x = "Local Time",
+       y = "Illuminance (lux)") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  scale_x_time(breaks = as_hms(c("04:00:00", "08:00:00", "12:00:00", "16:00:00", "20:00:00")),
+                   labels = c("04:00", "08:00", "12:00", "16:00", "20:00"))
+
+# california
+ill_vis_ca = ill_vis %>%
+  filter(region == "california") %>%
+  mutate(time_local = as_hms(with_tz(force_tz(timestamp_utc, tzone = "UTC"), tzone = "America/Los_Angeles")))
+
+p_ill_ca = ggplot(ill_vis_ca, aes(x = time_local, y = illuminance_lux, color = src)) +
+  geom_point(alpha = 0.1) +
+  facet_wrap("site_microclimate") +
+  theme_minimal() +
+  scale_y_log10() +
+  labs(title = "California Illuminance",
+       x = "Local Time",
+       y = "Illuminance (lux)") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  scale_x_time(breaks = as_hms(c("04:00:00", "08:00:00", "12:00:00", "16:00:00", "20:00:00")),
+                   labels = c("04:00", "08:00", "12:00", "16:00", "20:00"))
+
+# pennsylvania
+ill_vis_pe = ill_vis %>%
+  filter(region == "pennsylvania") %>%
+  mutate(time_local = as_hms(with_tz(force_tz(timestamp_utc, tzone = "UTC"), tzone = "America/New_York")))
+
+p_ill_pe = ggplot(ill_vis_pe, aes(x = time_local, y = illuminance_lux, color = src)) +
+  geom_point(alpha = 0.1) +
+  facet_wrap("site_microclimate") +
+  theme_minimal() +
+  scale_y_log10() +
+  labs(title = "Pennsylvania Illuminance",
+       x = "Local Time",
+       y = "Illuminance (lux)") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  scale_x_time(breaks = as_hms(c("04:00:00", "08:00:00", "12:00:00", "16:00:00", "20:00:00")),
+                   labels = c("04:00", "08:00", "12:00", "16:00", "20:00"))
+
+# ggplotly(p_ill_br)
+# ggplotly(p_ill_pa)
+# ggplotly(p_ill_ca)
+# ggplotly(p_ill_pe)
+
+ggsave(here("staging", "microclimate", "illuminance_local_time_brazil.png"), p_ill_br)
+ggsave(here("staging", "microclimate", "illuminance_local_time_panama.png"), p_ill_pa)
+ggsave(here("staging", "microclimate", "illuminance_local_time_california.png"), p_ill_ca)
+ggsave(here("staging", "microclimate", "illuminance_local_time_pennsylvania.png"), p_ill_pe)
+
+p_ill_br
+p_ill_pa
+p_ill_ca
+p_ill_pe
 
 ```
 
 ## subset
 ```{r}
+# loggers
 subset_logger = sensor_gelled %>%
   select(all_of(colnames(db_logger))) %>%
   distinct()
@@ -303,6 +428,7 @@ tray = compare_for_staging(db_logger %>% collect(), subset_logger, "logger_id", 
 upsert_logger = bind_rows(tray$update,
                           tray$insert)
 
+# sensors
 subset_sensor = sensor_gelled %>%
   select(all_of(colnames(db_sensor))) %>%
   distinct()
@@ -311,25 +437,45 @@ tray = compare_for_staging(db_sensor %>% collect(), subset_sensor, "sensor_id", 
 upsert_sensor = bind_rows(tray$update,
                           tray$insert)
 
-tray = compare_for_staging(db_ts_temp %>% collect(), temp_distinct, c("sensor_id", "timestamp_utc"), report = "ts_temp")
+# temperature
+subset_temp = temp_distinct %>%
+  select(all_of(colnames(db_ts_temp))) %>%
+  distinct()
+
+tray = compare_for_staging(db_ts_temp %>% collect(), subset_temp, c("sensor_id", "timestamp_utc"), report = "ts_temp")
 peace = compare_updates(tray)
 upsert_ts_temp = bind_rows(tray$update,
                           tray$insert)
 drop_ts_temp = tray$orphan
 
-tray = compare_for_staging(db_ts_ill %>% collect(), ill_distinct, c("sensor_id", "timestamp_utc"), report = "ts_ill")
+# illuminance
+subset_ill = ill_distinct %>%
+  select(all_of(colnames(db_ts_temp))) %>%
+  distinct()
+
+tray = compare_for_staging(db_ts_ill %>% collect(), subset_ill, c("sensor_id", "timestamp_utc"), report = "ts_ill")
 peace = compare_updates(tray)
 upsert_ts_ill = bind_rows(tray$update,
                           tray$insert)
 drop_ts_ill = tray$orphan
 
-tray = compare_for_staging(db_ts_rh %>% collect(), rh_distinct, c("sensor_id", "timestamp_utc"), report = "ts_rh")
+# relative humidity
+subset_rh = rh_distinct %>%
+  select(all_of(colnames(db_ts_temp))) %>%
+  distinct()
+
+tray = compare_for_staging(db_ts_rh %>% collect(), subset_rh, c("sensor_id", "timestamp_utc"), report = "ts_rh")
 peace = compare_updates(tray)
 upsert_ts_rh = bind_rows(tray$update,
                          tray$insert)
 drop_ts_rh = tray$orphan
 
-tray = compare_for_staging(db_ts_dp %>% collect(), dp_distinct, c("sensor_id", "timestamp_utc"), report = "ts_dp")
+# dew point
+subset_dp = dp_distinct %>%
+  select(all_of(colnames(db_ts_temp))) %>%
+  distinct()
+
+tray = compare_for_staging(db_ts_dp %>% collect(), suset_dp, c("sensor_id", "timestamp_utc"), report = "ts_dp")
 peace = compare_updates(tray)
 upsert_ts_dp = bind_rows(tray$update,
                          tray$insert)
