@@ -20,6 +20,9 @@ db_visit = tbl(dbcon, Id("survey_data", "visit"))
 db_site = tbl(dbcon, Id("survey_data", "site"))
 db_region = tbl(dbcon, Id("survey_data", "region"))
 db_country = tbl(dbcon, Id("survey_data", "country"))
+
+ddir = Sys.getenv("data_dir")
+
 ```
 
 # data
@@ -144,6 +147,40 @@ data_summary = data_samps %>%
             mucosome_samples = sum(!is.na(mucosome)),
             any_samples = sum(!is.na(amp) | !is.na(microbiome) | !is.na(mucosome)),
             all_samples = sum(!is.na(amp) & !is.na(microbiome) & !is.na(mucosome)))
+
+```
+
+# add masses
+```{r}
+louise_all = rio::import_list(here(ddir, "sierra", "sierra_skin_defenses", "SN_2025_immunology_fallSamplesMailingList_251006-processed_LKR Final.xlsm"))
+
+louise_raw = louise_all$`AMP-Ig`
+
+emily_raw = rio::import(here(ddir, "sierra", "sierra_skin_defenses", "SN_2025_immunology_ampig_captureData_260127.csv"))
+
+emily_select = emily_raw %>%
+  select(capture_id,
+         amp_id,
+         sex,
+         length,
+         weight) %>%
+  rename(svl_mm = length,
+        mass_g = weight)
+
+unique_sites = emily_raw %>%
+  select(site_id) %>%
+  distinct()
+
+louise_samples_out = louise_raw %>%
+  left_join(emily_select, by = "amp_id") %>%
+  mutate(species = case_when(
+    site_id %in% c(10319,
+                   10487,
+                   50783) ~ "Rana muscosa",
+    .default = "Rana sierrae"),
+    sex = if_else(sex == "", NA, sex))
+
+write_csv(louise_samples_out, here("staging", "SN_2025_immunology_fallSamplesMailingList_251006-processed_LKR Final_cs.csv"))
 
 ```
 
