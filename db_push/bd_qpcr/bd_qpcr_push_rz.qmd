@@ -11,18 +11,14 @@ librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, rio, RPostgres, st
 # librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 
 ## Connect to DB
-dbcon <- hopToDB("wibbitr")
+dbcon = hopToDB("wibbitr")
 
 ## Point to local data directory
 ddir = Sys.getenv("data_dir")  # data directory
 # Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
 wddir = here(ddir, "bd_qpcr_results", "ribbitr_data_2026-02-03", "ribbitr_data") # working data directory
 
-```
-
 ## load table pointers
-
-```{r}
 mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
   collect()
 
@@ -147,6 +143,15 @@ scrape_qpcr_xls <- function(raw_xls) {
       master_mix = chemistry
     )
   
+  extract_results = function(raw_xls) {
+    xls = clean_names(raw_xls)
+    results_xls = xls$results %>%
+    slice(-(1:41)) %>%  # Drops first n rows
+    mutate(across(everything(), ~ .)) %>%  # Optional: ensure types
+    {colnames(.) <- .[1, ]; slice(., -1)} %>%
+      clean_names()
+  }
+  
   namelist = c("sample_name",
                "bd_ct_mean",
                "bd_quantity_mean",
@@ -166,9 +171,24 @@ scrape_qpcr_xls <- function(raw_xls) {
   return(clean_xls)
 }
 
-clean_br_2022_01 = scrape_qpcr_xls(raw_br_2022_01)
-clean_br_2022_03 = scrape_qpcr_xls(raw_br_2022_03)
-clean_br_2022_04 = scrape_qpcr_xls(raw_br_2022_04)
+clean_br_2022_01 = scrape_qpcr_xls(raw_br_2022_01) %>%
+  mutate(bsal = case_when(
+    bsal_quantity_mean == 0 ~ "Negative",
+    bsal_quantity_mean > 0 ~ "Positive",
+    .default = NA
+  ))
+clean_br_2022_03 = scrape_qpcr_xls(raw_br_2022_03) %>%
+  mutate(bsal = case_when(
+    bsal_quantity_mean == 0 ~ "Negative",
+    bsal_quantity_mean > 0 ~ "Positive",
+    .default = NA
+  ))
+clean_br_2022_04 = scrape_qpcr_xls(raw_br_2022_04) %>%
+  mutate(bsal = case_when(
+    bsal_quantity_mean == 0 ~ "Negative",
+    bsal_quantity_mean > 0 ~ "Positive",
+    .default = NA
+  ))
 
 clean_br_2023_01 = scrape_qpcr_xls(raw_br_2023_01) %>%
   mutate(bd_pos_neg = case_when(
@@ -242,11 +262,16 @@ clean_br_2024_all = bind_rows(clean_br_2024_01,
                               clean_br_2024_11,
                               clean_br_2024_12)
 
-clean_pa_2022_01 = scrape_qpcr_xls(raw_pa_2022_01)
-clean_pa_2022_02 = scrape_qpcr_xls(raw_pa_2022_02)
-clean_pa_2022_03 = scrape_qpcr_xls(raw_pa_2022_03)
-clean_pa_2022_04 = scrape_qpcr_xls(raw_pa_2022_04)
-clean_pa_2022_05 = scrape_qpcr_xls(raw_pa_2022_05)
+clean_pa_2022_01 = scrape_qpcr_xls(raw_pa_2022_01) %>%
+  rename(bsal = bsal_pos_neg)
+clean_pa_2022_02 = scrape_qpcr_xls(raw_pa_2022_02) %>%
+  rename(bsal = bsal_pos_neg)
+clean_pa_2022_03 = scrape_qpcr_xls(raw_pa_2022_03) %>%
+  rename(bsal = bsal_pos_neg)
+clean_pa_2022_04 = scrape_qpcr_xls(raw_pa_2022_04) %>%
+  rename(bsal = bsal_pos_neg)
+clean_pa_2022_05 = scrape_qpcr_xls(raw_pa_2022_05) %>%
+  rename(bsal = bsal_pos_neg)
 
 clean_pa_2023_01 = scrape_qpcr_xls(raw_pa_2023_01)
 clean_pa_2023_02 = scrape_qpcr_xls(raw_pa_2023_02)
@@ -277,13 +302,44 @@ clean_pa_2024_05 = scrape_qpcr_xls(raw_pa_2024_05)
 clean_pa_2024_06 = scrape_qpcr_xls(raw_pa_2024_06)
 
 clean_pe_2022_01 = scrape_qpcr_xls(raw_pe_2022_01) %>%
+  left_join(extract_results(raw_pe_2022_01) %>%
+              filter(target_name == "IPC") %>%
+              mutate(ipc = case_when(
+                ct == "Undetermined" ~ "Fail",
+                .default = "Pass")) %>%
+              select(sample_name,
+                     ipc), by = "sample_name") %>%
+  left_join(extract_results(raw_pe_2022_01) %>%
+              filter(target_name == "Bsal") %>%
+              mutate(bsal = case_when(
+                ct == "Undetermined" ~ "Negative",
+                .default = "Positive")) %>%
+              select(sample_name,
+                     bsal), by = "sample_name") %>%
   mutate(sample_name = gsub("DRY0", "DrySwab0", sample_name),
          bd_pos_neg = case_when(
            bd_ct_mean > 0 ~ "Positive",
            is.na(bd_ct_mean) ~ "Negative",
            .default = NA
-         ))
+         )) %>%
+  filter(!is.na(well))
+  
+
 clean_pe_2022_02 = scrape_qpcr_xls(raw_pe_2022_02) %>%
+  left_join(extract_results(raw_pe_2022_02) %>%
+              filter(target_name == "IPC") %>%
+              mutate(ipc = case_when(
+                ct == "Undetermined" ~ "Fail",
+                .default = "Pass")) %>%
+              select(sample_name,
+                     ipc), by = "sample_name") %>%
+  left_join(extract_results(raw_pe_2022_02) %>%
+              filter(target_name == "Bsal") %>%
+              mutate(bsal = case_when(
+                ct == "Undetermined" ~ "Negative",
+                .default = "Positive")) %>%
+              select(sample_name,
+                     bsal), by = "sample_name") %>%
   mutate(bd_quantity_mean = as.numeric(bd_quantity_mean),
          sample_name = gsub("BDSwab", "BdSwab", sample_name))
 
@@ -294,8 +350,25 @@ clean_pe_2023_01 = scrape_qpcr_xls(raw_pe_2023_01) %>%
            bd_ct_mean > 0 ~ "Positive",
            is.na(bd_ct_mean) ~ "Negative",
            .default = NA
-         ))
+         ),
+         ipc = if_else(is.na(ipc), "Pass", ipc),
+         bsal = if_else(is.na(bsal_ct), "Negative", "Positive"))
+
 clean_pe_2023_02 = scrape_qpcr_xls(raw_pe_2023_02) %>%
+  left_join(extract_results(raw_pe_2023_02) %>%
+              filter(target_name == "IPC") %>%
+              mutate(ipc = case_when(
+                ct == "Undetermined" ~ "Fail",
+                .default = "Pass")) %>%
+              select(sample_name,
+                     ipc), by = "sample_name") %>%
+  left_join(extract_results(raw_pe_2023_02) %>%
+              filter(target_name == "Bsal") %>%
+              mutate(bsal = case_when(
+                ct == "Undetermined" ~ "Negative",
+                .default = "Positive")) %>%
+              select(sample_name,
+                     bsal), by = "sample_name") %>%
   rename(bd_ct_mean = ct_mean,
          bd_quantity_mean = quantity_mean) %>%
   mutate(bd_quantity_mean = as.numeric(bd_quantity_mean),
@@ -382,20 +455,20 @@ bind_results = bind_rows(clean_br_2022_01,
                          clean_pe_2025_04)
 
 clean_results = bind_results %>%
-  rename(cycle_quant = bd_ct_mean,
-         target_quant = bd_quantity_mean,
+  rename(bd_cycle_quant = bd_ct_mean,
+         bd_target_quant = bd_quantity_mean,
          sample_control = sample_type,
          qpcr_well = well,
          comments_qpcr = comments) %>%
   mutate(sample_type = "bd",
          bd_detected = case_when(bd_pos_neg %in% c("Positive", "pos") ~ 1,
-                                 target_quant > 0 ~ 1,
+                                 bd_target_quant > 0 ~ 1,
                                  bd_pos_neg %in% c("Negative", "neg") ~ 0,
-                                 target_quant == 0 ~ 0,
+                                 bd_target_quant == 0 ~ 0,
                                  TRUE ~ NA_real_),
-         target_quant = ifelse(is.na(target_quant) & bd_detected == 0,
+         bd_target_quant = ifelse(is.na(bd_target_quant) & bd_detected == 0,
                                0,
-                               target_quant),
+                               bd_target_quant),
          qpcr_well = as.character(qpcr_well),
          qpcr_lab = "rz_lab",
          replicate_id = 1,
@@ -411,13 +484,17 @@ clean_results = bind_results %>%
          extract_volume_uL = 20,
          total_qpcr_volume_uL = 25,
          sample_control = ifelse(sample_name %in% c("qPCR Negative", "Negative Swab", "Positive Swab", "POS EXTRACT CONTROL", "NEG EXTRACT CONTROL"), "Control", sample_control),
-         target_quant_per_swab = target_quant * qpcr_dilution_factor * extract_volume_uL / template_dna_volume_uL,
+         bd_target_quant_per_swab = bd_target_quant * qpcr_dilution_factor * extract_volume_uL / template_dna_volume_uL,
          its1_copies_per_standard_unit = case_match(standard_target_type,
                                                     "ITS1" ~ 1,
                                                     "zoospore" ~ 60,
                                                     .default = NA),
-         bd_its1_copies_per_swab = target_quant_per_swab * its1_copies_per_standard_unit,
-         ipc = tolower(ipc)) %>%
+         bd_its1_copies_per_swab = bd_target_quant_per_swab * its1_copies_per_standard_unit,
+         ipc = tolower(ipc),
+         bsal_detected = recode_values(tolower(bsal),
+                                       "positive" ~ TRUE,
+                                       "negative" ~ FALSE,
+                                       default = NA)) %>%
   filter(!is.na(sample_name),
          sample_control != "Control" | is.na(sample_control),
          !str_detect(sample_name, "^Pisces"),
@@ -506,7 +583,7 @@ bd_na = clean_results %>%
 
 if(nrow(bd_na) > 0) warning("NA values found in `bd_detected` and/or `bd_its1_copies_per_swab`")
 
-violations_unique = get_dupes(qc_results, sample_name)
+violations_unique = get_dupes(qc_results_a, sample_name)
 
 violations_drop = violations_unique %>%
   group_by(sample_name) %>%
