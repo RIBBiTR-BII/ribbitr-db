@@ -143,15 +143,6 @@ scrape_qpcr_xls <- function(raw_xls) {
       master_mix = chemistry
     )
   
-  extract_results = function(raw_xls) {
-    xls = clean_names(raw_xls)
-    results_xls = xls$results %>%
-    slice(-(1:41)) %>%  # Drops first n rows
-    mutate(across(everything(), ~ .)) %>%  # Optional: ensure types
-    {colnames(.) <- .[1, ]; slice(., -1)} %>%
-      clean_names()
-  }
-  
   namelist = c("sample_name",
                "bd_ct_mean",
                "bd_quantity_mean",
@@ -170,6 +161,16 @@ scrape_qpcr_xls <- function(raw_xls) {
   
   return(clean_xls)
 }
+
+extract_results = function(raw_xls) {
+  xls = clean_names(raw_xls)
+  results_xls = xls$results %>%
+    slice(-(1:41)) %>%  # Drops first n rows
+    mutate(across(everything(), ~ .)) %>%  # Optional: ensure types
+    {colnames(.) <- .[1, ]; slice(., -1)} %>%
+    clean_names()
+}
+
 
 clean_br_2022_01 = scrape_qpcr_xls(raw_br_2022_01) %>%
   mutate(bsal = case_when(
@@ -485,10 +486,10 @@ clean_results = bind_results %>%
          total_qpcr_volume_uL = 25,
          sample_control = ifelse(sample_name %in% c("qPCR Negative", "Negative Swab", "Positive Swab", "POS EXTRACT CONTROL", "NEG EXTRACT CONTROL"), "Control", sample_control),
          bd_target_quant_per_swab = bd_target_quant * qpcr_dilution_factor * extract_volume_uL / template_dna_volume_uL,
-         its1_copies_per_standard_unit = case_match(standard_target_type,
-                                                    "ITS1" ~ 1,
-                                                    "zoospore" ~ 60,
-                                                    .default = NA),
+         its1_copies_per_standard_unit = recode_values(standard_target_type,
+                                                       "ITS1" ~ 1,
+                                                       "zoospore" ~ 60,
+                                                       default = NA),
          bd_its1_copies_per_swab = bd_target_quant_per_swab * its1_copies_per_standard_unit,
          ipc = tolower(ipc),
          bsal_detected = recode_values(tolower(bsal),
@@ -591,6 +592,13 @@ violations_drop = violations_unique %>%
   ungroup()
 
 warning(paste0("Dropping ", nrow(violations_drop), " Bd results due to duplicate entries (keeping latest)."))
+
+ipc_fail = qc_results_a %>%
+  filter(ipc != "pass")
+
+if (nrow(ipc_fail) > 0) {
+  warning("Some samples have IPC = `fail`")
+}
 
 # drop offending duplicates
 qc_results = qc_results_a %>%
