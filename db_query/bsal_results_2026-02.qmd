@@ -48,6 +48,8 @@ q_bsal = db_bdqpcr %>%
          sample_id,
          sample_name_bd,
          bsal_detected,
+         qpcr_well,
+         qpcr_plate_name,
          capture_id,
          taxon_capture,
          itis_rank,
@@ -64,6 +66,16 @@ d_bsal = q_bsal %>%
 d_bsal_positive = d_bsal %>%
   filter(bsal_detected)
 
+n_sample = nrow(d_bsal)
+n_site = d_bsal %>%
+  select(site) %>%
+  distinct() %>%
+  nrow()
+n_taxa = d_bsal %>%
+  select(taxon_capture) %>%
+  distinct() %>%
+  nrow()
+
 species_stats = d_bsal %>%
   filter(itis_rank == "species") %>%
   group_by(taxon_capture) %>%
@@ -78,24 +90,8 @@ bsal_stats = d_bsal %>%
             .groups = "drop") %>%
   arrange(country, region, site, desc(n))
 
-vals = seq(1, 40, 1)
 
-cum_site_spec = expand_grid(count = vals, species = species_stats$taxon_capture) %>%
-  left_join(bsal_stats %>% 
-              count(taxon_capture, n, name = "freq"), 
-            by = c("species" = "taxon_capture")) %>%
-  group_by(species, count) %>%
-  summarise(cumcount = sum(freq[n >= count], na.rm = TRUE), .groups = "drop")
-
-ggplot(cum_site_spec, aes(x = count, y = cumcount)) +
-  geom_line() +
-  facet_wrap("species")
-  
-# # fetch column metadata
-# col_md = get_query_metadata(dbcon, q_bsal)
-# 
 # # write
-# write_csv(d_bd_capture, here("staging", paste0("boraceia_bd_capture_query_", today(), ".csv")))
-# write_csv(col_md, here("staging", paste0("boraceia_bd_capture_query_", today(), "_metadata.csv")))
+write_csv(d_bsal_positive, here("staging", paste0("ribbitr_bsal_positives_", today(), ".csv")))
 
 ```
