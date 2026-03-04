@@ -29,7 +29,7 @@ db_sample = tbl(dbcon, Id("survey_data", "sample"))
 
 db_aural = tbl(dbcon, Id("survey_data", "aural"))
 db_capture = tbl(dbcon, Id("survey_data", "capture"))
-db_edna = tbl(dbcon, Id("survey_data", "edna"))
+db_edna = tbl(dbcon, Id("survey_data", "edna_collection"))
 db_env = tbl(dbcon, Id("survey_data", "environmental"))
 db_ves = tbl(dbcon, Id("survey_data", "ves"))
 
@@ -609,9 +609,7 @@ drop_sample = db_sample %>%
 
 # associated capture samples with bd results
 drop_bd = db_bd %>%
-  inner_join(drop_sample, by = "sample_id") %>%
-  select(all_of(colnames(db_bd))) %>%
-  filter(!is.na(sample_id))
+  filter(sample_id %in% drop_ids)
 ```
 
 ## cascade drop
