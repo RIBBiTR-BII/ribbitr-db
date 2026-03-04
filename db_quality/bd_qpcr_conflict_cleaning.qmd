@@ -14,11 +14,6 @@ dbcon = hopToDB("wibbitr")
 
 # sncon = hopToDB("qpcr")
 
-```
-
-Pull metadata and tables
-
-```{r}
 mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
   collect()
 
@@ -607,3 +602,75 @@ q3 = db_bd %>%
 
 
 ```
+
+# potential duplicates
+```{r}
+q1 = db_bd %>%
+  left_join(db_sample, by = "sample_id") %>%
+  select(result_id,
+         sample_id,
+         capture_id,
+         sample_type,
+         sample_name,
+         sample_name_bd,
+         replicates,
+         qpcr_plate_name) %>%
+  collect()
+
+# samples with multiple results
+q1_samp_dups = q1 %>%
+  group_by(sample_id) %>%
+  count() %>%
+  left_join(q1, by = "sample_id") %>%
+  filter(n > 1,
+        !(n == 2 & replicates == "duplicate"),
+        !(n == 3 & replicates == "triplicate"),
+        !(n == 4 & replicates == "quadruplicate"),
+        !(n == 5 & replicates == "quintuplicate")) %>%
+  arrange(qpcr_plate_name,
+          sample_name)
+
+q1_plate_names = q1_samp_dups %>%
+  group_by(qpcr_plate_name) %>%
+  count()
+
+q1_ribbitr_plates = q1_plate_names %>%
+  filter(grepl("ribbitr", qpcr_plate_name, ignore.case = TRUE))
+
+q1_drop = q1_samp_dups %>%
+  filter(qpcr_plate_name %in% q1_ribbitr_plates$qpcr_plate_name)
+
+sids = q1_drop %>%
+  pull(sample_id)
+
+# captures with multiple samples
+q2_cap_dupe = q1 %>%
+  select(capture_id,
+         sample_id) %>%
+  distinct() %>%
+  group_by(capture_id) %>%
+  count() %>%
+  filter(n > 1) %>%
+  left_join(q1, by = "capture_id") %>%
+  arrange(capture_id, sample_name)
+
+q2_plates = q2_cap_dupe %>%
+  group_by(qpcr_plate_name) %>%
+  count()
+
+q2_plates_ribbitr = q2_plates %>%
+  filter(grepl("ribbitr", qpcr_plate_name, ignore.case = TRUE))
+
+q2_drop = q2_cap_dupe %>%
+  filter(qpcr_plate_name %in% q2_plates_ribbitr$qpcr_plate_name) %>%
+  select(capture_id) %>%
+  distinct() %>%
+  left_join(q2_cap_dupe, by = "capture_id") %>%
+  filter(!is.na(capture_id))
+
+sids = q2_drop %>%
+  pull(sample_id)
+  
+```
+
+
