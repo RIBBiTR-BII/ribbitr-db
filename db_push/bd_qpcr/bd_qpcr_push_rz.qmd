@@ -16,7 +16,7 @@ dbcon = hopToDB("wibbitr")
 ## Point to local data directory
 ddir = Sys.getenv("data_dir")  # data directory
 # Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
-wddir = here(ddir, "bd_qpcr_results", "ribbitr_data_2026-02-03", "ribbitr_data") # working data directory
+wddir = here(ddir, "bd_qpcr_results", "ribbitr_data_2026-03-04", "ribbitr_data") # working data directory
 
 ## load table pointers
 mdc = tbl(dbcon, Id("survey_data", "metadata_columns")) %>%
@@ -56,6 +56,7 @@ raw_br_2024_05 = import_list(here(wddir, "Brazil2024", "Individual_Plate_results
 raw_br_2024_06 = import_list(here(wddir, "Brazil2024", "Individual_Plate_results", "RIBBiTR_BrazilSwabs2024_09222025_plate6_results.xlsx"))
 raw_br_2024_07 = import_list(here(wddir, "Brazil2024", "Individual_Plate_results", "RIBBiTR_BrazilSwabs2024_12032025_plate7_rerun_results.xlsx"))
 raw_br_2024_08 = import_list(here(wddir, "Brazil2024", "Individual_Plate_results", "RIBBiTR_BrazilSwabs2024_11252025_plate8_results.xlsx"))
+raw_br_2024_09 = import_list(here(wddir, "Brazil2024", "Individual_Plate_results", "RIBBiTR_BrazilSwabs2024_Plate9_DeterminedResults_02192026.xlsx"))
 raw_br_2024_10 = import_list(here(wddir, "Brazil2024", "Individual_Plate_results", "RIBBiTR_BrazilSwabs2024_01072026_plate10_results.xlsx"))
 raw_br_2024_11 = import_list(here(wddir, "Brazil2024", "Individual_Plate_results", "RIBBiTR_BrazilSwabs2024_01082026_plate11_results.xlsx"))
 raw_br_2024_12 = import_list(here(wddir, "Brazil2024", "Individual_Plate_results", "RIBBiTR_BrazilSwabs2024_01122026_SingleTube_results.xlsx"))
@@ -247,6 +248,22 @@ clean_br_2024_06 = scrape_qpcr_xls(raw_br_2024_06) %>%
          q_pcr_well_position = well_position)
 clean_br_2024_07 = scrape_qpcr_xls(raw_br_2024_07)
 clean_br_2024_08 = scrape_qpcr_xls(raw_br_2024_08)
+clean_br_2024_09 = raw_br_2024_09$DeterminedResults %>%
+  clean_names() %>%
+  rename(bd_ct_mean = bd_ct_mean_avg,
+         extraction_plate_name = extraction_plate,
+         qpcr_plate_name = q_pcr_plate) %>%
+  mutate(bd_pos_neg = if_else(!(bd_pos_neg %in% c("Positive", "Negative")), NA, bd_pos_neg),
+         bd_ct_mean = if_else(is.na(bd_pos_neg), NA, bd_ct_mean),
+         bd_quantity_mean = as.numeric(bd_quantity_mean_adjusted),
+         bd_quantity_mean = if_else(bd_quantity_mean < 0, 0, bd_quantity_mean),
+         bsal = if_else(bsal_quant_avg > 0, "Positive", "Negative"),
+         extraction_date = as.Date("2025-09-10"),
+         master_mix = "taqman",
+         qpcr_date = NA,
+         qpcr_plate_run = as.integer(3),
+         comments = "Possible plate contamination resulted in 3 reruns (essentially triplicate). Bd values were left as NA for samples with uncertain results. Where contamination could be ruled out, CT and Bd quantities were averaged over triplicates.")
+
 clean_br_2024_10 = scrape_qpcr_xls(raw_br_2024_10)
 clean_br_2024_11 = scrape_qpcr_xls(raw_br_2024_11)
 clean_br_2024_12 = scrape_qpcr_xls(raw_br_2024_12)
@@ -259,6 +276,7 @@ clean_br_2024_all = bind_rows(clean_br_2024_01,
                               clean_br_2024_06,
                               clean_br_2024_07,
                               clean_br_2024_08,
+                              clean_br_2024_09,
                               clean_br_2024_10,
                               clean_br_2024_11,
                               clean_br_2024_12)
@@ -470,7 +488,8 @@ clean_results = bind_results %>%
          bd_target_quant = ifelse(is.na(bd_target_quant) & bd_detected == 0,
                                0,
                                bd_target_quant),
-         qpcr_well = as.character(qpcr_well),
+         qpcr_well = as.character(coalesce(qpcr_well, q_pcr_well)),
+         # qpcr_well = as.character(qpcr_well),
          qpcr_lab = "rz_lab",
          replicate_id = 1,
          replicates = "singlet",
@@ -559,7 +578,19 @@ qc_results_a = clean_results %>%
       sample_name == "231201_S009" & 
         qpcr_plate_name == "RIBBiTR_PanamaSwabsNovDec2023_12192024_Plate3" & 
         qpcr_well == "74" ~ "231202_S009",
-      TRUE ~ sample_name
+      sample_name == "Pe_Bd01207" &
+        qpcr_plate_name == "RIBBiTR_PennSwabs2025_11252025_Plate4" &
+        qpcr_well == "66" ~ "Pe_Bd01307",
+      sample_name == "Pe_Bd01218" &
+        qpcr_plate_name == "RIBBiTR_PennSwabs2025_11252025_Plate4" &
+        qpcr_well == "8" ~ "Pe_Bd01318",
+      sample_name == "Pe_Bd01245" &
+        qpcr_plate_name == "RIBBiTR_PennSwabs2025_11252025_Plate4" &
+        qpcr_well == "59" ~ "Pe_Bd01345",
+      sample_name == "Pe_Bd01247" &
+        qpcr_plate_name == "RIBBiTR_PennSwabs2025_11252025_Plate4" &
+        qpcr_well == "83" ~ "Pe_Bd01347",
+      .default = sample_name
     )
   ) %>%
   filter(
@@ -571,7 +602,10 @@ qc_results_a = clean_results %>%
        qpcr_well == "73"),
     !(sample_name == "221212_051" & 
        qpcr_plate_name == "RIBBiTR_PanamaSwabs2022_11062023_Plate3" & 
-       qpcr_well == "5")
+       qpcr_well == "5"),
+    !(sample_name == "RM 4051" &
+       qpcr_plate_name == "RIBBiTR_BrazilSwabs2024_12032025_plate7_rerun" &
+       qpcr_well == "59")
   )
 
 bd_na = clean_results %>%
@@ -668,7 +702,7 @@ compare_bd_samples = compare_df_cols(db_sample %>%
 
 # compare sample_id
 tray = compare_for_staging(db_sample %>% collect(), subset_bd_samples, "sample_id", return_all = TRUE, report = "sample")
-final_bd_samples = bind_rows(tray$insert,
+upsert_bd_samples = bind_rows(tray$insert,
                              tray$update)
 
 # # also compare sample name and type
@@ -702,7 +736,7 @@ compare_bd = compare_df_cols(db_bd %>%
                                collect(), subset_bd)
 
 tray = compare_for_staging(db_bd %>% collect(), subset_bd, "result_id", return_all = TRUE, report = "bd")
-final_bd = bind_rows(tray$insert,
+upsert_bd = bind_rows(tray$insert,
                        tray$update)
 ```
 
@@ -715,9 +749,9 @@ dbBegin(dbcon)
 tryCatch(
   {
     # upsert to sample table
-    db_sample = db_rows_upsert(dbcon, db_sample, final_bd_samples, by="sample_id")
+    db_sample = db_rows_upsert(dbcon, db_sample, upsert_bd_samples, by="sample_id")
     # upseret to bd table
-    db_bd = db_rows_upsert(dbcon, db_bd, final_bd, by="result_id")
+    db_bd = db_rows_upsert(dbcon, db_bd, upsert_bd, by="result_id")
     
     # Commit transaction if successful
     dbCommit(dbcon)
