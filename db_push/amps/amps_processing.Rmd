@@ -8,7 +8,7 @@ librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, RPostgres, stringr
 # librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
 
 ## Connect to RIBBiTR DB
-dbcon <- hopToDB("wibbitr")
+dbcon = hopToDB("wibbitr")
 
 ## Pull metadata from database
 mdc = tbl(dbcon, Id("public", "all_columns")) %>%
@@ -18,7 +18,7 @@ mdc = tbl(dbcon, Id("public", "all_columns")) %>%
 ## Point to local data directory
 ddir = Sys.getenv("data_dir")  # data directory
 # Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
-ri_wddir = here(ddir, "amps", "2025-12-19", "ribbitr")
+ri_wddir = here(ddir, "amps", "2026-03-09", "ribbitr")
 sr_wddir = here(ddir, "amps", "serdp")
 ```
 
@@ -35,7 +35,7 @@ db_gia = tbl(dbcon, Id("survey_data", "amp_gia"))
 # load files
 ```{r include=FALSE}
 # dput(list.files(path = here(wddir, "gia_data")))
-dput(list.files(path = here(ri_wddir, "panama")))
+list.files(path = here(ri_wddir, "gia_data"))
 
 # serdp
 # raw_intensity_serpd_rapi = read_csv(here(wddir, "serdp", "amp_rapi.csv"))
@@ -94,6 +94,10 @@ raw_intensity_sn_2023 = read_csv(here(ri_wddir, "sierra nevada", "2023 Sierra Ne
 raw_peptide_sn_2024 = read_csv(here(ri_wddir, "sierra nevada", "Sierra peptide quantities 2024.csv"))
 raw_maldi_sn_2024 = read_csv(here(ri_wddir, "sierra nevada", "SN maldi 2024 MALDI.csv"))
 raw_intensity_sn_2024 = read_csv(here(ri_wddir, "sierra nevada", "2024 Sierra Nevada amp intensity.csv"))
+
+raw_peptide_sn_2025 = read_csv(here(ri_wddir, "sierra nevada", "SN_2025_peptide_quant.csv"))
+raw_maldi_sn_2025 = read_csv(here(ri_wddir, "sierra nevada", "Sierra 2025 peak lists combined.csv"))
+raw_intensity_sn_2025 = read_csv(here(ri_wddir, "sierra nevada", "Sierra Nevada 2025 MALDI amps intensity.csv"))
 
 # gia data
 raw_gia_pe = read_csv(here(ri_wddir, "gia_data", "2025-03-25", "Summary PA GIAs-BF&GF 1-8-25_CONSOLODATED.csv"))
@@ -199,6 +203,8 @@ clean_total = bind_rows(raw_peptide_br_2022 %>%
                         raw_peptide_sn_2023,
                         raw_peptide_sn_2024  %>%
                           rename(body_mass_g = weight),
+                        raw_peptide_sn_2025 %>%
+                          mutate(site_id = as.character(site_id)),
                         raw_total_serdp %>%
                           rename(notes = peptide_notes,
                                  amp_id = sample_name_amp) %>%
@@ -248,6 +254,8 @@ clean_peak = bind_rows(raw_maldi_br_2022 %>%
                        raw_maldi_sn_2023 %>%
                          clean_names(),
                        raw_maldi_sn_2024 %>%
+                         clean_names(),
+                       raw_maldi_sn_2025 %>%
                          clean_names()) %>%
   mutate(notes = ifelse(!is.na(amp_id_2),
                        gsub(", NA", "", paste0("Pooled fractions from: ",
@@ -291,7 +299,13 @@ unified_intensity = bind_rows(raw_intensity_pa_2022_lwarz %>%
                               raw_intensity_sn_2023 %>%
                                 clean_names(),
                               raw_intensity_sn_2024 %>%
-                                clean_names()) %>%
+                                clean_names(),
+                              raw_intensity_sn_2025 %>%
+                                clean_names() %>%
+                                # mutate(rana_2mbVariant_observed_peak = paste(str_extract_all(rana_2mb_variant_peak, "[0-9/]+"), sep = "/"),
+                                #        rana_2mbVariant_observed_peak = if_else(rana_2mbVariant_observed_peak == "NA", NA, rana_2mbVariant_observed_peak),
+                                #        rana_2mbVariant_intensity = NA) %>%
+                                select(-rana_2mb_variant_peak)) %>%
   mutate(notes = ifelse(!is.na(amp_id_2),
                         gsub(", NA", "", paste0("Pooled fractions from: ",
                                                 paste(amp_id,
@@ -412,10 +426,10 @@ clean_gia = bind_rows(raw_gia_pe %>%
          bd_isolate_id = isolate_tested,
          notes = gia_notes) %>%
   mutate(amp_lab = "rs_lab",
-         bd_isolate_id = case_match(bd_isolate_id,
+         bd_isolate_id = recode_values(bd_isolate_id,
                                     "JEL197" ~ "JEL197_RIBBiTR",
                                     "JEL197 (2023)" ~ "JEL197_RIBBiTR",
-                                    .default = bd_isolate_id),
+                                    default = bd_isolate_id),
          sample_name = if_else(grepl("^AMP\\d{5}$", sample_name),
                                gsub("AMP", "AMPBath", sample_name),
                                sample_name),
