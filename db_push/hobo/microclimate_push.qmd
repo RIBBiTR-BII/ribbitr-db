@@ -8,22 +8,18 @@ editor: source
 
 ```{r}
 librarian::shelf(tidyverse, vroom, here, janitor, dataPreparation, lubridate, stringr, RPostgres, DBI, uuid, hms, RIBBiTR-BII/ribbitrrr, readxl, ggplot2, plotly, scales)
-# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
-
-## Connect to DB
-dbcon = hopToDB("wibbitr")
 
 ## Point to local data directory
 ddir = Sys.getenv("data_dir")  # data directory
 # Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
-wddir = here(ddir, "microclimate", "hobo_data_combined", '2026-02-04') # working data directory
-```
+wddir = here(ddir, "microclimate", "hobo_data_combined", '2026-03-25') # working data directory
 
-# DB pointers
-```{r}
 db_site = tbl(dbcon, Id("survey_data", "site"))
 db_region = tbl(dbcon, Id("survey_data", "region"))
 db_country = tbl(dbcon, Id("survey_data", "country"))
+
+## Connect to DB
+dbcon = hopToDB("wibbitr")
 
 db_logger = tbl(dbcon, Id("microclimate_data", "logger"))
 db_sensor = tbl(dbcon, Id("microclimate_data", "sensor"))
@@ -52,8 +48,8 @@ files_to_tibble_list = function(file_list) {
     # Read the CSV file with vroom
     print(basename(file))
     df = vroom(file, col_types = cols(
-      DateTime = col_character(),
-      Site = col_character(),
+      date.time = col_character(),
+      site = col_character(),
       .default = col_guess()
     )) %>%
       mutate(src = basename(file))
@@ -73,15 +69,15 @@ raw_compare = compare_df_cols(ts_raw_ls)
 raw_date_preview = lapply(ts_raw_ls, function(df) {
   df %>%
     slice_head(n = 48) %>%
-    pull(DateTime)
+    pull(date.time)
 })
 
 # check time zones across files
 raw_time_zones = lapply(ts_raw_ls, function(df) {
   df %>%
-    select(TimeZone) %>%
+    select(timezone) %>%
     distinct() %>%
-    pull(TimeZone)
+    pull(timezone)
 })
 
 # bring into one data frame
@@ -96,25 +92,30 @@ ts_joined = ts_raw %>%
   clean_names() %>%
   rename(date_time_raw = date_time) %>%
   filter(!is.na(date_time_raw)) %>%
-  mutate(date_time_parsed = parse_date_time(date_time_raw, c("ymd HMS", "ymd", "mdy HM")))
+  mutate(date_time_parsed = parse_date_time(date_time_raw, c("ymd HMS", "ymd", "mdy HM", "mdy")))
 
+datetime_failed = ts_joined %>%
+  filter(is.na(date_time_parsed))
+
+tz_unique = unique(unlist(raw_time_zones))
+  
 # parse timezone
 tzs = ts_joined %>%
-  select(time_zone) %>%
+  select(timezone) %>%
   distinct() %>%
-  mutate(tz_clean = case_match(time_zone,
-                               "GMT-0:200" ~ "Etc/GMT+2",
+  mutate(tz_clean = recode_values(timezone,
+                               c("GMT-0:200", "GMT-02:00") ~ "Etc/GMT+2",
                                "GMT-04:00" ~ "Etc/GMT+4",
                                c("GMT-05:00", "GMT-0:500") ~ "Etc/GMT+5",
                                c("GMT-07:00", "GMT-0:700", "PDT") ~ "Etc/GMT+7",
                                c("GMT-08:00", "GMT-8") ~ "Etc/GMT+8",
-                               .default = NA
+                               default = NA
   ))
 
 # convert to UTC
 ts_clean_dates = ts_joined %>%
-  left_join(tzs, by = "time_zone") %>%
-  group_split(time_zone) %>%
+  left_join(tzs, by = "timezone") %>%
+  group_split(timezone) %>%
   map_dfr(~ mutate(.x, date_time_local = force_tz(date_time_parsed, tzone = unique(.x$tz_clean)))) %>%
   mutate(timestamp_utc = with_tz(date_time_local, tzone = "UTC")) %>%
   select(-date_time_parsed,
@@ -126,8 +127,10 @@ ts_clean = ts_clean_dates %>%
   rename(site_hobo = site,
          microhabitat = location,
          relative_humidity = rh,
+         dew_point = dewpoint,
          illuminance = intensity_lux,
-         height_cm = height) %>%
+         height_cm = height,
+         logger_type = loggertype) %>%
   mutate(site_microclimate = case_match(site_hobo,
                            "Admin" ~ "admin_pond",
                            "Phelps" ~ "phelps_pond",
@@ -150,6 +153,7 @@ ts_clean = ts_clean_dates %>%
                            "SV04" ~ "s1",
                            "SV05" ~ "s2",
                            .default = site_hobo),
+         height_cm = gsub("cm 2$", "cm", height_cm),
          height_cm = as.numeric(str_remove(height_cm, "cm"))) %>%
   pivot_longer(c(temperature, relative_humidity, dew_point, illuminance),
                names_to = "sensor_type") %>%
@@ -163,8 +167,17 @@ ts_clean = ts_clean_dates %>%
   group_by(src) %>%
   mutate(src_start = min(timestamp_utc)) %>%
   ungroup()
-  
+
 # checks
+height_fail = ts_clean %>%
+  filter(is.na(height_cm))
+
+check_1 = ts_clean_dates %>%
+  filter(hobo_name == "BO_weatherstation")
+
+check_2 = ts_clean %>%
+  filter(hobo_name == "Vorisek_water_35cm 2")
+
 colnames(ts_clean)
 
 sites = ts_clean %>%
@@ -173,6 +186,7 @@ sites = ts_clean %>%
 
 unique(ts_clean$microhabitat)
 unique(ts_clean$height_cm)
+unique(ts_clean$loggertype)
 
 ```
 
@@ -405,10 +419,10 @@ p_ill_pe = ggplot(ill_vis_pe, aes(x = time_local, y = illuminance_lux, color = s
 # ggplotly(p_ill_ca)
 # ggplotly(p_ill_pe)
 
-ggsave(here("staging", "microclimate", "illuminance_local_time_brazil.png"), p_ill_br)
-ggsave(here("staging", "microclimate", "illuminance_local_time_panama.png"), p_ill_pa)
-ggsave(here("staging", "microclimate", "illuminance_local_time_california.png"), p_ill_ca)
-ggsave(here("staging", "microclimate", "illuminance_local_time_pennsylvania.png"), p_ill_pe)
+ggsave(here("staging", "microclimate", "illuminance_local_time_brazil_02.png"), p_ill_br)
+ggsave(here("staging", "microclimate", "illuminance_local_time_panama_02.png"), p_ill_pa)
+ggsave(here("staging", "microclimate", "illuminance_local_time_california_02.png"), p_ill_ca)
+ggsave(here("staging", "microclimate", "illuminance_local_time_pennsylvania_02.png"), p_ill_pe)
 
 p_ill_br
 p_ill_pa
