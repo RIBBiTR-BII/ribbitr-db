@@ -29,6 +29,7 @@ db_taxa = tbl(dbcon, Id("survey_data", "taxonomy"))
 db_capture = tbl(dbcon, Id("survey_data", "capture"))
 db_ves = tbl(dbcon, Id("survey_data", "ves"))
 db_env = tbl(dbcon, Id("survey_data", "environmental"))
+db_edna = tbl(dbcon, Id("survey_data", "edna_collection"))
 
 db_survey = tbl(dbcon, Id("survey_data", "survey"))
 db_visit = tbl(dbcon, Id("survey_data", "visit"))
@@ -46,6 +47,20 @@ q_survey = db_survey %>%
   left_join(db_country, by = "country_id") %>%
   filter((country == "panama" & date >= "2022-01-01" & date < "2023-01-01") |
            (region == "pennsylvania" & date >= "2022-01-01" & date < "2024-01-01"))
+
+q_edna = db_edna %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  select(edna_sample_name,
+         date,
+         site,
+         region,
+         country,
+         edna_id) %>%
+  collect()
 
 q_capture = db_capture %>%
   inner_join(q_survey, by = "survey_id") %>%
@@ -180,9 +195,9 @@ d_taxa = db_taxa %>%
 
 # metadata!
 ```{r}
-md_ves <- get_query_metadata(dbcon, q_ves)
-md_capture <- get_query_metadata(dbcon, q_capture)
-md_env <- get_query_metadata(dbcon, q_env)
+md_ves = get_query_metadata(dbcon, q_ves)
+md_capture = get_query_metadata(dbcon, q_capture)
+md_env = get_query_metadata(dbcon, q_env)
 md_taxa = get_query_metadata(dbcon, db_taxa)
 
 md_all = bind_rows(md_ves,
