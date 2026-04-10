@@ -14,12 +14,12 @@ ddir = Sys.getenv("data_dir")  # data directory
 # Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
 wddir = here(ddir, "microclimate", "hobo_data_combined", '2026-03-25') # working data directory
 
+## Connect to DB
+dbcon = hopToDB("wibbitr")
+
 db_site = tbl(dbcon, Id("survey_data", "site"))
 db_region = tbl(dbcon, Id("survey_data", "region"))
 db_country = tbl(dbcon, Id("survey_data", "country"))
-
-## Connect to DB
-dbcon = hopToDB("wibbitr")
 
 db_logger = tbl(dbcon, Id("microclimate_data", "logger"))
 db_sensor = tbl(dbcon, Id("microclimate_data", "sensor"))
@@ -131,7 +131,7 @@ ts_clean = ts_clean_dates %>%
          illuminance = intensity_lux,
          height_cm = height,
          logger_type = loggertype) %>%
-  mutate(site_microclimate = case_match(site_hobo,
+  mutate(site_microclimate = recode_values(site_hobo,
                            "Admin" ~ "admin_pond",
                            "Phelps" ~ "phelps_pond",
                            "RV" ~ "rv_pond",
@@ -152,14 +152,14 @@ ts_clean = ts_clean_dates %>%
                            "BO03" ~ "t7",
                            "SV04" ~ "s1",
                            "SV05" ~ "s2",
-                           .default = site_hobo),
+                           default = site_hobo),
          height_cm = gsub("cm 2$", "cm", height_cm),
          height_cm = as.numeric(str_remove(height_cm, "cm"))) %>%
   pivot_longer(c(temperature, relative_humidity, dew_point, illuminance),
                names_to = "sensor_type") %>%
   filter(!is.na(value),
          !(sensor_type == "relative_humidity" & value == 1)) %>%
-  mutate(units = case_match(sensor_type,
+  mutate(units = recode_values(sensor_type,
                             "temperature" ~ "degrees_celsius_c",
                             "dew_point" ~ "degrees_celsius_c",
                             "illuminance" ~ "lux_lx",
@@ -428,6 +428,44 @@ p_ill_br
 p_ill_pa
 p_ill_ca
 p_ill_pe
+
+ill_raw = ts_joined %>%
+  mutate(time = as_hms(date_time_parsed)) %>%
+  select(date_time_parsed,
+         date_time_raw,
+         time,
+         timezone,
+         site,
+         src,
+         studyarea,
+         intensity_lux,
+         location)
+
+p_ill_raw = ggplot(ill_raw %>%
+                     filter(studyarea == "PA",
+                            !(location %in% c("water", "soil"))), aes(x = time, y = intensity_lux, color = src)) +
+  geom_point(alpha = 0.1) +
+  facet_wrap(c("site", "timezone")) +
+  theme_minimal() +
+  scale_y_log10() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  scale_x_time(breaks = as_hms(c("04:00:00", "08:00:00", "12:00:00", "16:00:00", "20:00:00")),
+                   labels = c("04:00", "08:00", "12:00", "16:00", "20:00"))
+
+p_ill_raw_02 = ggplot(ill_raw %>%
+                     filter(studyarea == "PA",
+                            !(location %in% c("water", "soil"))), aes(x = time, y = intensity_lux, color = src)) +
+  geom_point() +
+  facet_wrap(c("site", "timezone")) +
+  theme_minimal() +
+  scale_y_log10() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  scale_x_time(breaks = as_hms(c("04:00:00", "08:00:00", "12:00:00", "16:00:00", "20:00:00")),
+                   labels = c("04:00", "08:00", "12:00", "16:00", "20:00"))
+
+peace = ts_raw %>%
+  select(location) %>%
+  distinct()
 
 ```
 
