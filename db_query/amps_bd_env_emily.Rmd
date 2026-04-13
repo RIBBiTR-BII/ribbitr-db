@@ -5,7 +5,7 @@ output: html_document
 
 #setup
 ```{r}
-librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, RIBBiTR-BII/ribbitrrr)
+librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, RIBBiTR-BII/ribbitrrr, here)
 
 # establish database connection
 dbcon <- hopToDB("ribbitr")
@@ -32,7 +32,8 @@ db_site = tbl(dbcon, Id("survey_data", "site"))
 db_region = tbl(dbcon, Id("survey_data", "region"))
 db_country = tbl(dbcon, Id("survey_data", "country"))
 db_amp_quant = tbl(dbcon, Id("survey_data", "amp_total"))
-db_maldi = tbl(dbcon, Id("survey_data", "amp_maldi_peak"))
+db_maldi_peak = tbl(dbcon, Id("survey_data", "amp_maldi_peak"))
+
 ```
 
 ```{r}
@@ -52,7 +53,7 @@ db_bdsamp = db_bdqpcr %>%
   rename(result_id_bd = result_id,
          sample_id_bd = sample_id)
 
-db_ampquant_country = db_amp_quant %>%
+data_ampquant = db_amp_quant %>%
   inner_join(db_sample, by = "sample_id") %>%
   inner_join(db_capture, by = "capture_id") %>%
   left_join(db_survey, by = "survey_id") %>%
@@ -63,12 +64,11 @@ db_ampquant_country = db_amp_quant %>%
   rename(result_id_amp = result_id,
          sample_id_amp = sample_id)
 
-
-amps_env = db_ampquant_country %>%
+ampquant_env = data_ampquant %>%
   left_join(db_env_visit, by = "visit_id") %>%
   left_join(db_bdsamp, by="capture_id")
 
-results_out = amps_env %>%
+ampquant_out = ampquant_env %>%
   mutate(bd_sampled = !is.na(sample_id_bd)) %>%
   select(total_peptides_ug,
          sample_name_amp,
@@ -91,20 +91,57 @@ results_out = amps_env %>%
           region,
           date)
 
-results_penn = results_out %>%
-  filter(region == "pennsylvania")
-
-results_panama = results_out %>%
-  filter(country == "panama")
-
-results_brazil = results_out %>%
-  filter(country == "brazil")
-
-results_agg = results_out %>%
+ampquant_agg = ampquant_out %>%
   group_by(country,
            region,
            year,
            taxon_capture) %>%
   count()
+
+write_csv(ampquant_agg, here("staging", paste0("all_amp_total_peptide_samples_summary_", today(), ".csv")))
+
+```
+
+# maldi peak
+```{r}
+
+data_maldipeak = db_maldi_peak %>%
+  inner_join(db_sample, by = "sample_id") %>%
+  inner_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  rename(result_id_amp = result_id,
+         sample_id_amp = sample_id)
+
+maldipeak_out = data_maldipeak %>%
+  select("result_id_amp", "sample_id_amp", "sample_name_amp", "centroid_mass", 
+         "m_z", "time", "intensity", "sn", "quality_fac", "resolution", 
+         "area", "relative_intensity", "fwhm", "chi_2", "bk_peak", "notes", 
+         "amp_lab",
+         date,
+         country,
+         region,
+         taxon_capture) %>%
+  collect() %>%
+  mutate(year = year(date))
+
+maldipeak_agg = maldipeak_out %>%
+  select(sample_name_amp,
+         date,
+         country,
+         region,
+         taxon_capture,
+         year) %>%
+  distinct() %>%
+  group_by(country,
+           region,
+           year,
+           taxon_capture) %>%
+  count()
+
+write_csv(maldipeak_agg, here("staging", paste0("all_amp_madli_peak_samples_summary_", today(), ".csv")))
 
 ```
