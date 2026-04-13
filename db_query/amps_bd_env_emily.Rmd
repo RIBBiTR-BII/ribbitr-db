@@ -77,6 +77,7 @@ results_out = amps_env %>%
          bd_detected,
          bd_its1_copies_per_swab,
          capture_id,
+         taxon_capture,
          env_n,
          air_temp_c_mean,
          water_temp_c_mean,
@@ -85,6 +86,7 @@ results_out = amps_env %>%
          region,
          country) %>%
   collect() %>%
+  mutate(year = year(date)) %>%
   arrange(country,
           region,
           date)
@@ -97,5 +99,12 @@ results_panama = results_out %>%
 
 results_brazil = results_out %>%
   filter(country == "brazil")
+
+results_agg = results_out %>%
+  group_by(country,
+           region,
+           year,
+           taxon_capture) %>%
+  count()
 
 ```
