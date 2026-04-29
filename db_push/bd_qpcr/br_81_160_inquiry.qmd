@@ -1,0 +1,95 @@
+---
+title: "br_81_160_inquiry"
+format: html
+---
+
+# setup
+```{r}
+librarian::shelf(tidyverse, dbplyr, here, janitor, lubridate, rio, RPostgres, stringr, DBI, parsedate, uuid, hms, RIBBiTR-BII/ribbitrrr)
+# librarian::shelf(RIBBiTR-BII/ribbitrrr, update_all = TRUE)
+
+## Point to local data directory
+ddir = Sys.getenv("data_dir")  # data directory
+# Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
+wddir = here(ddir, "bd_qpcr_results", "inquiry") # working data directory
+
+```
+
+# import data
+```{r}
+
+# functions
+scrape_qpcr_xls <- function(raw_xls) {
+  xls <- clean_names(raw_xls)
+  
+  experiment_name <- str_replace(first(xls$sample_setup[which(xls$sample_setup[,1] == "Experiment Name"),2]), ".edt", "")
+  chemistry <- tolower(first(xls$sample_setup[which(xls$sample_setup[,1] == "Chemistry"),2]))
+  
+  clean_xls <- xls$working_results %>%
+    clean_names() %>%
+    mutate(
+      qpcr_plate_name = ifelse("q_pcr_plate" %in% names(.), q_pcr_plate, experiment_name),
+      extraction_plate_name = ifelse("extraction_plate" %in% names(.), extraction_plate, NA_character_),
+      qpcr_plate_run = case_when(
+        !str_detect(qpcr_plate_name, "RERUN") ~ 1L,
+        str_detect(qpcr_plate_name, "RERUN(?!\\d)") ~ 2L,
+        TRUE ~ as.integer(str_extract(qpcr_plate_name, "RERUN(\\d+)") %>% str_replace("RERUN", "")) + 1L),
+      qpcr_date = as.Date(parse_date_time(str_extract(qpcr_plate_name, "\\d{8}"), orders = "mdY")),
+      extraction_date = as.Date(parse_date_time(str_extract(extraction_plate_name, "\\d{8}"), orders = "mdY")),
+      master_mix = chemistry
+    )
+  
+  namelist = c("sample_name",
+               "bd_ct_mean",
+               "bd_quantity_mean",
+               "extraction_plate",
+               "q_pcr_plate",
+               "qpcr_date",
+               "extraction_date",
+               "master_mix",
+               "plate_run")
+  
+  cols_not_found = setdiff(namelist, names(clean_xls))
+  
+  # if (length(cols_not_found) != 0) {
+  #   stop(paste0("Required columns not found:", str(cols_not_found)))
+  # }
+  
+  return(clean_xls)
+}
+
+
+raw_br_feb = import_list(here(wddir, "RIBBiTR_BrazilSwabs2022_04162026_PCI_plate1_rerun_results.xlsx"))
+raw_br_test = import_list(here(wddir, "RIBBiTR_Brazil2022_PCIExtraction_TestPlate2Day_08202024_results.xlsx"))
+raw_br_oct = import_list(here(wddir, "RIBBiTR_BrazilSwabsOctober2023_04072026_plate1_results.xlsx"))
+raw_br_umass = import_list(here(wddir, "RIBBiTR_BrazilSwabs2023_11062024_UmassPlate_results.xlsx"))
+
+clean_br_feb = scrape_qpcr_xls(raw_br_feb) %>%
+  rename(bd_quantity_mean_pci = bd_quantity_mean)
+clean_br_test = scrape_qpcr_xls(raw_br_test)
+clean_br_oct = scrape_qpcr_xls(raw_br_oct)
+clean_br_umass = scrape_qpcr_xls(raw_br_umass)
+
+```
+
+# tube extraction correction
+```{r}
+run_br_test = clean_br_test %>%
+  mutate(bd_quantity_mean_pci = if_else(is.na(bd_quantity_mean_pci), 0, bd_quantity_mean_pci),
+         bd_quantity_mean_spin_column = if_else(is.na(bd_quantity_mean_spin_column), 0, bd_quantity_mean_spin_column))
+
+m_pci = lm(log(1 + bd_quantity_mean_spin_column) ~ 0 + log(1 + bd_quantity_mean_pci),
+           data = run_br_test)
+
+summary(m_pci)
+
+ggplot(run_br_test, aes(x = log(1 + bd_quantity_mean_pci), y = log(1 + bd_quantity_mean_spin_column))) +
+  geom_abline(intercept = 0,
+              slope = m_pci$coefficients[[1]],
+              alpha = 0.4) +
+  geom_point()
+
+corrected_br_feb = clean_br_feb %>%
+  mutate(bd_quantity_mean = (1 + bd_quantity_mean_pci) ^ m_pci$coefficients[[1]] - 1)
+
+```

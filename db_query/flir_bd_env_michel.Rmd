@@ -1,0 +1,111 @@
+---
+title: "amps_bd_env_emily"
+output: html_document
+---
+
+#setup
+```{r}
+librarian::shelf(tidyverse, dbplyr, RPostgres, DBI, RIBBiTR-BII/ribbitrrr, here)
+
+# establish database connection
+dbcon = hopToDB("ribbitr")
+
+flir_lookup = read_csv(here(Sys.getenv("data_dir"), "microclimate", "PA_flir-temp-data.csv"))
+
+flir_visits = flir_lookup %>%
+  mutate(site = tolower(gsub(" |-", "_", site)),
+         time_of_day = tolower(survey_time)) %>%
+  distinct(site, date, time_of_day)
+
+# load table metadata
+mdt = tbl(dbcon, Id("public", "all_tables")) %>%
+filter(table_schema == "survey_data") %>%
+collect()
+
+# load column metadata
+mdc = tbl(dbcon, Id("public", "all_columns")) %>%
+filter(table_schema == "survey_data") %>%
+collect()
+
+# pointers for all tables of interest
+# format var_name = tbl(dbcon, Id(schema_name, table_name))
+db_bdqpcr = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_env = tbl(dbcon, Id("survey_data", "environmental"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
+```
+
+```{r}
+
+visits_of_interest = db_visit %>%
+  left_join(db_site, by = "site_id") %>%
+  inner_join(flir_visits, by = c("site", "date", "time_of_day"), copy = TRUE) %>%
+  select(visit_id)
+
+# join with survey and visit tables,
+db_env_visit = db_env %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  inner_join(visits_of_interest, by = "visit_id") %>%
+  select(visit_id,
+         air_time,
+         air_temp_c,
+         water_time,
+         water_temp_c,
+         wind_speed_m_s,
+         p_h,
+         tds_ppm,
+         salinity_ppt,
+         conductivity_us_cm)
+
+db_result_bd = db_bdqpcr %>%
+  inner_join(db_sample, by = "sample_id") %>%
+  filter(sample_type == "bd",
+         !is.na(bd_detected)) %>%
+  group_by(capture_id, sample_name_bd) %>%
+               summarise(bd_replicates = n(),
+                         bd_detected = any(bd_detected, na.rm = TRUE),
+                         bd_its1_copies_per_swab = mean(bd_its1_copies_per_swab, na.rm = TRUE),
+                         .groups = "drop") %>%
+  inner_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  inner_join(visits_of_interest, by = "visit_id") %>%
+  select(bd_detected,
+         bd_its1_copies_per_swab,
+         bd_replicates,
+         taxon_capture,
+         time_of_capture,
+         microhabitat_type,
+         body_temp_c,
+         substrate_temp_c,
+         svl_mm,
+         body_mass_g,
+         life_stage,
+         sex,
+         capture_animal_state,
+         site,
+         date,
+         time_of_day,
+         capture_id,
+         visit_id) %>%
+  left_join(db_env_visit, by = "visit_id")
+
+bd_env_data = db_result_bd %>%
+  collect()
+
+bd_env_metadata = ribbitrrr::get_query_metadata(dbcon, db_result_bd) %>%
+  filter(!is.na(definition)) %>%
+  arrange(column_name)
+
+write_csv(bd_env_data, here("staging", paste0("flir_bd_env_pennsylvania_complementary_", today(), ".csv")))
+write_csv(bd_env_metadata, here("staging", paste0("flir_bd_env_pennsylvania_complementary_metadata_", today(), ".csv")))
+
+```
