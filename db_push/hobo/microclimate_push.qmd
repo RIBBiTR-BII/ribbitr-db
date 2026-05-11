@@ -62,6 +62,12 @@ files_to_tibble_list = function(file_list) {
 #import
 ts_raw_ls = files_to_tibble_list(csv_files)
 
+test_dat = bind_rows(ts_raw_ls[[5]],
+                     ts_raw_ls[[9]]) %>%
+  filter(site == "Phelps",
+         location == "shade",
+         height == "25cm")
+
 # check column names across files
 raw_compare = compare_df_cols(ts_raw_ls)
 
@@ -80,19 +86,43 @@ raw_time_zones = lapply(ts_raw_ls, function(df) {
     pull(timezone)
 })
 
-# bring into one data frame
-ts_raw = bind_rows(ts_raw_ls)
 
 ```
 
 ```{r}
 
 # parse datetime
-ts_joined = ts_raw %>%
-  clean_names() %>%
-  rename(date_time_raw = date_time) %>%
-  filter(!is.na(date_time_raw)) %>%
-  mutate(date_time_parsed = parse_date_time(date_time_raw, c("ymd HMS", "ymd", "mdy HM", "mdy")))
+formats_ls = list(c("ymd HMS", "ymd"),
+                  c("mdy HM", "mdy"),
+                  c("ymd HMS", "ymd"),
+                  c("ymd HMS", "ymd"),
+                  c("ymd HMS", "ymd"),
+                  c("ymd HMS", "ymd"),
+                  c("ymd HMS", "ymd"),
+                  c("ymd HMS", "ymd"),
+                  c("ymd HMS", "ymd"),
+                  c("ymd HMS", "ymd"),
+                  c("ymd HMS", "ymd"),
+                  c("mdy HM", "mdy"),
+                  c("ymd HMS", "ymd"),
+                  c("ymd HMS", "ymd"),
+                  c("ymd HMS", "ymd"),
+                  c("ymd HMS", "ymd"),
+                  c("ymd HMS", "ymd"),
+                  c("ymd HMS", "ymd"),
+                  c("ymd HMS", "ymd"),
+                  c("ymd HMS", "ymd"),
+                  c("ymd HMS", "ymd"))
+
+ts_raw_datetime_ls = map2(ts_raw_ls, formats_ls, function(df, formats) {
+  df %>%
+    clean_names() %>%
+    rename(date_time_raw = date_time) %>%
+    mutate(date_time_parsed = parse_date_time(date_time_raw, formats))
+})
+
+# bring into one data frame
+ts_joined = bind_rows(ts_raw_datetime_ls)
 
 datetime_failed = ts_joined %>%
   filter(is.na(date_time_parsed))
@@ -439,7 +469,8 @@ ill_raw = ts_joined %>%
          src,
          studyarea,
          intensity_lux,
-         location)
+         location,
+         height)
 
 p_ill_raw = ggplot(ill_raw %>%
                      filter(studyarea == "PA",
@@ -452,20 +483,23 @@ p_ill_raw = ggplot(ill_raw %>%
   scale_x_time(breaks = as_hms(c("04:00:00", "08:00:00", "12:00:00", "16:00:00", "20:00:00")),
                    labels = c("04:00", "08:00", "12:00", "16:00", "20:00"))
 
-p_ill_raw_02 = ggplot(ill_raw %>%
+p_05 = ill_raw %>%
+  filter(site == "Phelps",
+         timezone == "GMT-05:00")
+
+p_ill_p_05 = ggplot(p_05 %>%
                      filter(studyarea == "PA",
                             !(location %in% c("water", "soil"))), aes(x = time, y = intensity_lux, color = src)) +
-  geom_point() +
-  facet_wrap(c("site", "timezone")) +
+  geom_point(alpha = 0.1) +
+  facet_wrap(c("location", "height")) +
   theme_minimal() +
   scale_y_log10() +
   theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
   scale_x_time(breaks = as_hms(c("04:00:00", "08:00:00", "12:00:00", "16:00:00", "20:00:00")),
                    labels = c("04:00", "08:00", "12:00", "16:00", "20:00"))
 
-peace = ts_raw %>%
-  select(location) %>%
-  distinct()
+p_ill_raw
+p_ill_raw_02
 
 ```
 
