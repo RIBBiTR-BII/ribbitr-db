@@ -93,3 +93,32 @@ corrected_br_feb = clean_br_feb %>%
   mutate(bd_quantity_mean = (1 + bd_quantity_mean_pci) ^ m_pci$coefficients[[1]] - 1)
 
 ```
+# compare plates
+```{r}
+combined_plate_quant = corrected_br_feb %>%
+  mutate(sample_name_simple = gsub("_a", "", sample_name),
+         bd_quantity_mean_feb = if_else(is.na(bd_quantity_mean), 0, bd_quantity_mean)) %>%
+  select(sample_name_simple,
+         bd_quantity_mean_feb) %>%
+  left_join(clean_br_oct %>%
+              mutate(bd_quantity_mean_oct = if_else(is.na(bd_quantity_mean), 0, bd_quantity_mean)) %>%
+              select(sample_name,
+                     bd_quantity_mean_oct), by = c("sample_name_simple" = "sample_name")) %>%
+  left_join(clean_br_umass %>%
+              mutate(sample_name_simple = gsub("Mic", "Bd", sample_name),
+                     bd_quantity_mean_umass = if_else(is.na(bd_quantity_mean), 0, bd_quantity_mean)) %>%
+              select(sample_name_simple,
+                     bd_quantity_mean_umass), by = "sample_name_simple")
+
+ggplot(combined_plate_quant, aes(x = log(1 + bd_quantity_mean_umass))) +
+  geom_abline(intercept = 0,
+              slope = 1,
+              alpha = 0.5) +
+  geom_point(aes(y = log(1 + bd_quantity_mean_feb), color = "Feb. 2023")) +
+  geom_point(aes(y = log(1 + bd_quantity_mean_oct), color = "Oct. 2023")) +
+  labs(x = "UMASS tubes: log(Bd quant + 1)",
+       y = "Scrutenized samples: log(Bd quant + 1)",
+       color = "Scrutenized plate",
+       title = "Bd qPCR results comparison for BrBd81-160")
+
+```
