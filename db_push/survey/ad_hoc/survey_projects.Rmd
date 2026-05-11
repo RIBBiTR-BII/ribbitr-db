@@ -1,0 +1,87 @@
+---
+title: "projects"
+output: html_document
+---
+
+# setup
+```{r}
+librarian::shelf(tidyverse, dbplyr, here, lubridate, RPostgres, DBI, RIBBiTR-BII/ribbitrrr, janitor)
+
+## Connect to DB
+dbcon <- hopToDB("wibbitr")
+
+## Pull column metadata from database
+mdc = tbl(dbcon, Id("public", "all_columns")) %>%
+  filter(table_schema == "survey_data") %>%
+  collect()
+
+```
+
+# data table pointers
+```{r}
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+
+```
+
+# query all survey data
+```{r}
+
+region_visits = db_visit %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  mutate(year = year(date))
+
+region_visits_summary = region_visits %>%
+  group_by(country, region, year, project_id) %>%
+  summarize(n_visits = n(),
+            .groups = "drop") %>%
+  collect() %>%
+  arrange(country, region, year, project_id)
+  
+```
+
+# inspect
+```{r}
+peace = region_visits_revised %>%
+  filter(year == 2022,
+         # is.na(project_id),
+         region == "california") %>%
+  collect() %>%
+  arrange(date, site)
+
+```
+
+# add missing projects
+```{r}
+region_visits_revised = region_visits %>%
+  mutate(project_id = case_when(
+    !is.na(project_id) ~ project_id,
+    country == "usa" & region != "california" & year <= 2019 ~ "serdp",
+    country == "panama" & year <= 2019 ~ "voyles_legacy",
+    country == "panama" & year >= 2022 ~ "ribbitr",
+    region == "boraceia" & year >= 2022 ~ "ribbitr",
+    region == "santa_virginia" & year %in% c(2020, 2021, 2022) ~ "pce_santa_virginia",
+    .default = NA
+  ))
+
+rvr_summary = region_visits_revised %>%
+  group_by(country, region, year, project_id) %>%
+  summarize(n_visits = n(),
+            .groups = "drop") %>%
+  collect() %>%
+  arrange(country, region, year, project_id)
+
+```
+
+# subset & append
+```{r}
+subset_visit = region_visits_revised %>%
+  select(any_of(colnames(db_visit)))
+
+db_visit = rows_update(db_visit, subset_visit, by = "visit_id", unmatched = "ignore", in_place = TRUE)
+
+```
