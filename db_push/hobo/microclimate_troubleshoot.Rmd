@@ -1,0 +1,186 @@
+---
+title: "microclimate_troubleshoot"
+output: html_document
+---
+
+## Setup
+
+```{r}
+librarian::shelf(tidyverse, vroom, here, janitor, dataPreparation, lubridate, stringr, RPostgres, DBI, uuid, hms, RIBBiTR-BII/ribbitrrr, readxl, ggplot2, plotly, scales, fuzzyjoin)
+
+
+## Point to local data directory
+ddir = Sys.getenv("data_dir")  # data directory
+# Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
+wddir = here(ddir, "microclimate", "hobo_data_combined", '2026-03-25') # working data directory
+
+pddir = here(ddir, "microclimate", "inquiry")
+```
+
+
+```{r}
+# importing function
+files_to_tibble_list = function(file_list) {
+  tibble_list = lapply(file_list, function(file) {
+    # Read the CSV file with vroom
+    print(basename(file))
+    df = vroom(file, delim = ",", col_types = cols(
+      date.time = col_character(),
+      site = col_character(),
+      .default = col_guess()
+    )) %>%
+      mutate(src = basename(file))
+    # as_tibble(df)
+  })
+  
+  return(tibble_list)
+}
+
+combined_list = c("/home/cob/Documents/ribbitr/data/microclimate/hobo_data_combined/2026-03-25/PA_combined_Feb24-Jun24.csv",
+                  "/home/cob/Documents/ribbitr/data/microclimate/hobo_data_combined/2026-03-25/PA_combined_Jun24-Oct24.csv")
+
+export_list = c(here(pddir, "Phelps_shade_25cm_feb24_oct24.csv"))
+
+comb_data_li = files_to_tibble_list(combined_list)
+expo_data_li = files_to_tibble_list(export_list)
+
+comb_data = bind_rows(comb_data_li) %>%
+  clean_names() %>%
+  filter(site == "Phelps",
+         location == "shade",
+         height == "25cm") %>%
+  mutate(date_time_clean = parse_date_time(`date_time`, c("ymd HMS")))
+
+expo_data = expo_data_li[[1]] %>%
+  mutate(src = if_else(`#` > 6008, "jun24-oct24", "feb24-jun24")) %>%
+  clean_names() %>%
+  rename(temperature_exp = temp_f_lgr_s_n_21359531_sen_s_n_21359531_lbl_pa_phelps_temp_air_middle,
+         intensity_lux_exp = intensity_lum_ft2_lgr_s_n_21359531_sen_s_n_21359531_lbl_pa_phelps_light_air_middle) %>%
+  mutate(date_time_clean = parse_date_time(`date_time_gmt_05_00`, c("mdy HMSp")))
+
+data_join = comb_data %>%
+  fuzzy_full_join(expo_data %>%
+                    select(date_time_clean,
+                           temperature_exp,
+                           intensity_lux_exp),
+                  by = c("date_time_clean" = "date_time_clean"),
+                  match_fun = \(x, y) abs(as.numeric(x - y)) < 300)
+
+  # full_join(expo_data %>%
+  #             select(date_time_clean,
+  #                    temperature_exp,
+  #                    intensity_lux_exp), by = "date_time_clean") %>%
+
+ggplot(data_join, aes(x = log(1 + intensity_lux_exp), y = log(1 + intensity_lux))) +
+  geom_point(alpha = 0.1) +
+  facet_wrap("src")
+
+```
+
+# observation: the times are off even down to the minute... is this event he same data?
+
+# import all
+```{r}
+# import deployment data
+deployment_file = here(ddir, "microclimate", "hobo_logger_deployment", 'HOBO logger deployment data_2026-02-04.xlsx')
+sheetnames = c("Pennsylvania",
+               "Panama",
+               "Brazil",
+               "Sierra Nevada")
+deployment = lapply(sheetnames, read_excel, path = deployment_file)  # eek, what to do with this!
+
+# List all hob combined CSV files in the directory
+csv_files = list.files(path = wddir, pattern = "*.csv", full.names = TRUE)
+
+# importing function
+files_to_tibble_list = function(file_list) {
+  tibble_list = lapply(file_list, function(file) {
+    # Read the CSV file with vroom
+    print(basename(file))
+    df = vroom(file, col_types = cols(
+      date.time = col_character(),
+      site = col_character(),
+      .default = col_guess()
+    )) %>%
+      mutate(src = basename(file))
+    # as_tibble(df)
+  })
+  
+  return(tibble_list)
+}
+
+#import
+ts_raw_ls = files_to_tibble_list(csv_files)
+
+test_dat = bind_rows(ts_raw_ls[[5]],
+                     ts_raw_ls[[9]]) %>%
+  filter(site == "Phelps",
+         location == "shade",
+         height == "25cm")
+
+# check column names across files
+raw_compare = compare_df_cols(ts_raw_ls)
+
+# check date formats across files
+raw_date_preview = lapply(ts_raw_ls, function(df) {
+  df %>%
+    slice_head(n = 48) %>%
+    pull(date.time)
+})
+
+# check time zones across files
+raw_time_zones = lapply(ts_raw_ls, function(df) {
+  df %>%
+    select(timezone) %>%
+    distinct() %>%
+    pull(timezone)
+})
+
+# parse datetime
+formats_ls = list(c("ymd HMS", "ymd"),
+                  c("mdy HM", "mdy"),
+                  c("ymd HMS", "ymd"),
+                  c("ymd HMS", "ymd"),
+                  c("ymd HMS", "ymd"),
+                  c("ymd HMS", "ymd"),
+                  c("ymd HMS", "ymd"),
+                  c("ymd HMS", "ymd"),
+                  c("ymd HMS", "ymd"),
+                  c("ymd HMS", "ymd"),
+                  c("ymd HMS", "ymd"),
+                  c("mdy HM", "mdy"),
+                  c("ymd HMS", "ymd"),
+                  c("ymd HMS", "ymd"),
+                  c("ymd HMS", "ymd"),
+                  c("ymd HMS", "ymd"),
+                  c("ymd HMS", "ymd"),
+                  c("ymd HMS", "ymd"),
+                  c("ymd HMS", "ymd"),
+                  c("ymd HMS", "ymd"),
+                  c("ymd HMS", "ymd"))
+
+ts_raw_datetime_ls = map2(ts_raw_ls, formats_ls, function(df, formats) {
+  df %>%
+    clean_names() %>%
+    rename(date_time_raw = date_time) %>%
+    mutate(date_time_parsed = parse_date_time(date_time_raw, formats))
+})
+
+# bring into one data frame
+ts_joined = bind_rows(ts_raw_datetime_ls)
+
+```
+
+# look for alignment
+```{r}
+# problem data
+p_data = ts_joined %>%
+  filter(site == "Phelps",
+         location == "shade",
+         height == "25cm",
+         src == "PA_combined_Jun24-Oct24.csv")
+
+alligned_data = ts_joined %>%
+  filter(date_time_parsed == "2024-08-10 04:43:00")
+
+```
