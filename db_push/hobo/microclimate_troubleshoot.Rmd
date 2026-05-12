@@ -6,181 +6,224 @@ output: html_document
 ## Setup
 
 ```{r}
-librarian::shelf(tidyverse, vroom, here, janitor, dataPreparation, lubridate, stringr, RPostgres, DBI, uuid, hms, RIBBiTR-BII/ribbitrrr, readxl, ggplot2, plotly, scales, fuzzyjoin)
+librarian::shelf(tidyverse, lubridate, fuzzyjoin, zoo, janitor)
 
+# load data files
+## I refer to the re-exported data from the .hobo files as "raw", and the processed data as "combined" (it comes from the "combined" hob data files)
 
-## Point to local data directory
-ddir = Sys.getenv("data_dir")  # data directory
-# Keeping .csv files in a central directory. Naming convention uses download date to distinguish batches.
-wddir = here(ddir, "microclimate", "hobo_data_combined", '2026-03-25') # working data directory
+# reference combined file (this one should be good)
+combined_feb_in = read_csv("hobo_inquiry_data/PA_combined_Feb24-Jun24.csv")
+# discrepant combined file (this one seems to show illuminance discrepancies)
+combined_jun_in = read_csv("hobo_inquiry_data/PA_combined_Jun24-Oct24.csv")
 
-pddir = here(ddir, "microclimate", "inquiry")
+# re-exported from hoboware: feb-jun 24 & jun - oct 24 data file (one combined file)
+raw_in = read_csv("hobo_inquiry_data/Phelps_shade_25cm_feb24_oct24_from_hobo.csv", skip = 1)
+# split into feb & jun for simplicity
+raw_feb_in = raw_in %>%
+  filter(`#` <= 6006)
+
+raw_jun_in = raw_in %>%
+  filter(`#` >= 6010)
+
 ```
 
-
+# clean files
 ```{r}
-# importing function
-files_to_tibble_list = function(file_list) {
-  tibble_list = lapply(file_list, function(file) {
-    # Read the CSV file with vroom
-    print(basename(file))
-    df = vroom(file, delim = ",", col_types = cols(
-      date.time = col_character(),
-      site = col_character(),
-      .default = col_guess()
-    )) %>%
-      mutate(src = basename(file))
-    # as_tibble(df)
-  })
-  
-  return(tibble_list)
-}
-
-combined_list = c("/home/cob/Documents/ribbitr/data/microclimate/hobo_data_combined/2026-03-25/PA_combined_Feb24-Jun24.csv",
-                  "/home/cob/Documents/ribbitr/data/microclimate/hobo_data_combined/2026-03-25/PA_combined_Jun24-Oct24.csv")
-
-export_list = c(here(pddir, "Phelps_shade_25cm_feb24_oct24.csv"))
-
-comb_data_li = files_to_tibble_list(combined_list)
-expo_data_li = files_to_tibble_list(export_list)
-
-comb_data = bind_rows(comb_data_li) %>%
+# clean combined files
+combined_feb_clean = combined_feb_in %>%
   clean_names() %>%
   filter(site == "Phelps",
          location == "shade",
          height == "25cm") %>%
-  mutate(date_time_clean = parse_date_time(`date_time`, c("ymd HMS")))
+  mutate(date_time_combined = parse_date_time(`date_time`, c("ymd HMS"))) %>%
+  rename(temperature_combined = temperature,
+         intensity_lux_combined = intensity_lux)
 
-expo_data = expo_data_li[[1]] %>%
-  mutate(src = if_else(`#` > 6008, "jun24-oct24", "feb24-jun24")) %>%
+combined_jun_clean = combined_jun_in %>%
   clean_names() %>%
-  rename(temperature_exp = temp_f_lgr_s_n_21359531_sen_s_n_21359531_lbl_pa_phelps_temp_air_middle,
-         intensity_lux_exp = intensity_lum_ft2_lgr_s_n_21359531_sen_s_n_21359531_lbl_pa_phelps_light_air_middle) %>%
-  mutate(date_time_clean = parse_date_time(`date_time_gmt_05_00`, c("mdy HMSp")))
+  filter(site == "Phelps",
+         location == "shade",
+         height == "25cm") %>%
+  mutate(date_time_combined = parse_date_time(`date_time`, c("ymd HMS"))) %>%
+  rename(temperature_combined = temperature,
+         intensity_lux_combined = intensity_lux)
+  
+# clean raw files
+raw_feb_clean = raw_feb_in %>%
+  clean_names() %>%
+  mutate(date_time_raw = parse_date_time(`date_time_gmt_05_00`, c("mdy IMSp"))) %>%
+  rename(temperature_raw = temp_c_lgr_s_n_21359531_sen_s_n_21359531_lbl_pa_phelps_temp_air_middle,
+         intensity_lux_raw = intensity_lux_lgr_s_n_21359531_sen_s_n_21359531_lbl_pa_phelps_light_air_middle)
 
-data_join = comb_data %>%
-  fuzzy_full_join(expo_data %>%
-                    select(date_time_clean,
-                           temperature_exp,
-                           intensity_lux_exp),
-                  by = c("date_time_clean" = "date_time_clean"),
-                  match_fun = \(x, y) abs(as.numeric(x - y)) < 300)
+raw_jun_clean = raw_jun_in %>%
+  clean_names() %>%
+  mutate(date_time_raw = parse_date_time(`date_time_gmt_05_00`, c("mdy IMSp"))) %>%
+  rename(temperature_raw = temp_c_lgr_s_n_21359531_sen_s_n_21359531_lbl_pa_phelps_temp_air_middle,
+         intensity_lux_raw = intensity_lux_lgr_s_n_21359531_sen_s_n_21359531_lbl_pa_phelps_light_air_middle)
 
-  # full_join(expo_data %>%
-  #             select(date_time_clean,
-  #                    temperature_exp,
-  #                    intensity_lux_exp), by = "date_time_clean") %>%
+# the minutes/seconds of the raw_jun (hh:17:09 & hh:47:09) and combined_jun (hh:13:00 & hh:43:00) data don't line up. A clue? Is this even the same data?
 
-ggplot(data_join, aes(x = log(1 + intensity_lux_exp), y = log(1 + intensity_lux))) +
-  geom_point(alpha = 0.1) +
-  facet_wrap("src")
+# fuzzy join in time
+feb_joined = raw_feb_clean %>%
+  select(date_time_raw,
+         temperature_raw,
+         intensity_lux_raw) %>%
+  fuzzy_full_join(combined_feb_clean,
+                  by = c("date_time_raw" = "date_time_combined"),
+                  match_fun = \(x, y) abs(as.numeric(x - y)) < 15)  # join to nearest in time, within a 15-minute window
 
+jun_joined = raw_jun_clean %>%
+  select(date_time_raw,
+         temperature_raw,
+         intensity_lux_raw) %>%
+  fuzzy_full_join(combined_jun_clean,
+                  by = c("date_time_raw" = "date_time_combined"),
+                  match_fun = \(x, y) abs(as.numeric(x - y)) < 15)  # join to nearest in time, within a 15-minute window
 ```
 
-# observation: the times are off even down to the minute... is this event he same data?
+observation: the times are off even down to the minute/second... is this even the same data?
 
-# import all
+# simple visual checks
+
+How correlated are raw and combined time series, for reference and discrepant data?
 ```{r}
-# import deployment data
-deployment_file = here(ddir, "microclimate", "hobo_logger_deployment", 'HOBO logger deployment data_2026-02-04.xlsx')
-sheetnames = c("Pennsylvania",
-               "Panama",
-               "Brazil",
-               "Sierra Nevada")
-deployment = lapply(sheetnames, read_excel, path = deployment_file)  # eek, what to do with this!
+# compare illuminance
+ggplot(feb_joined, aes(x = log1p(intensity_lux_raw), y = log1p(intensity_lux_combined))) +
+  geom_point(alpha = 0.2) +
+  labs(title = "Reference data (Feb24 - Jun24)")
 
-# List all hob combined CSV files in the directory
-csv_files = list.files(path = wddir, pattern = "*.csv", full.names = TRUE)
+ggplot(jun_joined, aes(x = log1p(intensity_lux_raw), y = log1p(intensity_lux_combined))) +
+  geom_point(alpha = 0.2) +
+  labs(title = "Discrepant data (Jun24 - Oct24)")
 
-# importing function
-files_to_tibble_list = function(file_list) {
-  tibble_list = lapply(file_list, function(file) {
-    # Read the CSV file with vroom
-    print(basename(file))
-    df = vroom(file, col_types = cols(
-      date.time = col_character(),
-      site = col_character(),
-      .default = col_guess()
-    )) %>%
-      mutate(src = basename(file))
-    # as_tibble(df)
-  })
-  
-  return(tibble_list)
+
+# compare temperatures
+ggplot(feb_joined, aes(x = temperature_raw, y = temperature_combined)) +
+  geom_point(alpha = 0.2) +
+  labs(title = "Reference data (Feb24 - Jun24)")
+
+ggplot(jun_joined, aes(x = temperature_raw, y = temperature_combined)) +
+  geom_point(alpha = 0.2) +
+  labs(title = "Discrepant data (Jun24 - Oct24)")
+
+
+```
+no apparent correlation for the discrepant (jun) data
+perfect alignment for the reference (feb) data
+
+# q-q plots
+Are raw and combined time series from the same distributions, for reference and discrepant data?
+```{r}
+gg_qq_empirical <- function(a, b, n = 100) {
+  probs <- seq(0, 1, length.out = n)
+  df <- data.frame(x = quantile(a, probs, na.rm = TRUE),
+                   y = quantile(b, probs, na.rm = TRUE))
+  ggplot(df, aes(x = x, y = y)) +
+    geom_point() +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") +
+    coord_equal() +
+    labs(x = deparse(substitute(a)), y = deparse(substitute(b)))
 }
 
-#import
-ts_raw_ls = files_to_tibble_list(csv_files)
+feb_joined_inner = feb_joined %>%
+  filter(!is.na(date_time_raw),
+         !is.na(date_time_combined))
 
-test_dat = bind_rows(ts_raw_ls[[5]],
-                     ts_raw_ls[[9]]) %>%
-  filter(site == "Phelps",
-         location == "shade",
-         height == "25cm")
+jun_joined_inner = jun_joined %>%
+  filter(!is.na(date_time_raw),
+         !is.na(date_time_combined)) %>%
+  group_by(date_time_raw) %>%
+  slice_head(n = 1) %>%
+  ungroup()
 
-# check column names across files
-raw_compare = compare_df_cols(ts_raw_ls)
+gg_qq_empirical(log1p(feb_joined_inner$intensity_lux_raw), log1p(feb_joined_inner$intensity_lux_combined), n = 100)
+gg_qq_empirical(feb_joined_inner$temperature_raw, feb_joined_inner$temperature_combined, n = 100)
 
-# check date formats across files
-raw_date_preview = lapply(ts_raw_ls, function(df) {
-  df %>%
-    slice_head(n = 48) %>%
-    pull(date.time)
-})
-
-# check time zones across files
-raw_time_zones = lapply(ts_raw_ls, function(df) {
-  df %>%
-    select(timezone) %>%
-    distinct() %>%
-    pull(timezone)
-})
-
-# parse datetime
-formats_ls = list(c("ymd HMS", "ymd"),
-                  c("mdy HM", "mdy"),
-                  c("ymd HMS", "ymd"),
-                  c("ymd HMS", "ymd"),
-                  c("ymd HMS", "ymd"),
-                  c("ymd HMS", "ymd"),
-                  c("ymd HMS", "ymd"),
-                  c("ymd HMS", "ymd"),
-                  c("ymd HMS", "ymd"),
-                  c("ymd HMS", "ymd"),
-                  c("ymd HMS", "ymd"),
-                  c("mdy HM", "mdy"),
-                  c("ymd HMS", "ymd"),
-                  c("ymd HMS", "ymd"),
-                  c("ymd HMS", "ymd"),
-                  c("ymd HMS", "ymd"),
-                  c("ymd HMS", "ymd"),
-                  c("ymd HMS", "ymd"),
-                  c("ymd HMS", "ymd"),
-                  c("ymd HMS", "ymd"),
-                  c("ymd HMS", "ymd"))
-
-ts_raw_datetime_ls = map2(ts_raw_ls, formats_ls, function(df, formats) {
-  df %>%
-    clean_names() %>%
-    rename(date_time_raw = date_time) %>%
-    mutate(date_time_parsed = parse_date_time(date_time_raw, formats))
-})
-
-# bring into one data frame
-ts_joined = bind_rows(ts_raw_datetime_ls)
+gg_qq_empirical(log1p(jun_joined_inner$intensity_lux_raw), log1p(jun_joined_inner$intensity_lux_combined), n = 100)
+gg_qq_empirical(jun_joined_inner$temperature_raw, jun_joined_inner$temperature_combined, n = 100)
 
 ```
 
-# look for alignment
+Both combined and raw data from reference and discrepant datasets appear to be from the same distributions (for both temperature and illuminance). This suggests a shift in time...
+
+# cross correlation analysis
 ```{r}
-# problem data
-p_data = ts_joined %>%
-  filter(site == "Phelps",
-         location == "shade",
-         height == "25cm",
-         src == "PA_combined_Jun24-Oct24.csv")
+ccor_func = function(datetime_a, var_a, datetime_b, var_b, max_h = 24) {
+  overlap_start <- max(min(datetime_a), min(datetime_b))
+  overlap_end   <- min(max(datetime_a), max(datetime_b))
+  
+  # Define a regular time grid at your sampling interval
+  sample_interval <- 30 * 60  # in seconds 
+  time_grid <- seq(overlap_start, overlap_end, by = sample_interval)
+  
+  # Interpolate both series onto the common grid
+  zoo_a <- zoo(var_a, datetime_a)
+  zoo_b <- zoo(var_b, datetime_b)
+  
+  reg_a <- na.approx(zoo_a, xout = time_grid, na.rm = FALSE)
+  reg_b <- na.approx(zoo_b, xout = time_grid, na.rm = FALSE)
+  
+  # Cross-correlate
+  ccf_result <- ccf(coredata(reg_a), coredata(reg_b), 
+                    lag.max = 2 * max_h,  # n samples x 30min / sample
+                    na.action = na.pass,
+                    plot = TRUE)
+  
+  # Find the lag of maximum correlation
+  best_lag_steps <- ccf_result$lag[which.max(ccf_result$acf)]
+  best_lag_seconds <- best_lag_steps * sample_interval
+  best_lag_minutes <- best_lag_seconds / 60
+  
+  cat("Best lag:", best_lag_minutes, "minutes\n")
+  cat("Max correlation:", max(ccf_result$acf), "\n")
+}
 
-alligned_data = ts_joined %>%
-  filter(date_time_parsed == "2024-08-10 04:43:00")
+ccor_func(feb_joined_inner$date_time_raw, feb_joined_inner$intensity_lux_raw,
+          feb_joined_inner$date_time_combined, feb_joined_inner$intensity_lux_combined,
+          max_h = 24 * 5)
+
+ccor_func(feb_joined_inner$date_time_raw, feb_joined_inner$temperature_raw,
+          feb_joined_inner$date_time_combined, feb_joined_inner$temperature_combined,
+          max_h = 24 * 5)
+
+ccor_func(jun_joined_inner$date_time_raw, jun_joined_inner$intensity_lux_raw,
+          jun_joined_inner$date_time_combined, jun_joined_inner$intensity_lux_combined,
+          max_h = 24 * 5)
+
+ccor_func(jun_joined_inner$date_time_raw, jun_joined_inner$temperature_raw,
+          jun_joined_inner$date_time_combined, jun_joined_inner$temperature_combined,
+          max_h = 24 * 5)
 
 ```
+Subtract 960 minutes from date_time_combined, and compare time series
+```{r}
+jun_shift = jun_joined_inner %>%
+  mutate(date_time_combined_minus_960_min = date_time_combined - minutes(960))
+
+jun_compare = jun_shift %>%
+  select(date_time_raw,
+         intensity_lux_raw,
+         temperature_raw) %>%
+  fuzzy_full_join(jun_shift %>%
+                    select(date_time_combined,
+                           date_time_combined_minus_960_min,
+                           intensity_lux_combined,
+                           temperature_combined),
+                  by = c("date_time_raw" = "date_time_combined_minus_960_min"),
+                  match_fun = \(x, y) abs(as.numeric(x - y)) < 15)
+
+# compare illuminance
+ggplot(jun_compare, aes(x = log1p(intensity_lux_raw), y = log1p(intensity_lux_combined))) +
+  geom_point(alpha = 0.2) +
+  labs(title = "Discrepant data (Jun24 - Oct24)")
+
+
+# compare temperatures
+ggplot(jun_compare, aes(x = temperature_raw, y = temperature_combined)) +
+  geom_point(alpha = 0.2) +
+  labs(title = "Discrepant data (Jun24 - Oct24)")
+```
+
+Alignment!
+
+But where does this errant -960 min shift come from?
