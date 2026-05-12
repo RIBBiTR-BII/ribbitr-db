@@ -96,9 +96,15 @@ ampquant_agg = ampquant_out %>%
            region,
            year,
            taxon_capture) %>%
-  count()
+  summarize(n_pep = sum(!is.na(sample_name_amp)),
+            n_bd_samp = sum(bd_sampled),
+            n_bd_res = sum(!is.na(bd_detected)),
+            .groups = "drop")
 
-write_csv(ampquant_agg, here("staging", paste0("all_amp_total_peptide_samples_summary_", today(), ".csv")))
+peace = ampquant_out %>%
+  filter(!bd_sampled)
+
+# write_csv(ampquant_agg, here("staging", paste0("all_amp_total_peptide_samples_summary_", today(), ".csv")))
 
 ```
 
