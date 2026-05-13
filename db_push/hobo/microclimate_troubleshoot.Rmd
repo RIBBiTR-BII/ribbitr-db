@@ -83,6 +83,34 @@ jun_joined = raw_jun_clean %>%
 
 observation: the times are off even down to the minute/second... is this even the same data?
 
+# daily illuminance diagnostic
+```{r}
+all_bind = bind_rows(feb_joined %>%
+                       mutate(src = "Reference Feb24 - Jun24"),
+                     jun_joined %>%
+                       mutate(src = "Discrepant Jun24 - Oct24")) %>%
+  mutate(time_combined = as_hms(date_time_combined),
+         time_raw = as_hms(date_time_raw))
+
+ggplot(all_bind, aes(x = time_combined, y = log1p(intensity_lux_combined), color = src)) +
+  geom_point(alpha = 0.1) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  scale_x_time(breaks = as_hms(c("04:00:00", "08:00:00", "12:00:00", "16:00:00", "20:00:00")),
+                   labels = c("04:00", "08:00", "12:00", "16:00", "20:00")) +
+  labs(title = "Combined-file illuminance data")
+
+ggplot(all_bind, aes(x = time_raw, y = log1p(intensity_lux_raw), color = src)) +
+  geom_point(alpha = 0.1) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  scale_x_time(breaks = as_hms(c("04:00:00", "08:00:00", "12:00:00", "16:00:00", "20:00:00")),
+                   labels = c("04:00", "08:00", "12:00", "16:00", "20:00")) +
+  labs(title = "Raw illuminance data")
+```
+
+We see a discrepancy in the timing of dusk and dawn between the reference timeseries and the discrepant one, using the data from the combined hobo files. Running the same comparison using the re-exported "raw" data, we see that they agree much better. So something in how the discrepant time series was processed is resulting in this error.
+
 # simple visual checks
 
 How correlated are raw and combined time series, for reference and discrepant data?
@@ -90,21 +118,21 @@ How correlated are raw and combined time series, for reference and discrepant da
 # compare illuminance
 ggplot(feb_joined, aes(x = log1p(intensity_lux_raw), y = log1p(intensity_lux_combined))) +
   geom_point(alpha = 0.2) +
-  labs(title = "Reference data (Feb24 - Jun24)")
+  labs(title = "Reference intensity data (Feb24 - Jun24)")
 
 ggplot(jun_joined, aes(x = log1p(intensity_lux_raw), y = log1p(intensity_lux_combined))) +
   geom_point(alpha = 0.2) +
-  labs(title = "Discrepant data (Jun24 - Oct24)")
+  labs(title = "Discrepant intensity data (Jun24 - Oct24)")
 
 
 # compare temperatures
 ggplot(feb_joined, aes(x = temperature_raw, y = temperature_combined)) +
   geom_point(alpha = 0.2) +
-  labs(title = "Reference data (Feb24 - Jun24)")
+  labs(title = "Reference temperature data (Feb24 - Jun24)")
 
 ggplot(jun_joined, aes(x = temperature_raw, y = temperature_combined)) +
   geom_point(alpha = 0.2) +
-  labs(title = "Discrepant data (Jun24 - Oct24)")
+  labs(title = "Discrepant temperature data (Jun24 - Oct24)")
 
 
 ```
@@ -136,11 +164,15 @@ jun_joined_inner = jun_joined %>%
   slice_head(n = 1) %>%
   ungroup()
 
-gg_qq_empirical(log1p(feb_joined_inner$intensity_lux_raw), log1p(feb_joined_inner$intensity_lux_combined), n = 100)
-gg_qq_empirical(feb_joined_inner$temperature_raw, feb_joined_inner$temperature_combined, n = 100)
+gg_qq_empirical(log1p(feb_joined_inner$intensity_lux_raw), log1p(feb_joined_inner$intensity_lux_combined), n = 50) +
+  labs(title = "Reference intensity data (Feb24 - Jun24)")
+gg_qq_empirical(feb_joined_inner$temperature_raw, feb_joined_inner$temperature_combined, n = 50) +
+  labs(title = "Discrepant intensity data (Jun24 - Oct24)")
 
-gg_qq_empirical(log1p(jun_joined_inner$intensity_lux_raw), log1p(jun_joined_inner$intensity_lux_combined), n = 100)
-gg_qq_empirical(jun_joined_inner$temperature_raw, jun_joined_inner$temperature_combined, n = 100)
+gg_qq_empirical(log1p(jun_joined_inner$intensity_lux_raw), log1p(jun_joined_inner$intensity_lux_combined), n = 50) +
+  labs(title = "Reference temperature data (Feb24 - Jun24)")
+gg_qq_empirical(jun_joined_inner$temperature_raw, jun_joined_inner$temperature_combined, n = 50) +
+  labs(title = "Discrepant temperature data (Jun24 - Oct24)")
 
 ```
 
@@ -180,37 +212,38 @@ ccor_func = function(datetime_a, var_a, datetime_b, var_b, max_h = 24) {
 
 ccor_func(feb_joined_inner$date_time_raw, feb_joined_inner$intensity_lux_raw,
           feb_joined_inner$date_time_combined, feb_joined_inner$intensity_lux_combined,
-          max_h = 24 * 5)
+          max_h = 24 * 2)
 
 ccor_func(feb_joined_inner$date_time_raw, feb_joined_inner$temperature_raw,
           feb_joined_inner$date_time_combined, feb_joined_inner$temperature_combined,
-          max_h = 24 * 5)
+          max_h = 24 * 2)
 
 ccor_func(jun_joined_inner$date_time_raw, jun_joined_inner$intensity_lux_raw,
           jun_joined_inner$date_time_combined, jun_joined_inner$intensity_lux_combined,
-          max_h = 24 * 5)
+          max_h = 24 * 2)
 
 ccor_func(jun_joined_inner$date_time_raw, jun_joined_inner$temperature_raw,
           jun_joined_inner$date_time_combined, jun_joined_inner$temperature_combined,
-          max_h = 24 * 5)
+          max_h = 24 * 2)
 
 ```
 Subtract 960 minutes from date_time_combined, and compare time series
 ```{r}
 jun_shift = jun_joined_inner %>%
-  mutate(date_time_combined_minus_960_min = date_time_combined - minutes(960))
+  mutate(date_time_combined_shifted = date_time_combined - minutes(955) - seconds(51))
 
+# explicit join (not fuzzy)
 jun_compare = jun_shift %>%
   select(date_time_raw,
          intensity_lux_raw,
          temperature_raw) %>%
-  fuzzy_full_join(jun_shift %>%
+  full_join(jun_shift %>%
                     select(date_time_combined,
-                           date_time_combined_minus_960_min,
+                           date_time_combined_shifted,
                            intensity_lux_combined,
                            temperature_combined),
-                  by = c("date_time_raw" = "date_time_combined_minus_960_min"),
-                  match_fun = \(x, y) abs(as.numeric(x - y)) < 15)
+                  by = c("date_time_raw" = "date_time_combined_shifted"),
+            keep = TRUE)
 
 # compare illuminance
 ggplot(jun_compare, aes(x = log1p(intensity_lux_raw), y = log1p(intensity_lux_combined))) +
@@ -226,4 +259,4 @@ ggplot(jun_compare, aes(x = temperature_raw, y = temperature_combined)) +
 
 Alignment!
 
-But where does this errant -960 min shift come from?
+But where does this errant -955 minute 9 second shift come from? (maybe the 9 second shift is due to rounding?)

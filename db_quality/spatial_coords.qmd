@@ -66,8 +66,8 @@ calculate_lat_lon(dbcon, "survey_data.capture", "capture")
 calculate_utm(dbcon, "survey_data.capture", "capture")
 
 # edna
-calculate_lat_lon(dbcon, "survey_data.edna", "edna")
-calculate_utm(dbcon, "survey_data.edna", "edna")
+calculate_lat_lon(dbcon, "survey_data.edna_collection", "edna")
+calculate_utm(dbcon, "survey_data.edna_collection", "edna")
 
 # environmental
 calculate_lat_lon(dbcon, "survey_data.environmental", "environmental")
@@ -98,7 +98,7 @@ dbExecute(dbcon, calc_q)
 # inherit utm_zone
 ```{r}
 db_capture = tbl(dbcon, Id("survey_data", "capture"))
-db_edna = tbl(dbcon, Id("survey_data", "edna"))
+db_edna = tbl(dbcon, Id("survey_data", "edna_collection"))
 db_env = tbl(dbcon, Id("survey_data", "environmental"))
 db_survey = tbl(dbcon, Id("survey_data", "survey"))
 db_visit = tbl(dbcon, Id("survey_data", "visit"))

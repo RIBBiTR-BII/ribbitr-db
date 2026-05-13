@@ -954,8 +954,45 @@ tryCatch(
 
 ```
 
+# clean up wind
+```{r}
+wind_env = db_env %>%
+  mutate(wind = tolower(wind))
+
+rows_update(db_env, wind_env, by = "environmental_id", in_place=TRUE, unmatched = "ignore")
+
+```
+
+# clean up precip during visit
+```{r}
+peace = db_env %>%
+  count(precipitation_during_visit) %>%
+  collect()
+
+pdv_env = db_env %>%
+  mutate(precipitation_during_visit = str_replace(tolower(precipitation_during_visit), " ", "_"),
+         precipitation_during_visit = if_else(precipitation_during_visit == "no_rain,heavy rain", "heavy_rain", precipitation_during_visit))
+
+rows_update(db_env, pdv_env, by = "environmental_id", in_place=TRUE, unmatched = "ignore")
+
+```
+
 # clean up life stage
 ```{r}
+peace = db_ves %>%
+  count(life_stage) %>%
+  collect()
+
+ls_capture = db_capture %>%
+  mutate(life_stage = tolower(life_stage),
+         life_stage = case_match(life_stage,
+                          "adult" ~ "adult",
+                          "subadult|juvenile" ~ "subadult",
+                          "metamorph|metamorphosed" ~ "metamorph",
+                          "larva|larvae|tadpole" ~ "larva",
+                          "eggmass|egg" ~ "eggmass",
+                          .default = NA_character_))
+
 ls_capture = db_capture %>%
   mutate(life_stage = tolower(life_stage),
          life_stage = ifelse(life_stage == "unknown", NA_character_, life_stage))
@@ -963,6 +1000,27 @@ ls_capture = db_capture %>%
 db_capture = rows_update(db_capture, ls_capture, by = "capture_id", in_place=TRUE, unmatched = "ignore")
    
 
+```
+
+# clean up animal state
+```{r}
+peace = db_capture %>%
+  count(capture_animal_state) %>%
+  collect()
+
+peace = db_ves %>%
+  count(visual_animal_state) %>%
+  collect()
+
+as_capture = db_capture %>%
+  mutate(capture_animal_state = tolower(capture_animal_state),
+         capture_animal_state = case_match(capture_animal_state,
+                          "adult" ~ "adult",
+                          "subadult|juvenile" ~ "subadult",
+                          "metamorph|metamorphosed" ~ "metamorph",
+                          "larva|larvae|tadpole" ~ "larva",
+                          "eggmass|egg" ~ "eggmass",
+                          .default = NA_character_))
 ```
 
 # clean up photo
