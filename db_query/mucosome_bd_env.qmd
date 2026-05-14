@@ -1,0 +1,133 @@
+---
+title: "mucosome_ids"
+format: html
+---
+
+# Setup
+```{r}
+
+librarian::shelf(tidyverse, dbplyr, here, RPostgres, DBI, RIBBiTR-BII/ribbitrrr)
+
+# connect to database
+dbcon = hopToDB("ribbitr")
+
+# table pointers
+db_bd = tbl(dbcon, Id("survey_data", "bd_qpcr_results"))
+db_sample = tbl(dbcon, Id("survey_data", "sample"))
+db_capture = tbl(dbcon, Id("survey_data", "capture"))
+db_survey = tbl(dbcon, Id("survey_data", "survey"))
+db_visit = tbl(dbcon, Id("survey_data", "visit"))
+db_site = tbl(dbcon, Id("survey_data", "site"))
+db_region = tbl(dbcon, Id("survey_data", "region"))
+db_country = tbl(dbcon, Id("survey_data", "country"))
+db_env = tbl(dbcon, Id("survey_data", "environmental"))
+
+ddir = Sys.getenv("data_dir")
+
+nina_pa_samples = read_csv(here(ddir, "mucosome", "Mucosome_samples_PA.csv")) %>%
+  mutate(sample_name = recode_values(MucosomeID,
+                                    "2022-05-18‚Äêadmin-rapi16" ~ "2022-05-18-admin-rapi16",
+                                    "2022-05-8-admin-raca3" ~ "2022-05-18-admin-raca3",
+                                    "2022-05‚Äê18-admin-raca1" ~ "2022-05-18-admin-raca1",
+                                    "2022-08-15-admin-rapi3" ~ "2022-05-19-admin-rapi3",
+                                    "2022-08-19-admin-rapi2" ~ "2022-05-19-admin-rapi3",
+                                    default = MucosomeID
+))
+
+```
+
+# data query
+```{r}
+
+# query mucosome of interest
+q_pa_mucosome = db_sample %>%
+  left_join(db_capture, by = "capture_id") %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  left_join(db_site, by = "site_id") %>%
+  left_join(db_region, by = "region_id") %>%
+  left_join(db_country, by = "country_id") %>%
+  filter(sample_type == "mucosome") %>%
+  filter(region == "pennsylvania",
+         date >= "2022-01-01") %>%
+  select(sample_id,
+         sample_name, 
+         capture_id,
+         taxon_capture,
+         life_stage,
+         sex,
+         svl_mm,
+         body_mass_g,
+         body_temp_c,
+         visit_id,
+         date,
+         site,
+         region,
+         country)
+
+# collect and align with nina data
+pa_mucosome = q_pa_mucosome %>%
+  collect() %>%
+  full_join(nina_pa_samples %>%
+              select(sample_name,
+                     MucosomeID) %>%
+              mutate(in_nina_data = TRUE), by = "sample_name") %>%
+  mutate(in_nina_data = if_else(is.na(in_nina_data), FALSE, in_nina_data),
+         in_ribbitr_data = !is.na(sample_id)) %>%
+  rename(sample_name_mucosome = sample_name) %>%
+  arrange(sample_name_mucosome) %>%
+  select(sample_name_mucosome,
+         MucosomeID,
+         in_ribbitr_data,
+         in_nina_data,
+         everything(),
+         sample_id,
+         capture_id,
+         visit_id)
+
+# query associated bd samples
+q_pa_muc_bd = db_bd %>%
+  inner_join(db_sample, by = "sample_id") %>%
+  filter(capture_id %in% pa_mucosome$capture_id)
+
+# collect bd
+pa_muc_bd = q_pa_muc_bd %>%
+  select(sample_name_bd,
+         bd_detected,
+         bd_its1_copies_per_swab,
+         capture_id) %>%
+  collect()
+
+# query associated env samples
+q_pa_muc_env = db_env %>%
+  left_join(db_survey, by = "survey_id") %>%
+  left_join(db_visit, by = "visit_id") %>%
+  filter(visit_id %in% pa_mucosome$visit_id)
+
+# collect_env
+pa_muc_env = q_pa_muc_env %>%
+  group_by(visit_id) %>%
+  slice_min(water_time, n = 1) %>%
+  ungroup() %>%
+  select(visit_id,
+         air_temp_c,
+         wind_speed_m_s,
+         water_temp_c,
+         p_h,
+         tds_ppm,
+         conductivity_us_cm) %>%
+  collect()
+
+# join mucosome, bd & env
+pa_mucosome_bd_env = pa_mucosome %>%
+  left_join(pa_muc_bd, by = "capture_id") %>%
+  left_join(pa_muc_env, by = "visit_id")
+
+# check maligned samples
+micheck = pa_mucosome %>%
+  filter(!in_nina_data | !in_ribbitr_data)
+
+# save to file
+write_csv(pa_mucosome_bd_env, here("staging", paste0("mucosome_bd_env_pa_", today(), ".csv")))
+
+```
